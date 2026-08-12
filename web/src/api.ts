@@ -1,0 +1,35 @@
+import type { Bot, GatewayEvent, Message } from './types'
+
+export async function fetchBots(): Promise<Bot[]> {
+  const res = await fetch('/api/bots')
+  if (!res.ok) throw new Error(`GET /api/bots ${res.status}`)
+  return res.json()
+}
+
+export async function fetchMessages(threadId: string): Promise<Message[]> {
+  const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/messages`)
+  if (!res.ok) throw new Error(`GET messages ${res.status}`)
+  return res.json()
+}
+
+export async function sendMessage(threadId: string, text: string): Promise<void> {
+  await fetch(`/api/threads/${encodeURIComponent(threadId)}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+}
+
+export function connectEvents(onEvent: (e: GatewayEvent) => void): () => void {
+  let ws: WebSocket | null = null
+  let closed = false
+  const open = () => {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`)
+    ws.onmessage = (ev) => {
+      try { onEvent(JSON.parse(ev.data)) } catch { /* 忽略脏帧 */ }
+    }
+    ws.onclose = () => { if (!closed) setTimeout(open, 1500) }
+  }
+  open()
+  return () => { closed = true; ws?.close() }
+}
