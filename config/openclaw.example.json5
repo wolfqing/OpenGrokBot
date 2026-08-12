@@ -1,0 +1,64 @@
+// open-grok-bot — reference config (what setup.sh generates, fully annotated)
+// Copy to ~/.openclaw/openclaw.json for a fresh install, or merge blocks into your existing config.
+// Full reference: https://docs.openclaw.ai/gateway/configuration
+{
+  models: {
+    providers: {
+      // xAI is OpenAI-compatible. Key from https://console.x.ai — set a spend cap on it.
+      xai: {
+        baseUrl: "https://api.x.ai/v1",
+        apiKey: "xai-REPLACE_ME",
+      },
+      // Other providers (anthropic/openai/…) can be configured during `openclaw onboard`,
+      // which verifies model access interactively.
+    },
+  },
+
+  agents: {
+    defaults: {
+      // One line to change models for every bot. grok-4.6: swap when it hits the API.
+      model: { primary: "xai/grok-4.5" },
+    },
+    entries: {
+      // Each agent = isolated persona: own workspace (AGENTS.md + SOUL.md), memory, sessions.
+      // State lives at ~/.openclaw/agents/<agentId>/ — never share an agentDir between agents.
+      researcher: {
+        default: true,
+        workspace: "~/.openclaw/workspace-researcher",
+      },
+      "inbox-keeper": {
+        workspace: "~/.openclaw/workspace-inbox-keeper",
+      },
+      "market-watch": {
+        workspace: "~/.openclaw/workspace-market-watch",
+        // Per-bot model override, e.g. a cheaper model for digests:
+        // model: "xai/grok-4-fast",
+      },
+    },
+  },
+
+  tools: {
+    // Grok Bot's "bots message each other" — off by default upstream, on here, allowlisted.
+    agentToAgent: {
+      enabled: true,
+      allow: ["researcher", "inbox-keeper", "market-watch"],
+    },
+  },
+
+  // Route channels/accounts/peers to specific bots. Most-specific match wins;
+  // first matching binding in config order breaks ties.
+  // bindings: [
+  //   { agentId: "researcher",   match: { channel: "telegram" } },
+  //   { agentId: "inbox-keeper", match: { channel: "slack" } },
+  // ],
+
+  // Channel hygiene (see docs/security.md): pair unknown senders explicitly,
+  // require mentions in groups.
+  // channels: {
+  //   telegram: { /* bot token via `openclaw onboard` or channel guide */ },
+  //   whatsapp: {
+  //     allowFrom: ["+15555550123"],
+  //     groups: { "*": { requireMention: true } },
+  //   },
+  // },
+}

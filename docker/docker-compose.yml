@@ -1,0 +1,30 @@
+# open-grok-bot — VPS / server path
+#
+# Follows the official OpenClaw Docker layout (https://docs.openclaw.ai/install/docker).
+# If this file and the official docs ever disagree, trust the docs and open an issue here.
+#
+# Quick use:
+#   cd docker
+#   docker compose up -d
+#   docker compose exec openclaw-gateway openclaw onboard     # first time
+#
+# Then from the repo root, install the teammates into the mounted config dir:
+#   OPENCLAW_CONFIG_DIR=./docker/data/config ../setup.sh
+#
+# Notes:
+# - 2GB+ RAM host recommended (image builds can OOM on 1GB).
+# - Control UI: http://127.0.0.1:18789 (bound to localhost — tunnel, don't port-forward).
+# - `latest-browser` tag includes Chromium for browsing/computer-use parity with Grok Bot.
+
+services:
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:latest-browser
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    environment:
+      - OPENCLAW_SANDBOX=1
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-./data/config}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR:-./data/workspace}:/home/node/.openclaw/workspace
+    ports:
+      - "127.0.0.1:18789:18789"

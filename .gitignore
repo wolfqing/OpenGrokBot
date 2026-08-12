@@ -1,0 +1,5 @@
+generated/
+.DS_Store
+*.log
+.env
+docker/data/

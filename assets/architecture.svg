@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 440" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <style>
+    .t  { fill: #1f2328; }
+    .ts { fill: #59636e; }
+    .box { fill: #8b949e14; stroke: #8b949e88; stroke-width: 1.2; rx: 10; }
+    .accent { stroke: #f97316; stroke-width: 1.6; }
+    .arrow { stroke: #8b949e; stroke-width: 1.4; fill: none; marker-end: url(#ah); }
+    .a2a { stroke: #f97316; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; marker-end: url(#ao); }
+    @media (prefers-color-scheme: dark) {
+      .t  { fill: #e6edf3; }
+      .ts { fill: #9198a1; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="#8b949e" stroke-width="1.6"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="#f97316" stroke-width="1.6"/>
+    </marker>
+  </defs>
+
+  <!-- You + channels -->
+  <text x="88" y="52" class="t" font-size="15" font-weight="600" text-anchor="middle">You</text>
+  <rect x="24" y="70" width="128" height="150" class="box"/>
+  <text x="88" y="94" class="t" font-size="12.5" font-weight="600" text-anchor="middle">Your chat apps</text>
+  <text x="88" y="120" class="ts" font-size="12" text-anchor="middle">Telegram</text>
+  <text x="88" y="142" class="ts" font-size="12" text-anchor="middle">WhatsApp</text>
+  <text x="88" y="164" class="ts" font-size="12" text-anchor="middle">Slack · Discord</text>
+  <text x="88" y="186" class="ts" font-size="12" text-anchor="middle">iMessage · Signal</text>
+  <text x="88" y="208" class="ts" font-size="12" text-anchor="middle">Control UI</text>
+
+  <!-- Gateway host -->
+  <rect x="210" y="40" width="340" height="330" class="box accent"/>
+  <text x="380" y="66" class="t" font-size="14" font-weight="700" text-anchor="middle">OpenClaw Gateway</text>
+  <text x="380" y="86" class="ts" font-size="11.5" text-anchor="middle">your Mac · home server · $5 VPS</text>
+
+  <rect x="238" y="104" width="284" height="56" class="box"/>
+  <text x="380" y="127" class="t" font-size="13" font-weight="600" text-anchor="middle">Scout · researcher</text>
+  <text x="380" y="146" class="ts" font-size="11" text-anchor="middle">briefs with sources · own workspace + memory</text>
+
+  <rect x="238" y="180" width="284" height="56" class="box"/>
+  <text x="380" y="203" class="t" font-size="13" font-weight="600" text-anchor="middle">Sorter · inbox-keeper</text>
+  <text x="380" y="222" class="ts" font-size="11" text-anchor="middle">triage + drafts only, never sends</text>
+
+  <rect x="238" y="256" width="284" height="56" class="box"/>
+  <text x="380" y="279" class="t" font-size="13" font-weight="600" text-anchor="middle">Ticker · market-watch</text>
+  <text x="380" y="298" class="ts" font-size="11" text-anchor="middle">digests + alerts · read-only</text>
+
+  <!-- a2a arrows -->
+  <path class="a2a" d="M 246 160 C 226 170, 226 190, 246 200"/>
+  <path class="a2a" d="M 514 236 C 534 246, 534 266, 514 276"/>
+  <text x="380" y="342" class="ts" font-size="11.5" text-anchor="middle">agent-to-agent handoffs · explicit allowlist · sandboxable</text>
+
+  <!-- Models -->
+  <rect x="612" y="70" width="144" height="196" class="box"/>
+  <text x="684" y="94" class="t" font-size="12.5" font-weight="600" text-anchor="middle">Any model (BYOK)</text>
+  <text x="684" y="120" class="ts" font-size="12" text-anchor="middle">xAI Grok API</text>
+  <text x="684" y="142" class="ts" font-size="12" text-anchor="middle">Claude</text>
+  <text x="684" y="164" class="ts" font-size="12" text-anchor="middle">GPT</text>
+  <text x="684" y="186" class="ts" font-size="12" text-anchor="middle">Kimi · DeepSeek</text>
+  <text x="684" y="208" class="ts" font-size="12" text-anchor="middle">Ollama (local, $0)</text>
+  <text x="684" y="246" class="ts" font-size="10.5" text-anchor="middle">swap with one config line</text>
+
+  <!-- flows -->
+  <path class="arrow" d="M 152 145 L 206 145"/>
+  <path class="arrow" d="M 206 175 L 152 175"/>
+  <path class="arrow" d="M 550 150 L 608 150"/>
+  <path class="arrow" d="M 608 180 L 550 180"/>
+
+  <!-- caption -->
+  <text x="390" y="416" class="t" font-size="13" font-weight="600" text-anchor="middle">Your hardware · your credentials · nothing phones home</text>
+</svg>
