@@ -30,8 +30,9 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch): LLM 
       if (!res.ok) {
         throw new Error(`LLM API ${res.status}: ${(await res.text()).slice(0, 300)}`)
       }
+      type WireToolCall = { id: string; function?: { name?: string; arguments?: string } }
       const data = (await res.json()) as {
-        choices?: { message?: ChatMsg & { tool_calls?: { id: string; function?: { name?: string; arguments?: string } }[] } }[]
+        choices?: { message?: { role: 'assistant'; content?: string | null; tool_calls?: WireToolCall[] } }[]
       }
       const msg = data.choices?.[0]?.message
       if (!msg) throw new Error('LLM API: empty choices')
@@ -42,7 +43,7 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch): LLM 
           name: t.function?.name ?? '',
           args: safeParseJson(t.function?.arguments),
         })),
-        raw: msg,
+        raw: msg as ChatMsg,
       }
     },
   }
