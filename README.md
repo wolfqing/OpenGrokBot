@@ -1,4 +1,4 @@
-# open-grok-bot 🦞🤖
+# OpenGrokBot 🦞🤖
 
 > The self-hosted, open-source Grok Bot alternative — assembled in ~10 minutes from [OpenClaw](https://github.com/openclaw/openclaw) + any model you bring. Your bots, your hardware, your credentials.
 
@@ -18,7 +18,7 @@ xAI's Grok Bot gives you always-on AI teammates, each with its own cloud compute
 
 Everything in the left column below already exists as open source. This repo just wires it together:
 
-| Grok Bot | open-grok-bot stack |
+| Grok Bot | OpenGrokBot stack |
 |---|---|
 | Always-on teammate with its own cloud computer | OpenClaw Gateway daemon on **your** Mac, home server, or $5 VPS |
 | Browser + filesystem + terminal per bot | OpenClaw tools; `latest-browser` Docker image ships Chromium |
@@ -47,8 +47,8 @@ The self-hosted posture:
 ## Quickstart (local, ~10 minutes)
 
 ```bash
-git clone https://github.com/wolfqing/open-grok-bot.git
-cd open-grok-bot
+git clone https://github.com/wolfqing/OpenGrokBot.git
+cd OpenGrokBot
 ./setup.sh
 ```
 
@@ -84,7 +84,7 @@ Rename them, rewrite their souls (`SOUL.md`), add your own — they're just fold
 
 ## Cost math
 
-| | Grok Bot | open-grok-bot |
+| | Grok Bot | OpenGrokBot |
 |---|---|---|
 | Software | $120–300/mo subscription | $0 (MIT all the way down) |
 | Compute | included (xAI's cloud) | your existing Mac/mini PC, or ~$5/mo VPS |
@@ -108,9 +108,9 @@ One Gateway process, N isolated agents, your channels in front, your choice of m
 
 ## FAQ
 
-**Is this a fork of Grok Bot?** No — Grok Bot is closed. This is a recipe that assembles existing open-source software into the same shape.
+**What is this, relative to Grok Bot?** A functional alternative with **zero shared code** — Grok Bot is closed-source, so there is nothing to fork. Same job (always-on teammates, persistent memory, bot-to-bot handoffs), opposite custody model. It can even run on the same brain: point it at the Grok API.
 
-**Is this an official OpenClaw project?** No. All agent-runtime credit belongs to [OpenClaw](https://github.com/openclaw/openclaw) and its contributors; this repo is packaging, presets, and documentation on top. More in [docs/faq.md](docs/faq.md).
+**What is this, relative to OpenClaw?** A **distribution**. OpenClaw is the engine — maintained by hundreds of contributors, and it deserves that credit. OpenGrokBot is the opinionated assembly on top: presets, personas, security defaults, and a 10-minute path to Grok Bot's shape. Think Ubuntu to the Linux kernel. Not an official OpenClaw project. More in [docs/faq.md](docs/faq.md).
 
 ## Disclaimer
 

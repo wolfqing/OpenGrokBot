@@ -1,4 +1,4 @@
-# Grok Bot vs. open-grok-bot, honestly
+# Grok Bot vs. OpenGrokBot, honestly
 
 Both columns verified on launch day (2026-08-11). Corrections welcome via PR — this table only works if it stays honest.
 
@@ -22,7 +22,7 @@ Both columns verified on launch day (2026-08-11). Corrections welcome via PR —
 
 ## Cost, concretely
 
-| Item | Grok Bot | open-grok-bot |
+| Item | Grok Bot | OpenGrokBot |
 |---|---|---|
 | Subscription | SuperGrok Heavy $300/mo, or Cursor Ultra / Teams Premium ($120–200/mo) | $0 |
 | Compute | included | hardware you own, or ~$5/mo VPS (2GB RAM min for Docker builds) |

@@ -1,4 +1,4 @@
-// open-grok-bot — reference config (what setup.sh generates, fully annotated)
+// OpenGrokBot — reference config (what setup.sh generates, fully annotated)
 // Copy to ~/.openclaw/openclaw.json for a fresh install, or merge blocks into your existing config.
 // Full reference: https://docs.openclaw.ai/gateway/configuration
 {

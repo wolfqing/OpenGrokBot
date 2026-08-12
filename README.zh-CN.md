@@ -1,4 +1,4 @@
-# open-grok-bot 🦞🤖
+# OpenGrokBot 🦞🤖
 
 > 自托管、开源的 Grok Bot 平替——用 [OpenClaw](https://github.com/openclaw/openclaw) + 任意模型 key，约 10 分钟拼装完成。你的 bot，你的机器，你的凭证。
 
@@ -14,7 +14,7 @@ Grok Bot：常驻的 AI 同事，每个 bot 一台专属云电脑（浏览器+�
 
 下表左列的一切，开源世界早就有了，本仓库只是把它们接好：
 
-| Grok Bot | open-grok-bot 拼装 |
+| Grok Bot | OpenGrokBot 拼装 |
 |---|---|
 | 常驻同事，各配云电脑 | OpenClaw Gateway 守护进程，跑在**你的** Mac / 家用服务器 / $5 VPS |
 | 每 bot 浏览器+文件+终端 | OpenClaw 工具集；`latest-browser` 镜像自带 Chromium |
@@ -43,8 +43,8 @@ Grok Bot：常驻的 AI 同事，每个 bot 一台专属云电脑（浏览器+�
 ## 快速开始（本地，约 10 分钟）
 
 ```bash
-git clone https://github.com/wolfqing/open-grok-bot.git
-cd open-grok-bot
+git clone https://github.com/wolfqing/OpenGrokBot.git
+cd OpenGrokBot
 ./setup.sh
 ```
 
@@ -73,7 +73,7 @@ openclaw dashboard                  # 打开控制台，跟第一个同事打个
 
 ## 成本账
 
-| | Grok Bot | open-grok-bot |
+| | Grok Bot | OpenGrokBot |
 |---|---|---|
 | 软件 | $120–300/月 | $0（全链路 MIT） |
 | 算力 | 含（xAI 的云） | 你现有的 Mac / 迷你主机，或 ~$5/月 VPS |
@@ -95,9 +95,14 @@ openclaw dashboard                  # 打开控制台，跟第一个同事打个
 - [ ] 微信渠道配方
 - [ ] 视频教程
 
+## 与两边的关系，一次说清
+
+- **与 Grok Bot**：功能平替，**零代码关系**——Grok Bot 闭源，无从 fork，本仓库没有任何东西源自它。复刻的是「工作」本身（常驻具名同事、持久记忆、bot 互相交接），托管模型完全相反（你的机器、你的凭证）。甚至可以用同一个大脑：接 Grok API。
+- **与 OpenClaw**：**发行版**关系——OpenClaw 是引擎（网关、渠道、会话、沙箱，数百名贡献者维护，功劳归他们），OpenGrokBot 是引擎之上的产品层：安装路径、三个带硬边界的预置同事、多 bot 接线、对 Grok Bot 的诚实映射。类比 Ubuntu 之于 Linux 内核。非 OpenClaw 官方项目。
+
 ## 声明
 
-非官方项目，与 xAI、OpenClaw Foundation 均无关联。"Grok" 是 xAI 的商标，此处仅用于指代本仓库所平替的产品。Agent 运行时的全部功劳归 [OpenClaw](https://github.com/openclaw/openclaw) 及其贡献者。
+非官方项目，与 xAI、OpenClaw Foundation 均无关联。"Grok" 是 xAI 的商标，此处仅用于指代本仓库所平替的产品。
 
 ## License
 

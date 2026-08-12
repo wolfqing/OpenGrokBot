@@ -1,10 +1,13 @@
 # FAQ
 
-**Is this a Grok Bot clone?**
-No. It's a recipe. The agent runtime is [OpenClaw](https://github.com/openclaw/openclaw) (MIT, OpenClaw Foundation), which predates Grok Bot and does most of this out of the box. This repo contributes the assembly: a setup script, three pre-built teammates with sane security boundaries, multi-bot config, and honest documentation of what maps to what.
+**What is OpenGrokBot's relationship to Grok Bot?**
+Functional alternative, zero code relationship. Grok Bot is closed-source — there is nothing to fork and nothing here is derived from it. OpenGrokBot replicates the *job*: always-on named teammates with their own computer, persistent memory, and bot-to-bot handoffs — under the opposite custody model (your hardware, your credentials). Optionally the same model too, via the Grok API.
 
-**So why does this repo deserve to exist?**
-Because "you could assemble this from OpenClaw" and "here is the assembled thing" are different products. The HN thread said "so like OpenClaw ???" — this is the executable version of that comment.
+**And to OpenClaw?**
+OpenGrokBot is a **distribution of OpenClaw**, the way Ubuntu is a distribution of the Linux kernel. The engine — gateway, channels, sessions, sandboxing — is OpenClaw (MIT, OpenClaw Foundation), which predates Grok Bot and is maintained by hundreds of contributors. OpenGrokBot contributes the product layer on top: the setup path, three pre-built teammates with strict security boundaries, multi-bot wiring, and honest Grok Bot feature/cost mapping. Not affiliated with the OpenClaw Foundation.
+
+**Why build on an engine instead of writing a standalone runtime?**
+Because the open incumbent already exists — the top HN reply to Grok Bot's launch was "so like OpenClaw ???". A from-scratch runtime would spend months re-implementing channels, session stores, and sandboxing that OpenClaw already hardened, and every thread would ask "why not just use OpenClaw?" As a distribution, OpenGrokBot *is* the answer to that question. Original code goes where the gap actually is: [teach-mode](../../issues/1).
 
 **Can I use it without an xAI key?**
 Yes — any provider OpenClaw supports: Anthropic, OpenAI, Kimi, DeepSeek, OpenRouter, or local models via Ollama (`$0/mo`, fully offline). Using the Grok API is just the poetic default.

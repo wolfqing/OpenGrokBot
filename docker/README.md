@@ -10,8 +10,8 @@ Any provider, 2GB RAM minimum (image builds can OOM below that), Ubuntu 22.04+. 
 
 ```bash
 curl -fsSL https://get.docker.com | sh
-git clone https://github.com/wolfqing/open-grok-bot.git
-cd open-grok-bot/docker
+git clone https://github.com/wolfqing/OpenGrokBot.git
+cd OpenGrokBot/docker
 ```
 
 ## 3. Start the gateway
