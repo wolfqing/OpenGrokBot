@@ -1,4 +1,5 @@
 generated/
+internal/
 .DS_Store
 *.log
 .env
