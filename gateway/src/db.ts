@@ -1,7 +1,14 @@
 import Database from 'better-sqlite3'
 
 export type Db = Database.Database
-export type MessageKind = 'text' | 'report' | 'screenshot'
+export type MessageKind =
+  | 'text'
+  | 'report'
+  | 'screenshot'
+  | 'approval_request'
+  | 'approval_resolved'
+  | 'memory_updated'
+  | 'routine_created'
 
 export type BotRow = {
   id: string
@@ -48,6 +55,29 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, id);
+CREATE TABLE IF NOT EXISTS approvals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id TEXT NOT NULL,
+  bot_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  message_id INTEGER,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_thread ON approvals(thread_id, status);
+CREATE TABLE IF NOT EXISTS routines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  cron TEXT NOT NULL,
+  instructions TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  last_run_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_routines_bot ON routines(bot_id, enabled);
 `
 
 export function openDb(path = ':memory:'): Db {

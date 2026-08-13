@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ensureDmThread, insertMessage, listBotsWithLastMessage, listMessages, openDb, upsertBot,
+  ensureDmThread, insertMessage, listBotsWithLastMessage, listMessages, openDb, updateMessagePayload, upsertBot,
 } from '../src/db.js'
 
 const scout = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
@@ -50,5 +50,30 @@ describe('db', () => {
     upsertBot(db, scout)
     upsertBot(db, { ...scout, name: 'Scout II' })
     expect(db.prepare('SELECT name FROM bots WHERE id = ?').get('researcher')).toMatchObject({ name: 'Scout II' })
+  })
+})
+
+describe('updateMessagePayload', () => {
+  it('rewrites a stored payload in place', () => {
+    const db = openDb(':memory:')
+    upsertBot(db, scout)
+    const tid = ensureDmThread(db, 'researcher')
+    const m = insertMessage(db, {
+      threadId: tid, sender: 'researcher', kind: 'approval_request',
+      payload: { approvalId: 1, action: 'send 4 drafts', status: 'pending' },
+    })
+    updateMessagePayload(db, m.id, { approvalId: 1, action: 'send 4 drafts', status: 'approved' })
+    const stored = listMessages(db, tid)[0]!
+    expect((stored.payload as { status: string }).status).toBe('approved')
+    expect(stored.kind).toBe('approval_request')
+  })
+})
+
+describe('schema', () => {
+  it('provides approvals and routines tables', () => {
+    const db = openDb(':memory:')
+    const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+      .map((r) => r.name)
+    expect(names).toEqual(expect.arrayContaining(['bots', 'threads', 'messages', 'approvals', 'routines']))
   })
 })
