@@ -49,3 +49,41 @@ describe('createPool', () => {
     expect(made.map((c) => c.calls)).toEqual([['dispose'], ['dispose']])
   })
 })
+
+describe('a restarted container', () => {
+  it('is replaced once its computer stops answering', async () => {
+    let made = 0
+    let alive = true
+    const pool = createPool({
+      dataDir: '/data',
+      makeComputer: async () => {
+        made += 1
+        return createFakeComputer({ ping: async () => alive })
+      },
+    })
+    const first = await pool.get('researcher')
+    expect(await pool.get('researcher')).toBe(first) // 活着就复用
+    expect(made).toBe(1)
+
+    alive = false // 容器重启，端口全变了
+    const second = await pool.get('researcher')
+    expect(second).not.toBe(first)
+    expect(made).toBe(2)
+  })
+
+  it('disposes the dead computer instead of leaking its connection', async () => {
+    const made: ReturnType<typeof createFakeComputer>[] = []
+    const pool = createPool({
+      dataDir: '/data',
+      makeComputer: async () => {
+        const nth = made.length // 第一台假装已经随容器重启死掉了
+        const c = createFakeComputer({ ping: async () => nth > 0 })
+        made.push(c)
+        return c
+      },
+    })
+    await pool.get('researcher')
+    await pool.get('researcher')
+    expect(made[0]!.calls).toContain('dispose')
+  })
+})

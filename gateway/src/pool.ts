@@ -24,10 +24,26 @@ export function createPool(opts: {
     return createDockerComputer(await ensureContainer(opts.docker, botId, dir))
   })
 
+  /** 容器重启后端口会重新映射，缓存的连接就全指向旧端口——先探一下活。 */
+  async function reuseIfAlive(botId: string, pending: Promise<BotComputer>): Promise<BotComputer | null> {
+    try {
+      const computer = await pending
+      if (await computer.ping()) return computer
+      await computer.dispose().catch(() => {})
+    } catch {
+      // 上一次启动就失败了，当没有缓存处理
+    }
+    live.delete(botId)
+    return null
+  }
+
   return {
-    get(botId) {
+    async get(botId) {
       const existing = live.get(botId)
-      if (existing) return existing
+      if (existing) {
+        const alive = await reuseIfAlive(botId, existing)
+        if (alive) return alive
+      }
       // 失败不留缓存，否则一次 docker 抖动会永久毒化这个 bot
       const started = makeComputer(botId).catch((err) => {
         live.delete(botId)

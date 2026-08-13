@@ -5,6 +5,12 @@ set -euo pipefail
 export DISPLAY=:99
 mkdir -p /workspace/.browser /workspace/files
 
+# 上一次运行留下的 X 锁会让重启后的 Xvfb 直接罢工（"Server is already active for display 99"），
+# 于是整台电脑陷入重启循环。容器里此刻只有我们自己，删掉是安全的。
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
+# Chromium 的单例锁同理：非正常退出会留下 SingletonLock 指向已消失的 pid
+rm -f /workspace/.browser/SingletonLock /workspace/.browser/SingletonSocket /workspace/.browser/SingletonCookie
+
 Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
 for _ in $(seq 1 60); do
   xdpyinfo -display :99 >/dev/null 2>&1 && break

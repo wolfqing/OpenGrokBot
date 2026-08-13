@@ -152,6 +152,23 @@ describe('stub model', () => {
     expect(closing.content).toMatch(/handed off/i)
   })
 
+  it('asks for a takeover at a login wall instead of guessing credentials', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const asked = await llm.chat([{ role: 'user', content: 'work my zendesk queue' }], toolDefs)
+    expect(asked.toolCalls[0]!.name).toBe('ask_for_login')
+    expect((asked.toolCalls[0]!.args as { site: string }).site).toBe('Zendesk')
+
+    const waiting = await llm.chat(
+      [
+        { role: 'user', content: 'x' },
+        { role: 'tool', tool_call_id: 't', content: 'Asked your operator to sign in to Zendesk. Stop here until they say it is done.' },
+      ],
+      toolDefs,
+    )
+    expect(waiting.toolCalls).toHaveLength(0)
+    expect(waiting.content).toMatch(/waiting on you/i)
+  })
+
   it('keeps full urls as written', async () => {
     const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
     const turn = await llm.chat([{ role: 'user', content: 'check https://news.ycombinator.com/news please' }], toolDefs)

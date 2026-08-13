@@ -82,6 +82,13 @@ body {
   width: 380px; flex-shrink: 0; border-left: 1px solid #d1d1d6; background: #f7f7fa;
   display: flex; flex-direction: column; overflow-y: auto;
 }
+/* 窄窗口里三栏挤不下，面板改成盖在对话上的抽屉，别把线程压没 */
+@media (max-width: 1100px) {
+  .computer-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 92vw);
+    box-shadow: -6px 0 24px rgba(0, 0, 0, 0.14); z-index: 10;
+  }
+}
 .panel-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; border-bottom: 1px solid #d1d1d6; background: rgba(249, 249, 249, 0.94);

@@ -72,6 +72,13 @@ export function createDockerComputer(endpoints: Endpoints, deps: DockerComputerD
 
   return {
     vncUrl: endpoints.vnc,
+    async ping() {
+      try {
+        return (await fetchImpl(`${endpoints.shim}/health`)).ok
+      } catch {
+        return false
+      }
+    },
     async shell(cmd, timeoutMs) {
       return post<ShellResult>('/shell', { cmd, timeoutMs })
     },

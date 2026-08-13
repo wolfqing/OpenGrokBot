@@ -116,6 +116,7 @@ function createStubLLM(): LLM {
         if (result.startsWith('Rule saved')) return stubText('Noted for next time.')
         if (result.startsWith('Handed to')) return stubText('Handed off. I will fold their answer in when it lands.')
         if (/not allowlisted/i.test(result)) return stubText('I cannot reach them directly — routing it through Chief instead.')
+        if (/^Asked your operator to sign in/.test(result)) return stubText('Waiting on you. Ping me once you are in.')
         if (result.startsWith('That rule was already')) return stubText('Already had that one on file.')
         return stubText('All filed. Ping me when you want the next pass.')
       }
@@ -146,6 +147,12 @@ function createStubLLM(): LLM {
       const teammate = findTeammate(text)
       if (teammate) {
         return stubToolTurn('message_bot', { to: teammate, content: `${text.trim()} — needed by Friday.` })
+      }
+      // 登录墙：要人接管，绝不在聊天里问密码
+      const wall = lower.match(/\b(zendesk|linkedin|salesforce|jira|notion)\b/)
+      if (wall || /\b(log in|login|sign in|signin)\b/.test(lower)) {
+        const site = wall ? wall[1]!.replace(/^\w/, (ch) => ch.toUpperCase()) : 'the site'
+        return stubToolTurn('ask_for_login', { site, why: 'so I can work the queue for you' })
       }
       if (/(every day|each day|every morning|daily|每天)/.test(lower)) {
         return stubToolTurn('create_routine', {

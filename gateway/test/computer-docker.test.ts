@@ -142,3 +142,16 @@ describe('screen address', () => {
     expect(c.vncUrl).toBe('http://127.0.0.1:6080')
   })
 })
+
+describe('ping', () => {
+  it('is true while the shim answers and false once it does not', async () => {
+    const ok = (async () => new Response(JSON.stringify({ ok: true }))) as typeof fetch
+    expect(await createDockerComputer(endpoints, { fetchImpl: ok }).ping()).toBe(true)
+
+    const refused = (async () => { throw new Error('ECONNREFUSED') }) as typeof fetch
+    expect(await createDockerComputer(endpoints, { fetchImpl: refused }).ping()).toBe(false)
+
+    const broken = (async () => new Response('nope', { status: 502 })) as typeof fetch
+    expect(await createDockerComputer(endpoints, { fetchImpl: broken }).ping()).toBe(false)
+  })
+})

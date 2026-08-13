@@ -5,6 +5,8 @@ export type Shot = { buffer: Buffer; width: number; height: number }
 export interface BotComputer {
   /** 这台电脑的屏幕地址（noVNC）；没有容器就没有屏幕。 */
   readonly vncUrl?: string
+  /** 这台电脑还应答吗？容器一重启端口就全变了，缓存的连接会全废。 */
+  ping(): Promise<boolean>
   shell(cmd: string, timeoutMs?: number): Promise<ShellResult>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
@@ -27,6 +29,7 @@ export function createFakeComputer(
   const calls: string[] = []
   const pageText = overrides.pageText ?? 'Example Domain — this domain is for use in examples.'
   const base: BotComputer = {
+    async ping() { return true },
     async shell(cmd) { calls.push(`shell:${cmd}`); return { stdout: 'hi\n', stderr: '', exitCode: 0 } },
     async readFile(path) { calls.push(`read:${path}`); return 'file contents' },
     async writeFile(path) { calls.push(`write:${path}`) },
