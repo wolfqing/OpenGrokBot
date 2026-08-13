@@ -161,6 +161,28 @@ const WORKFLOW_TOOLS: ToolDef[] = [
   },
 ]
 
-export function buildTools(opts: { hasComputer: boolean }): ToolDef[] {
-  return [MESSAGE_USER_TOOL, ...WORKFLOW_TOOLS, ...(opts.hasComputer ? COMPUTER_TOOLS : [])]
+const RELAY_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'message_bot',
+    description:
+      'Hand a specific task to another teammate. It lands in their thread and they pick it up. Only allowlisted teammates are reachable. Say what "done" looks like and by when — never hand off something you have not scoped.',
+    parameters: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'The teammate id, e.g. "market-watch".' },
+        content: { type: 'string', description: 'The task, its purpose and its deadline, written to them.' },
+      },
+      required: ['to', 'content'],
+    },
+  },
+}
+
+export function buildTools(opts: { hasComputer: boolean; canRelay?: boolean }): ToolDef[] {
+  return [
+    MESSAGE_USER_TOOL,
+    ...WORKFLOW_TOOLS,
+    ...(opts.canRelay ? [RELAY_TOOL] : []),
+    ...(opts.hasComputer ? COMPUTER_TOOLS : []),
+  ]
 }

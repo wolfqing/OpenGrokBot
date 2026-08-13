@@ -1,3 +1,4 @@
+import { MAX_HOPS } from './a2a.js'
 import type { BotComputer, Shot } from './computer.js'
 import { insertMessage, listMessages, type BotRow, type Db, type MessageRow } from './db.js'
 import type { ChatMsg, LLM, ToolCall } from './llm.js'
@@ -23,6 +24,10 @@ export type AgentDeps = {
   onSaveMemory?: (rule: string) => Promise<{ rule: string; diff: string; total: number }>
   onCreateRoutine?: (input: { name: string; cron: string; instructions: string }) =>
     Promise<{ id: number; name: string; cron: string; human: string }>
+  hop?: number
+  group?: { title: string; members: string[] }
+  onMessageBot?: (input: { to: string; content: string }) =>
+    Promise<{ delivered: boolean; reason?: string; toName?: string }>
 }
 
 const MAX_STEPS = 12
@@ -43,13 +48,17 @@ export async function runTurn(
   }
   events.onStatus(bot.id, 'thinking')
   try {
+    const canRelay = Boolean(deps.onMessageBot)
     const messages: ChatMsg[] = [
-      { role: 'system', content: buildSystemPrompt(bot, soul, { hasComputer, memory: deps.memory }) },
-      ...listMessages(db, threadId, HISTORY_LIMIT).map(toChatMsg),
+      {
+        role: 'system',
+        content: buildSystemPrompt(bot, soul, { hasComputer, memory: deps.memory, group: deps.group, canRelay }),
+      },
+      ...listMessages(db, threadId, HISTORY_LIMIT).map((m) => toChatMsg(m, bot.id)),
     ]
-    // routine 触发 / 审批放行不落库，但模型必须看到这句话才知道要干什么
+    // routine 触发 / 审批放行 / 群发言不落库，但模型必须看到这句话才知道要干什么
     if (!persistUserMessage) messages.push({ role: 'user', content: userText })
-    const tools = buildTools({ hasComputer })
+    const tools = buildTools({ hasComputer, canRelay })
     for (let step = 0; step < MAX_STEPS; step++) {
       const turn = await llm.chat(messages, tools)
       if (turn.toolCalls.length > 0) {
@@ -81,7 +90,7 @@ const COMPUTER_TOOL_NAMES = new Set([
   'shell', 'read_file', 'write_file', 'browser_goto', 'browser_extract', 'browser_click', 'browser_screenshot',
 ])
 
-const WORKFLOW_TOOL_NAMES = new Set(['hold_for_approval', 'save_memory', 'create_routine'])
+const WORKFLOW_TOOL_NAMES = new Set(['hold_for_approval', 'save_memory', 'create_routine', 'message_bot'])
 
 async function execToolCall(deps: AgentDeps, call: ToolCall, events: AgentEvents): Promise<string> {
   const args = (call.args ?? {}) as Record<string, unknown>
@@ -155,6 +164,19 @@ async function execWorkflowTool(
       }))
       return `Routine "${routine.name}" scheduled (${routine.human}).`
     }
+    case 'message_bot': {
+      if (!deps.onMessageBot) return 'Relaying to teammates is not available on this gateway.'
+      // 两跳足够「分派 → 执行方回话」；再深就是两个 bot 在互相回声
+      if ((deps.hop ?? 0) >= MAX_HOPS) {
+        return 'Relay limit reached — reply to your operator instead of passing this on again.'
+      }
+      const to = String(args.to ?? '').trim()
+      const content = String(args.content ?? '').trim()
+      if (!to || !content) return 'message_bot needs "to" and "content".'
+      const result = await deps.onMessageBot({ to, content })
+      if (!result.delivered) return result.reason ?? `Could not reach ${to}.`
+      return `Handed to ${result.toName ?? to}.`
+    }
     default:
       return `Unknown tool: ${name}`
   }
@@ -207,13 +229,19 @@ function truncate(s: string): string {
   return s.length > MAX_TOOL_CHARS ? `${s.slice(0, MAX_TOOL_CHARS)}\n…(truncated)` : s
 }
 
-function toChatMsg(m: MessageRow): ChatMsg {
+function toChatMsg(m: MessageRow, selfId: string): ChatMsg {
   if (m.sender === 'user') return { role: 'user', content: m.content }
+  // 群里别的 bot 说的话是「同事发言」，不能混成自己的历史
+  if (m.sender !== selfId) {
+    const body = m.kind === 'text' ? m.content : `[${m.kind}] ${JSON.stringify(m.payload)}`
+    return { role: 'user', content: `@${m.sender}: ${body}` }
+  }
   if (m.kind === 'report') return { role: 'assistant', content: `[report filed] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'screenshot') return { role: 'assistant', content: '[screenshot posted to the thread]' }
   if (m.kind === 'approval_request') return { role: 'assistant', content: `[held for approval] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'approval_resolved') return { role: 'user', content: `[operator decision] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'memory_updated') return { role: 'assistant', content: `[memory updated] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'routine_created') return { role: 'assistant', content: `[routine created] ${JSON.stringify(m.payload)}` }
+  if (m.kind === 'bot_ref') return { role: 'user', content: `[message from teammate] ${JSON.stringify(m.payload)}` }
   return { role: 'assistant', content: m.content }
 }

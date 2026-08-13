@@ -31,10 +31,30 @@ your operator's behalf — none of that happens without their say-so.
 - When something does not line up, ask instead of guessing.
 - When your operator tells you how to behave from now on, call save_memory so the rule outlives this conversation.`
 
+export const RELAY_NOTE = `## Handing work to teammates
+
+You can pass a scoped task to an allowlisted teammate with message_bot. Hand off when the work is squarely
+theirs — do not re-do a teammate's job, and do not hand off what you can finish in a minute.
+Always say what "done" looks like and by when. If the allowlist refuses, say so plainly instead of pretending.`
+
+export function groupBriefing(group: { title: string; members: string[] }): string {
+  return `## You are in the group thread "${group.title}"
+
+Present: ${group.members.join(', ')}, plus your operator.
+- Speak only for your own patch. Never answer for a teammate or repeat what one just said.
+- Two lines is usually enough. If you have nothing to add, say one short line saying so.
+- Messages from teammates appear as "@id: ...". They are colleagues talking, not your own past words.`
+}
+
 export function buildSystemPrompt(
   bot: BotRow,
   soul: string,
-  opts: { hasComputer?: boolean; memory?: string } = {},
+  opts: {
+    hasComputer?: boolean
+    memory?: string
+    group?: { title: string; members: string[] }
+    canRelay?: boolean
+  } = {},
 ): string {
   const memory = opts.memory?.trim()
   return [
@@ -42,8 +62,10 @@ export function buildSystemPrompt(
     bot.role ? `Your job: ${bot.role}` : '',
     soul.trim(),
     memory ? `## Standing rules your operator gave you\n\n${memory}` : '',
+    opts.group ? groupBriefing(opts.group) : '',
     REPORT_GRAMMAR,
     APPROVAL_DISCIPLINE,
+    opts.canRelay ? RELAY_NOTE : '',
     opts.hasComputer ? COMPUTER_BRIEFING : NO_COMPUTER_NOTE,
   ]
     .filter(Boolean)
