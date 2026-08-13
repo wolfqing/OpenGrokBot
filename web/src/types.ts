@@ -1,13 +1,14 @@
 export type ReportLine = { system: string; result: string; count?: string }
 export type ReportPayload = { lines: ReportLine[]; closing?: string }
+export type ScreenshotPayload = { url: string; width: number; height: number; caption?: string }
 
 export type Message = {
   id: number
   thread_id: string
   sender: string // 'user' | bot id
-  kind: 'text' | 'report'
+  kind: 'text' | 'report' | 'screenshot'
   content: string
-  payload: ReportPayload | null
+  payload: ReportPayload | ScreenshotPayload | null
   created_at: number
 }
 

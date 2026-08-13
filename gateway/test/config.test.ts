@@ -16,12 +16,17 @@ describe('loadConfig', () => {
       OPENGROKBOT_API_KEY: 'sk-test',
       OPENGROKBOT_MODEL: 'qwen3',
       OPENGROKBOT_PORT: '5050',
+      OPENGROKBOT_DATA: '/tmp/data',
       OPENGROKBOT_DB: '/tmp/x.db',
       OPENGROKBOT_TEAMMATES: '/tmp/teammates',
     })
     expect(c).toMatchObject({
       baseURL: 'http://localhost:11434/v1', apiKey: 'sk-test', model: 'qwen3',
-      port: 5050, dbPath: '/tmp/x.db', teammatesDir: '/tmp/teammates',
+      port: 5050, dataDir: '/tmp/data', dbPath: '/tmp/x.db', teammatesDir: '/tmp/teammates',
     })
+  })
+
+  it('defaults the db inside the data dir', () => {
+    expect(loadConfig({ OPENGROKBOT_DATA: '/tmp/data' }).dbPath).toBe('/tmp/data/opengrokbot.db')
   })
 })

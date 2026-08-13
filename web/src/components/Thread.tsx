@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Bot, Message } from '../types'
+import type { Bot, Message, ReportPayload, ScreenshotPayload } from '../types'
 import { ReportChip } from './ReportChip'
+import { ScreenshotChip } from './ScreenshotChip'
 
 export function Thread({ bot, messages, thinking, onSend }: {
   bot: Bot
@@ -33,9 +34,13 @@ export function Thread({ bot, messages, thinking, onSend }: {
       <div className="thread-scroll" ref={scrollRef}>
         {messages.map((m) => (
           <div key={m.id} className={`row ${m.sender === 'user' ? 'from-user' : 'from-bot'}`}>
-            {m.kind === 'report' && m.payload
-              ? <ReportChip payload={m.payload} />
-              : <div className="bubble">{m.content}</div>}
+            {m.kind === 'report' && m.payload ? (
+              <ReportChip payload={m.payload as ReportPayload} />
+            ) : m.kind === 'screenshot' && m.payload ? (
+              <ScreenshotChip payload={m.payload as ScreenshotPayload} />
+            ) : (
+              <div className="bubble">{m.content}</div>
+            )}
           </div>
         ))}
         {thinking ? <div className="row from-bot"><div className="bubble typing">•••</div></div> : null}

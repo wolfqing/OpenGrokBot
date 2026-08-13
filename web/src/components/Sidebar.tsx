@@ -1,11 +1,16 @@
-import type { Bot, BotStatus } from '../types'
+import type { Bot, BotStatus, ReportPayload, ScreenshotPayload } from '../types'
 
 function preview(bot: Bot): string {
   const m = bot.last_message
   if (!m) return 'Say hi — first briefing.'
+  if (m.kind === 'screenshot') {
+    const caption = (m.payload as ScreenshotPayload | null)?.caption
+    return caption ? `📷 ${caption}` : '📷 Screenshot'
+  }
   if (m.kind === 'report') {
-    const first = m.payload?.lines[0]
-    return m.payload?.closing ?? (first ? `✓ ${first.system} → ${first.result}` : 'Report filed.')
+    const payload = m.payload as ReportPayload | null
+    const first = payload?.lines[0]
+    return payload?.closing ?? (first ? `✓ ${first.system} → ${first.result}` : 'Report filed.')
   }
   return m.content
 }

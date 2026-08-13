@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { ensureDmThread, listMessages, openDb, upsertBot } from '../src/db.js'
 import { createHub } from '../src/hub.js'
@@ -72,5 +75,33 @@ describe('REST', () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'hi' }),
     })
     expect(unknown.status).toBe(404)
+  })
+})
+
+describe('screenshot serving', () => {
+  function setupWithData() {
+    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-srv-'))
+    const dir = join(dataDir, 'workspaces', 'researcher', 'screenshots')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '42.png'), 'PNGDATA')
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    ensureDmThread(db, bot.id)
+    return { dataDir, ...createApp({ db, llm: okLLM, dataDir }) }
+  }
+
+  it('serves a stored screenshot as png', async () => {
+    const { app } = setupWithData()
+    const res = await app.request('/api/screenshots/researcher/42.png')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('image/png')
+    expect(await res.text()).toBe('PNGDATA')
+  })
+
+  it('404s unknown files and rejects traversal', async () => {
+    const { app } = setupWithData()
+    expect((await app.request('/api/screenshots/researcher/99.png')).status).toBe(404)
+    expect((await app.request('/api/screenshots/researcher/notes.md')).status).toBe(404)
+    expect((await app.request('/api/screenshots/researcher/..%2F..%2Fopengrokbot.db')).status).toBe(404)
   })
 })

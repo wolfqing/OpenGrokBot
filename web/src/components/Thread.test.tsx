@@ -21,6 +21,15 @@ describe('Thread', () => {
     expect(screen.getByText('Done.')).toBeInTheDocument()
   })
 
+  it('renders a screenshot chip', () => {
+    const withShot: Message[] = [...messages, {
+      id: 4, thread_id: 'dm:researcher', sender: 'researcher', kind: 'screenshot', content: '', created_at: 4,
+      payload: { url: '/api/screenshots/researcher/9.png', width: 1280, height: 800, caption: 'example.com' },
+    }]
+    render(<Thread bot={bot} messages={withShot} thinking={false} onSend={() => {}} />)
+    expect(screen.getByAltText('example.com')).toHaveAttribute('src', '/api/screenshots/researcher/9.png')
+  })
+
   it('shows typing indicator while thinking', () => {
     render(<Thread bot={bot} messages={[]} thinking={true} onSend={() => {}} />)
     expect(screen.getByText('•••')).toBeInTheDocument()
