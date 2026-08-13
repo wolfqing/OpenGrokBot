@@ -8,6 +8,9 @@ describe('loadConfig', () => {
     expect(c.model).toBe('grok-4')
     expect(c.port).toBe(4747)
     expect(c.apiKey).toBe('')
+    expect(c.chiefId).toBe('chief')
+    expect(c.a2aAllow).toBe('') // 同级互发默认关闭
+    expect(c.groupId).toBe('group:offsite-crew')
   })
 
   it('honors env overrides', () => {

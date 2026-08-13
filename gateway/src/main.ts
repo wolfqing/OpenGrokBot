@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import Docker from 'dockerode'
+import { parseA2AAllow } from './a2a.js'
 import { runTurn } from './agent.js'
 import { loadConfig } from './config.js'
 import { openDb, type BotRow } from './db.js'
@@ -12,13 +13,14 @@ import { createPool } from './pool.js'
 import { listRoutines, markRoutineRun } from './routines.js'
 import { saveScreenshot } from './screenshots.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
-import { seedTeammates } from './seed.js'
+import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
 
 const config = loadConfig()
 if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
 const db = openDb(config.dbPath)
 const bots = seedTeammates(db, config.teammatesDir)
+seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const llm = createLLM(config)
 const pool = createPool({ dataDir: config.dataDir, docker: new Docker() })
 
@@ -31,7 +33,11 @@ const schedulerProxy: Scheduler = {
   size: () => schedulerBox.current?.size() ?? 0,
 }
 
-const { app, hub } = createApp({ db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy })
+const { app, hub } = createApp({
+  db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
+  chiefId: config.chiefId,
+  a2aRules: parseA2AAllow(config.a2aAllow, config.chiefId),
+})
 
 schedulerBox.current = createScheduler({
   run: async (routine) => {

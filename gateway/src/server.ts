@@ -5,9 +5,10 @@ import { runTurn } from './agent.js'
 import {
   attachApprovalMessage, createApproval, getApproval, isThumbsUp, latestPendingApproval, resolveApproval,
 } from './approvals.js'
+import { canMessage, denyReason, type A2ARules } from './a2a.js'
 import {
-  insertMessage, listBotsWithLastMessage, listMessages, updateMessagePayload,
-  type BotRow, type Db, type MessageRow,
+  ensureDmThread, insertMessage, listBotsWithLastMessage, listConversations, listMessages, threadMembers,
+  updateMessagePayload, type BotRow, type Db, type MessageRow,
 } from './db.js'
 import { createHub, type Hub } from './hub.js'
 import type { LLM } from './llm.js'
@@ -23,9 +24,13 @@ export function createApp(deps: {
   pool?: Pool
   dataDir?: string
   scheduler?: Scheduler
+  chiefId?: string
+  a2aRules?: A2ARules
 }): { app: Hono; hub: Hub } {
   const { db, llm, pool, scheduler } = deps
   const dataDir = deps.dataDir ?? ''
+  const chiefId = deps.chiefId ?? 'chief'
+  const a2aRules = deps.a2aRules ?? { chiefId, pairs: [] }
   const hub = createHub()
   const app = new Hono()
 
@@ -51,11 +56,14 @@ export function createApp(deps: {
     bot: BotRow,
     threadId: string,
     text: string,
-    opts: { persistUserMessage?: boolean } = {},
+    opts: { persistUserMessage?: boolean; hop?: number; group?: { title: string; members: string[] } } = {},
   ): Promise<void> {
     const memory = dataDir ? await readMemory(dataDir, bot.id) : ''
-    void runTurn({
+    await runTurn({
       db, llm, bot, soul: readSoul(bot), threadId, memory,
+      hop: opts.hop ?? 0,
+      ...(opts.group ? { group: opts.group } : {}),
+      onMessageBot: ({ to, content }) => relay(bot, to, content, opts.hop ?? 0),
       ...(pool ? { getComputer: () => pool.get(bot.id) } : {}),
       ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
       onApproval: async ({ action, detail }) => {
@@ -69,7 +77,52 @@ export function createApp(deps: {
         scheduler?.add(routine)
         return { id: routine.id, name: routine.name, cron: routine.cron, human: describeCron(routine.cron) }
       },
-    }, text, events(threadId), opts)
+    }, text, events(threadId), { persistUserMessage: opts.persistUserMessage })
+  }
+
+  /** a2a：把任务放进目标 bot 的单聊，并让它接着干。 */
+  async function relay(
+    from: BotRow,
+    to: string,
+    content: string,
+    hop: number,
+  ): Promise<{ delivered: boolean; reason?: string; toName?: string }> {
+    if (!canMessage(a2aRules, from.id, to)) {
+      return { delivered: false, reason: denyReason(a2aRules, from.id, to) }
+    }
+    const target = botById(to)
+    if (!target) return { delivered: false, reason: `There is no teammate called ${to}.` }
+
+    const targetThread = ensureDmThread(db, target.id)
+    const chip = insertMessage(db, {
+      threadId: targetThread, sender: from.id, kind: 'bot_ref',
+      payload: { from: from.id, fromName: from.name, content },
+    })
+    hub.broadcast({ type: 'message', threadId: targetThread, message: chip })
+
+    // 不 await：交接方不该被接收方的整轮工作卡住
+    void startTurn(
+      target,
+      targetThread,
+      `@${from.name} (${from.id}) handed you this: ${content}\nPick it up now and report back in this thread.`,
+      { persistUserMessage: false, hop: hop + 1 },
+    )
+    return { delivered: true, toName: target.name }
+  }
+
+  /** 群里一轮：成员依次发言，Chief 收口——所以每个人都看得见前面的话。 */
+  async function runGroupRound(threadId: string, title: string, text: string): Promise<void> {
+    const members = threadMembers(db, threadId)
+      .map((id) => botById(id))
+      .filter((b): b is BotRow => Boolean(b))
+    const names = members.map((b) => b.name)
+    const speakers = [...members.filter((b) => b.id !== chiefId), ...members.filter((b) => b.id === chiefId)]
+    for (const bot of speakers) {
+      const seed = bot.id === chiefId
+        ? `Your operator asked the group: "${text}". Everyone else has reported above. Post the dispatch table now — one "✓ item → @bot · when" line each — then one sentence on what needs your operator today.`
+        : `Your operator asked the group: "${text}". Answer for your own patch only, in two lines or less.`
+      await startTurn(bot, threadId, seed, { persistUserMessage: false, group: { title, members: names } })
+    }
   }
 
   /** 放行/驳回：翻转 chip、留一条决定记录、再用不可见 seed 让 bot 续跑。 */
@@ -97,12 +150,14 @@ export function createApp(deps: {
       const seed = decision === 'approve'
         ? `Your operator approved: ${approval.action}. Carry it out now and report what actually happened.`
         : `Your operator discarded: ${approval.action}. Do not do it. Acknowledge in one line and move on.`
-      await startTurn(bot, approval.thread_id, seed, { persistUserMessage: false })
+      void startTurn(bot, approval.thread_id, seed, { persistUserMessage: false }) // 放行的响应不等 bot 干完
     }
     return 'ok'
   }
 
   app.get('/api/bots', (c) => c.json(listBotsWithLastMessage(db)))
+
+  app.get('/api/conversations', (c) => c.json(listConversations(db)))
 
   app.get('/api/bots/:botId/routines', (c) => c.json(listRoutines(db, c.req.param('botId'))))
 
@@ -135,6 +190,16 @@ export function createApp(deps: {
     const body = (await c.req.json().catch(() => null)) as { text?: string } | null
     const text = body?.text?.trim()
     if (!text) return c.json({ error: 'text required' }, 400)
+
+    if (threadId.startsWith('group:')) {
+      const group = db.prepare(`SELECT title FROM threads WHERE id = ? AND kind = 'group'`)
+        .get(threadId) as { title: string } | undefined
+      if (!group) return c.json({ error: 'unknown thread' }, 404)
+      events(threadId).onMessage(insertMessage(db, { threadId, sender: 'user', kind: 'text', content: text }))
+      void runGroupRound(threadId, group.title, text)
+      return c.json({ ok: true }, 202)
+    }
+
     const bot = botById(threadId.replace(/^dm:/, ''))
     if (!bot) return c.json({ error: 'unknown thread' }, 404)
 
@@ -147,7 +212,7 @@ export function createApp(deps: {
       }
     }
 
-    await startTurn(bot, threadId, text)
+    void startTurn(bot, threadId, text) // 202 立刻返回，产出走 WS
     return c.json({ ok: true }, 202)
   })
 

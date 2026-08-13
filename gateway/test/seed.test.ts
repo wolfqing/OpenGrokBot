@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { listBotsWithLastMessage, openDb } from '../src/db.js'
-import { seedTeammates } from '../src/seed.js'
+import { listBotsWithLastMessage, openDb, threadMembers } from '../src/db.js'
+import { seedGroup, seedTeammates } from '../src/seed.js'
 
 function makeTeammatesDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'teammates-'))
@@ -34,5 +34,23 @@ describe('seedTeammates', () => {
     seedTeammates(db, dir)
     expect(db.prepare('SELECT COUNT(*) c FROM bots').get()).toMatchObject({ c: 2 })
     expect(db.prepare('SELECT COUNT(*) c FROM threads').get()).toMatchObject({ c: 2 })
+  })
+})
+
+describe('seedGroup', () => {
+  it('creates the shared group with the seeded bots', () => {
+    const db = openDb(':memory:')
+    const ids = seedTeammates(db, makeTeammatesDir())
+    seedGroup(db, { id: 'group:offsite-crew', title: 'Offsite crew', memberIds: ids })
+    expect(threadMembers(db, 'group:offsite-crew').sort()).toEqual([...ids].sort())
+  })
+
+  it('is idempotent across restarts', () => {
+    const db = openDb(':memory:')
+    const dir = makeTeammatesDir()
+    const ids = seedTeammates(db, dir)
+    seedGroup(db, { id: 'group:offsite-crew', title: 'Offsite crew', memberIds: ids })
+    seedGroup(db, { id: 'group:offsite-crew', title: 'Offsite crew', memberIds: ids })
+    expect(threadMembers(db, 'group:offsite-crew')).toHaveLength(ids.length)
   })
 })

@@ -1,14 +1,16 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { type Db, ensureDmThread, upsertBot } from './db.js'
+import { type Db, ensureDmThread, ensureGroupThread, upsertBot } from './db.js'
 
 const EMOJI: Record<string, string> = {
+  chief: '🎖️',
   researcher: '🔎',
   'inbox-keeper': '📥',
   'market-watch': '📈',
 }
 
 const ROLE: Record<string, string> = {
+  chief: 'Keeps the board: who owns what, by when, and what needs you today',
   researcher: 'Turns a one-line question into a decision-ready brief with sources',
   'inbox-keeper': 'Triages what you forward, drafts replies — drafts only, never sends',
   'market-watch': 'Watches your list, digests and threshold alerts — read-only, never trades',
@@ -33,4 +35,9 @@ export function seedTeammates(db: Db, teammatesDir: string): string[] {
     ids.push(entry.name)
   }
   return ids
+}
+
+/** 默认群：所有 seed 出来的 bot 都在里面，重启时补齐新同事。 */
+export function seedGroup(db: Db, input: { id: string; title: string; memberIds: string[] }): string {
+  return ensureGroupThread(db, input.id, input.title, input.memberIds)
 }
