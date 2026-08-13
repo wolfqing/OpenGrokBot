@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createDockerComputer } from '../src/computer-docker.js'
+import { createDockerComputer, resolveCdpWsUrl } from '../src/computer-docker.js'
 
 const endpoints = { shim: 'http://127.0.0.1:7717', cdp: 'http://127.0.0.1:9222', vnc: 'http://127.0.0.1:6080' }
 
@@ -59,6 +59,28 @@ describe('DockerComputer shell/file over shim', () => {
     expect(await c.readFile('notes.md')).toBe('hello')
     await c.writeFile('notes.md', 'hello')
     expect(seen).toEqual(['http://127.0.0.1:7717/read', 'http://127.0.0.1:7717/write'])
+  })
+})
+
+describe('resolveCdpWsUrl', () => {
+  it('rewrites the container-reported ws host to the host-mapped port', async () => {
+    const fetchImpl = (async (url: string | URL | Request) => {
+      expect(String(url)).toBe('http://127.0.0.1:53313/json/version')
+      return new Response(JSON.stringify({
+        Browser: 'Chrome/151.0.7922.108',
+        webSocketDebuggerUrl: 'ws://0.0.0.0:9222/devtools/browser/abc-123',
+      }))
+    }) as typeof fetch
+    expect(await resolveCdpWsUrl('http://127.0.0.1:53313', fetchImpl))
+      .toBe('ws://127.0.0.1:53313/devtools/browser/abc-123')
+  })
+
+  it('throws readable errors when the endpoint is not a devtools server', async () => {
+    const notOk = (async () => new Response('nope', { status: 502 })) as typeof fetch
+    await expect(resolveCdpWsUrl('http://127.0.0.1:1', notOk)).rejects.toThrow(/502/)
+
+    const noWs = (async () => new Response(JSON.stringify({ Browser: 'Chrome' }))) as typeof fetch
+    await expect(resolveCdpWsUrl('http://127.0.0.1:1', noWs)).rejects.toThrow(/webSocketDebuggerUrl/)
   })
 })
 

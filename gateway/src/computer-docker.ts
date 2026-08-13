@@ -23,9 +23,28 @@ export type DockerComputerDeps = {
   connect?: (cdpUrl: string) => Promise<BrowserLike>
 }
 
+/**
+ * 容器里的 Chromium 在 /json/version 里报的是它自己的地址（ws://0.0.0.0:9222/…），
+ * 而 playwright 的 connectOverCDP 会原样使用该地址、不改写 host。宿主要连的是 Docker
+ * 动态映射出来的端口，所以这里自己把 host:port 换掉，再交给 playwright。
+ */
+export async function resolveCdpWsUrl(cdpUrl: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+  const base = cdpUrl.replace(/\/$/, '')
+  const res = await fetchImpl(`${base}/json/version`)
+  if (!res.ok) throw new Error(`CDP /json/version returned ${res.status} at ${base}`)
+  const { webSocketDebuggerUrl } = (await res.json()) as { webSocketDebuggerUrl?: string }
+  if (!webSocketDebuggerUrl) throw new Error(`CDP endpoint ${base} reported no webSocketDebuggerUrl`)
+  const ws = new URL(webSocketDebuggerUrl)
+  const mapped = new URL(base)
+  ws.hostname = mapped.hostname
+  ws.port = mapped.port
+  return ws.toString()
+}
+
 export function createDockerComputer(endpoints: Endpoints, deps: DockerComputerDeps = {}): BotComputer {
   const fetchImpl = deps.fetchImpl ?? fetch
-  const connect = deps.connect ?? ((url: string) => chromium.connectOverCDP(url) as unknown as Promise<BrowserLike>)
+  const connect = deps.connect ?? (async (url: string) =>
+    chromium.connectOverCDP(await resolveCdpWsUrl(url, fetchImpl)) as unknown as BrowserLike)
 
   let browser: BrowserLike | null = null
   let pending: Promise<BrowserLike> | null = null

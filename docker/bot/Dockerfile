@@ -18,7 +18,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
  && apt-get update && apt-get install -y --no-install-recommends \
       chromium \
       xvfb x11-utils x11vnc \
-      novnc websockify \
+      novnc websockify socat \
       ca-certificates fonts-liberation procps \
  && rm -rf /var/lib/apt/lists/*
 
