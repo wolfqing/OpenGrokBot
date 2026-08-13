@@ -17,6 +17,7 @@ const ROLE: Record<string, string> = {
 }
 
 export function seedTeammates(db: Db, teammatesDir: string): string[] {
+  if (!existsSync(teammatesDir)) return [] // 用户目录是可选的，第一次跑还不存在
   const ids: string[] = []
   for (const entry of readdirSync(teammatesDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue

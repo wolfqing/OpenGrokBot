@@ -54,3 +54,9 @@ describe('seedGroup', () => {
     expect(threadMembers(db, 'group:offsite-crew')).toHaveLength(ids.length)
   })
 })
+
+describe('missing directories', () => {
+  it('returns nothing when the directory does not exist', () => {
+    expect(seedTeammates(openDb(':memory:'), '/no/such/dir')).toEqual([])
+  })
+})
