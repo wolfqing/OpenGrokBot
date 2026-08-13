@@ -71,6 +71,7 @@ export function createDockerComputer(endpoints: Endpoints, deps: DockerComputerD
   }
 
   return {
+    vncUrl: endpoints.vnc,
     async shell(cmd, timeoutMs) {
       return post<ShellResult>('/shell', { cmd, timeoutMs })
     },

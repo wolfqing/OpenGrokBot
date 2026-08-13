@@ -3,6 +3,8 @@ export type Shot = { buffer: Buffer; width: number; height: number }
 
 /** 一台 bot 自己的电脑：shell、文件、浏览器。实现见 computer-docker.ts。 */
 export interface BotComputer {
+  /** 这台电脑的屏幕地址（noVNC）；没有容器就没有屏幕。 */
+  readonly vncUrl?: string
   shell(cmd: string, timeoutMs?: number): Promise<ShellResult>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
@@ -34,7 +36,7 @@ export function createFakeComputer(
     async screenshot() { calls.push('screenshot'); return { buffer: TINY_PNG, width: 1280, height: 800 } },
     async dispose() { calls.push('dispose') },
   }
-  const wrapped: BotComputer = { ...base }
+  const wrapped: BotComputer = { ...base, ...(overrides.vncUrl ? { vncUrl: overrides.vncUrl } : {}) }
   for (const key of Object.keys(base) as (keyof BotComputer)[]) {
     const override = overrides[key]
     if (typeof override === 'function') {

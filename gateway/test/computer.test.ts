@@ -23,4 +23,9 @@ describe('createFakeComputer', () => {
     const c = createFakeComputer({ pageText: 'abcdefghij' })
     expect(await c.extract(4)).toBe('abcd')
   })
+
+  it('has no screen address unless one is given', () => {
+    expect(createFakeComputer().vncUrl).toBeUndefined()
+    expect(createFakeComputer({ vncUrl: 'http://127.0.0.1:1' }).vncUrl).toBe('http://127.0.0.1:1')
+  })
 })

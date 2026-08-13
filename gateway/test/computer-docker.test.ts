@@ -135,3 +135,10 @@ describe('DockerComputer browser over CDP', () => {
     expect(f.browser.closed).toBe(true)
   })
 })
+
+describe('screen address', () => {
+  it('exposes the published noVNC url so the panel can embed it', () => {
+    const c = createDockerComputer(endpoints)
+    expect(c.vncUrl).toBe('http://127.0.0.1:6080')
+  })
+})
