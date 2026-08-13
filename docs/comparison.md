@@ -1,22 +1,26 @@
 # Grok Bot vs. OpenGrokBot, honestly
 
-Both columns verified on launch day (2026-08-11). Corrections welcome via PR — this table only works if it stays honest.
+Grok Bot column verified on launch day (2026-08-11); this column reflects v0.2 (the self-built core).
+Corrections welcome via PR — this table only works if it stays honest.
 
 ## Feature by feature
 
 | Capability | Grok Bot | This stack | Notes |
 |---|---|---|---|
-| Always-on agents | ✅ xAI cloud VM each | ✅ OpenClaw Gateway daemon | Yours runs where you say: Mac mini, NAS, $5 VPS |
-| Browser / filesystem / terminal | ✅ | ✅ | `latest-browser` image ships Chromium; tools run host-side or sandboxed |
-| Named bots, persistent memory | ✅ | ✅ | Per-agent workspace + session store |
-| Bots messaging each other | ✅ | ✅ | `tools.agentToAgent`, explicit allowlist |
-| Shared computer between your bots | ✅ one user-scoped VM | ✅ one Gateway host | Same shape |
-| Chat UX | Dedicated desktop + iOS app | Telegram/WhatsApp/Slack/Discord/Signal/iMessage/Google Chat + Control UI | Theirs is prettier; yours is already installed |
-| Model choice | Grok only | Any: Grok API, Claude, GPT, Kimi, DeepSeek, Ollama local | BYOK everywhere |
-| Learn-from-demonstration → routine | ✅ | ❌ roadmap | The one real gap. Skills can be written by hand today; recorder is our #1 issue |
-| MCP / connectors | ✅ "where available" | ✅ MCP + skills + plugins (ClawHub) | Open ecosystem is deeper |
-| Mobile | iOS app (Android later) | Any chat app you already carry | Different philosophy, same reach |
-| Setup | Zero (their infra) | ~10 min local, ~20 min VPS | This is the price of custody |
+| Always-on teammates | ✅ xAI cloud VM each | ✅ one Docker container each | Yours runs where you say: Mac mini, NAS, $5 VPS |
+| A computer per bot | ✅ | ✅ | Headed Chromium on Xvfb + shell + files, per container |
+| Watch its screen / take over | ✅ | ✅ | noVNC panel from the thread; bound to `127.0.0.1` |
+| Login-walled sites | ✅ | ✅ | Sign in once in the bot's browser; the session persists in its profile |
+| Named bots, persistent memory | ✅ | ✅ | Per-bot workspace; rules land in its `MEMORY.md` and show as a chip |
+| Approval gate on outward actions | ✅ Send / Discard | ✅ Approve / Discard, or a bare 👍 | Idempotent: a second decision is refused |
+| Routines from the conversation | ✅ | ✅ | Cron registered, described in plain English, reloaded on restart |
+| Bots messaging each other | ✅ | ✅ | `message_bot`, allowlisted per direction, capped at two hops |
+| Group threads + dispatch | ✅ | ✅ | Members report, chief of staff closes with `✓ item → @bot · when` |
+| Chat UX | Dedicated desktop + iOS app | Local web client (iMessage-shaped) | Theirs is prettier and shipped on mobile |
+| Model choice | Grok only | Any OpenAI-compatible: Grok, Kimi, DeepSeek, local | BYOK everywhere; `stub` runs with no key |
+| Learn-from-demonstration → routine | ✅ | ❌ roadmap | The one real gap; routines can be written by hand today |
+| Mobile | iOS app (Android later) | ❌ not yet | Telegram as a notification/approval surface is on the roadmap |
+| Setup | Zero (their infra) | `pnpm install` + one `docker build` | This is the price of custody |
 | Access | $120–300/mo tiers; enterprise waitlist | Clone and go | — |
 | Your credentials live | xAI's cloud | Your disk | The actual point |
 

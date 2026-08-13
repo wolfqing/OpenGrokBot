@@ -1,0 +1,11 @@
+{
+  "name": "opengrokbot",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter @opengrokbot/gateway --filter @opengrokbot/web dev",
+    "test": "pnpm -r test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+  }
+}

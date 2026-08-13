@@ -1,120 +1,167 @@
 # OpenGrokBot 🦞🤖
 
-> The self-hosted, open-source Grok Bot alternative — assembled in ~10 minutes from [OpenClaw](https://github.com/openclaw/openclaw) + any model you bring. Your bots, your hardware, your credentials.
+> Always-on AI teammates, each with **its own computer** — running on your hardware, with your credentials, under your roof.
 
 [English](README.md) · [中文](README.zh-CN.md)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Built on OpenClaw](https://img.shields.io/badge/built%20on-OpenClaw-orange?style=flat-square)](https://github.com/openclaw/openclaw)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-blue?style=flat-square)](../../pulls)
 
-When xAI launched Grok Bot, the top reply on Hacker News was: *"so like OpenClaw ???"*
+xAI's Grok Bot sells always-on teammates that each get a cloud computer — browser, filesystem, terminal — with
+persistent memory, bot-to-bot handoffs, and an iMessage-shaped app to manage them. It costs **$120–300/month**,
+and every bot runs on xAI's cloud **with your logins inside it**.
 
-Correct. This repo is the recipe that proves it.
+This is the same shape, self-hosted. One gateway process on your machine, one Docker container per bot, a web
+client that looks like a messages app, and any OpenAI-compatible model behind it.
 
-## What Grok Bot sells vs. what this assembles
+## What a teammate actually is here
 
-xAI's Grok Bot gives you always-on AI teammates, each with its own cloud computer — browser, filesystem, terminal — that message each other and keep memory across sessions. It costs **$120–300/month** (SuperGrok Heavy, Cursor Ultra / Teams Premium), enterprise access is waitlisted, and every bot runs on xAI's cloud **with your logins inside it**.
+A folder with a `SOUL.md`, a thread in the sidebar, and a container of its own:
 
-Everything in the left column below already exists as open source. This repo just wires it together:
+```
+┌─ Web client ──────── sidebar = your org chart · chips = the management surface
+│      ↕ WebSocket
+├─ Gateway (one Node process) ── agent loop · SQLite · scheduler · a2a bus · Docker
+└─ One container per bot
+     ├─ headed Chromium on Xvfb  → the bot browses like a person, logins persist
+     ├─ x11vnc + noVNC           → you can watch its screen, or take the keyboard
+     ├─ a tiny shim              → shell + files, bound to the container only
+     └─ /workspace volume        → SOUL.md · MEMORY.md · files · browser profile
+```
 
-| Grok Bot | OpenGrokBot stack |
-|---|---|
-| Always-on teammate with its own cloud computer | OpenClaw Gateway daemon on **your** Mac, home server, or $5 VPS |
-| Browser + filesystem + terminal per bot | OpenClaw tools; `latest-browser` Docker image ships Chromium |
-| Named bots with persistent memory & files | Per-agent workspace + session store (`agents.entries`) |
-| Bots message each other and hand off tasks | `tools.agentToAgent` — explicit allowlist, see [docs/multi-bot.md](docs/multi-bot.md) |
-| Chat with your bots in a dedicated app | Chat in apps you already use: Telegram, WhatsApp, Slack, Discord, Signal, iMessage |
-| Grok models only | **Any model**: Grok API itself, Claude, GPT, Kimi, DeepSeek, or a local model at $0 |
-| Learns workflows by watching you | ❌ Not yet — the one real gap. See [Roadmap](#roadmap) |
-| MCP / connectors | MCP + skills + plugins via [ClawHub](https://clawhub.ai) |
-| $120–300/mo, waitlist, xAI's cloud | $0 software + your API usage, no waitlist, your hardware |
+The bot's credentials live in **its** browser profile, in **its** container. The gateway never sees a password,
+and neither does your config file.
 
-Honest note: Grok Bot's zero-setup polish, iOS app, and teach-by-demonstration are real advantages. If you're happy putting your accounts on xAI's cloud and paying for the convenience, buy it. This repo is for everyone who answered the HN thread's other top comment — *are you comfortable with that?* — with "no".
+## What it does today
 
-## Security is the point, not a footnote
+Every line below is implemented and covered by tests — nothing here is a roadmap item.
 
-The loudest objection to hosted always-on agents: an agent that never sleeps, holding **all your credentials**, on someone else's infrastructure, exposed to prompt injection.
+**The management surface**
 
-The self-hosted posture:
+- **Sidebar as org chart.** One thread per teammate, plus group threads. Previews are completion states, so a
+  glance down the list is a walk past everyone's desk.
+- **One report grammar.** Work comes back as `✓ system → result · count` lines with a single closing sentence
+  that surfaces only what needs you. Same shape from every teammate.
+- **Draft-and-hold approvals.** Anything leaving the workspace stops at the door: the chip shows exactly what
+  would go out, with Approve / Discard. A bare 👍 in the thread releases the newest one. Decisions are
+  idempotent — a second click gets a 409, not a second send.
+- **Visible memory.** "From now on, quiet accounts wait for my read" writes a rule into that bot's `MEMORY.md`
+  and posts the diff as a chip. The rule is in its system prompt from the next turn on.
+- **Routines from the conversation.** "Post a digest every day" registers a cron job, shows the schedule in
+  plain English, survives restarts, and fires on time.
 
-- **Credentials never leave your machine.** No third-party cloud holds your sessions.
-- **Give bots their own accounts**, not yours — separate email, separate calendar, invited into what they need. (This is also the correct answer for hosted agents; here it's enforceable.)
-- **Pairing by default**: unknown senders must be approved (`openclaw pairing approve …`).
-- **Sandboxing available**: run agents in containers (`OPENCLAW_SANDBOX=1`), and our bot templates ship with strict no-pay / no-send / draft-only boundaries.
-- **Inbound messages are untrusted input.** Read [docs/security.md](docs/security.md) before exposing anything.
+**The computer**
 
-## Quickstart (local, ~10 minutes)
+- `shell`, `read_file`, `write_file` inside the container.
+- `browser_goto` / `browser_extract` / `browser_click` against a real headed Chromium — so login-walled sites
+  work, which pure API/MCP setups cannot do.
+- `browser_screenshot` posts what the bot saw into the thread as evidence.
+- **Takeover login.** At a login wall the bot calls `ask_for_login` instead of asking for a password. You open
+  its screen from the thread, sign in once in *its* browser, and the session persists in its profile — across
+  container restarts.
+- Containers start lazily, survive restarts, and publish their ports to `127.0.0.1` only.
+
+**The crew**
+
+- **Group threads.** Ask the room a question: each teammate answers for its own patch, then the chief of staff
+  closes with a dispatch table — `✓ item → @bot · when` — and one line on what needs you today.
+- **Allowlisted handoffs.** `message_bot` drops a scoped task into a teammate's thread and wakes it up. By
+  default only the chief can reach everyone; peer-to-peer is off until you name the direction. Relays are
+  capped at two hops so two bots cannot echo at each other.
+- **Hire from the sidebar.** `+`, a name, one line of job description. No workflow editor, no tool checklist —
+  the complexity accumulates in use, not in a setup form.
+
+## Quickstart
+
+Needs Node 22+, pnpm, and Docker (for the bot computers).
 
 ```bash
 git clone https://github.com/wolfqing/OpenGrokBot.git
 cd OpenGrokBot
-./setup.sh
+pnpm install
+docker build -t opengrokbot/bot:dev docker/bot
 ```
 
-The script:
-
-1. Installs OpenClaw via its official installer (skips if present)
-2. Asks which model should power your bots — paste an xAI key for the poetic choice (`grok-4.5`), or Anthropic/OpenAI/local
-3. Writes a config with **three ready-to-work teammates** (below) and agent-to-agent messaging enabled
-4. Never overwrites an existing OpenClaw config — it generates a merge file instead
-
-Then:
+Try it with no API key at all — a scripted stub model drives every path end to end:
 
 ```bash
-openclaw onboard --install-daemon   # first-time setup: verifies model access, installs the daemon
-openclaw dashboard                  # opens the Control UI — say hi to your first teammate
+OPENGROKBOT_MODEL=stub pnpm dev
 ```
 
-Connect Telegram/WhatsApp/Slack in ~2 minutes each: [channel guides](https://docs.openclaw.ai/channels). Prefer a server? See [docker/](docker/).
+Then open http://localhost:5173.
 
-## Your three starter teammates
+Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a local Ollama):
 
-Grok Bot's pitch is "teammates, not chatbots." Same here — these ship pre-configured, each with its own workspace, memory, and hard boundaries:
+```bash
+OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
+```
 
-| Bot | Role | Boundaries baked in |
+| Variable | Default | What it does |
 |---|---|---|
-| **Scout** (`researcher`) | Turns a one-line question into a decision-ready brief with sources | Cites everything; says "I don't know" over guessing |
-| **Sorter** (`inbox-keeper`) | Triages what you forward, drafts replies, daily digest | **Drafts only — never sends** |
-| **Ticker** (`market-watch`) | Watches your list, morning/close digests, threshold alerts | Read-only; never trades; not financial advice |
+| `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
+| `OPENGROKBOT_API_KEY` | — | Your key. Never written to disk by this repo |
+| `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot workspaces, screenshots |
+| `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
 
-They hand off to each other: ask Scout for research, and it can pass the pricing question to Ticker — over `agentToAgent`, on your machine, with an explicit allowlist. Demo transcript in [docs/multi-bot.md](docs/multi-bot.md).
+In a slow-network region, build with a mirror: `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`
 
-Rename them, rewrite their souls (`SOUL.md`), add your own — they're just folders in [teammates/](teammates/).
+## Security is the point, not a footnote
 
-## Cost math
+The loudest objection to hosted always-on agents: an agent that never sleeps, holding all your credentials, on
+someone else's infrastructure, exposed to prompt injection. The self-hosted answers:
+
+- **Credentials never leave your machine.** They live in the bot's browser profile, inside its container.
+- **The bot never asks for a password in chat.** It asks you to take over its screen instead.
+- **Every bot is in a cage by default** — separate container, its own workspace, no access to your host.
+- **Outward actions are held**, not sent, until you approve them.
+- **Bot-to-bot messaging is off** until you allowlist a direction.
+- **Screens bind to `127.0.0.1`.** The panel is for your machine; do not port-forward it.
+- **Inbound messages are untrusted input.** Read [docs/security.md](docs/security.md) before exposing anything.
+
+Give bots their own accounts rather than yours — separate email, separate calendar, invited only into what they
+need. That is the right answer for hosted agents too; here it is enforceable.
+
+## Cost
 
 | | Grok Bot | OpenGrokBot |
 |---|---|---|
-| Software | $120–300/mo subscription | $0 (MIT all the way down) |
-| Compute | included (xAI's cloud) | your existing Mac/mini PC, or ~$5/mo VPS |
-| Model | included (Grok only) | your API key, any provider — or local = $0 |
-| Waitlist | enterprise: yes | no |
+| Software | $120–300/mo per seat | $0 (MIT all the way down) |
+| Compute | included (xAI's cloud) | your Mac / mini PC / ~$5 VPS |
+| Model | included (Grok only) | your key, any provider — or local at $0 |
+| Your logins | on xAI's cloud | in a container on your machine |
 
-A moderate-usage bot on `grok-4.5` API typically costs a few dollars a month. Three bots on a $5 VPS with a local fallback model: **~$5/mo total**.
-
-## Architecture
-
-![architecture](assets/architecture.svg)
-
-One Gateway process, N isolated agents, your channels in front, your choice of model behind. Nothing phones home.
+Honest note: Grok Bot's zero-setup polish, iOS app, and teach-by-demonstration are real advantages. If you are
+happy putting your accounts on xAI's cloud and paying for the convenience, buy it. This repo is for everyone who
+answered *"are you comfortable with that?"* with **no**.
 
 ## Roadmap
 
-- [ ] **teach-mode** — the one Grok Bot feature with no open equivalent: record a browser demonstration → compile it into a reusable OpenClaw skill. Design discussion in [#1](../../issues/1); contributions very welcome
+- [ ] **teach-mode** — record a browser demonstration, compile it into a reusable routine. The one Grok Bot
+      feature with no open equivalent; design discussion in [#1](../../issues/1)
+- [ ] Telegram as a notification / approval surface for when you are away from the desk
 - [ ] One-command VPS image (cloud-init)
-- [ ] WeChat channel recipe for Chinese users
-- [ ] Video walkthrough
+- [ ] Native app shell
 
 ## FAQ
 
-**What is this, relative to Grok Bot?** A functional alternative with **zero shared code** — Grok Bot is closed-source, so there is nothing to fork. Same job (always-on teammates, persistent memory, bot-to-bot handoffs), opposite custody model. It can even run on the same brain: point it at the Grok API.
+**Relative to Grok Bot?** Same job — always-on teammates, their own computers, persistent memory, handoffs —
+opposite custody model, and **zero shared code** (Grok Bot is closed-source; there is nothing to fork). It can
+even run on the same brain: point it at the Grok API.
 
-**What is this, relative to OpenClaw?** A **distribution**. OpenClaw is the engine — maintained by hundreds of contributors, and it deserves that credit. OpenGrokBot is the opinionated assembly on top: presets, personas, security defaults, and a 10-minute path to Grok Bot's shape. Think Ubuntu to the Linux kernel. Not an official OpenClaw project. More in [docs/faq.md](docs/faq.md).
+**Relative to OpenClaw?** v0.1 of this repo was a distribution on top of OpenClaw. v0.2 is its own core, because
+a private computer per teammate pulls against OpenClaw's shared-host model. The old recipe is kept at
+[docs/openclaw-recipe.md](docs/openclaw-recipe.md). Not an official OpenClaw project.
+
+**Do I have to use Docker?** For the computers, yes. Everything else — threads, approvals, memory, routines,
+group dispatch — runs without it; bots simply report that they have no computer attached.
+
+More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/comparison.md](docs/comparison.md)
 
 ## Disclaimer
 
-Unofficial. Not affiliated with, endorsed by, or connected to xAI or the OpenClaw Foundation. "Grok" is a trademark of xAI — the name is used here only to identify the product this stack is an alternative to.
+Unofficial. Not affiliated with, endorsed by, or connected to xAI or the OpenClaw Foundation. "Grok" is a
+trademark of xAI — the name is used here only to identify the product this stack is an alternative to.
 
 ## License
 

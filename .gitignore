@@ -4,3 +4,6 @@ internal/
 *.log
 .env
 docker/data/
+node_modules/
+dist/
+gateway/data/
