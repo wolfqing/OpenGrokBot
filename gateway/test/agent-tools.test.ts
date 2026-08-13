@@ -35,13 +35,16 @@ function setup() {
 }
 
 describe('buildTools', () => {
-  it('advertises only message_user without a computer', () => {
-    expect(buildTools(false).map((t) => t.function.name)).toEqual(['message_user'])
+  it('advertises only the always-on tools without a computer', () => {
+    expect(buildTools({ hasComputer: false }).map((t) => t.function.name)).toEqual([
+      'message_user', 'hold_for_approval', 'save_memory', 'create_routine',
+    ])
   })
 
   it('advertises the full computer surface when one is attached', () => {
-    expect(buildTools(true).map((t) => t.function.name)).toEqual([
-      'message_user', 'shell', 'read_file', 'write_file',
+    expect(buildTools({ hasComputer: true }).map((t) => t.function.name)).toEqual([
+      'message_user', 'hold_for_approval', 'save_memory', 'create_routine',
+      'shell', 'read_file', 'write_file',
       'browser_goto', 'browser_extract', 'browser_click', 'browser_screenshot',
     ])
   })
@@ -104,10 +107,10 @@ describe('runTurn with a computer', () => {
     const { db, threadId, events } = setup()
     const withComputer = scriptedLLM([textTurn])
     await runTurn({ db, llm: withComputer, bot, soul: '', threadId, getComputer: async () => createFakeComputer() }, 'hi', events)
-    expect((withComputer.calls[0]!.tools as { function: { name: string } }[]).length).toBe(8)
+    expect((withComputer.calls[0]!.tools as { function: { name: string } }[]).length).toBe(11)
 
     const without = scriptedLLM([textTurn])
     await runTurn({ db, llm: without, bot, soul: '', threadId }, 'hi', events)
-    expect((without.calls[0]!.tools as { function: { name: string } }[]).length).toBe(1)
+    expect((without.calls[0]!.tools as { function: { name: string } }[]).length).toBe(4)
   })
 })

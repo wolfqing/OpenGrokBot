@@ -21,13 +21,30 @@ whose logins persist between sessions. Nobody else uses it.
 
 export const NO_COMPUTER_NOTE = `You have no shell, browser, or file tools right now. Never pretend you ran one; say plainly when you cannot do something.`
 
-export function buildSystemPrompt(bot: BotRow, soul: string, hasComputer = false): string {
+export const APPROVAL_DISCIPLINE = `## Before anything leaves your workspace
+
+Do the whole job, then stop at the door. Sending an email or message, publishing, paying, booking, replying on
+your operator's behalf — none of that happens without their say-so.
+- Prepare it fully, then call hold_for_approval with exactly what would go out.
+- Then stop and wait. Do not perform the action, and never claim you did.
+- Reading, researching, browsing, and writing inside your own workspace need no approval.
+- When something does not line up, ask instead of guessing.
+- When your operator tells you how to behave from now on, call save_memory so the rule outlives this conversation.`
+
+export function buildSystemPrompt(
+  bot: BotRow,
+  soul: string,
+  opts: { hasComputer?: boolean; memory?: string } = {},
+): string {
+  const memory = opts.memory?.trim()
   return [
     `You are ${bot.name}, an always-on AI teammate in your operator's OpenGrokBot workspace. You speak in first person, stay terse, and never pad.`,
     bot.role ? `Your job: ${bot.role}` : '',
     soul.trim(),
+    memory ? `## Standing rules your operator gave you\n\n${memory}` : '',
     REPORT_GRAMMAR,
-    hasComputer ? COMPUTER_BRIEFING : NO_COMPUTER_NOTE,
+    APPROVAL_DISCIPLINE,
+    opts.hasComputer ? COMPUTER_BRIEFING : NO_COMPUTER_NOTE,
   ]
     .filter(Boolean)
     .join('\n\n')

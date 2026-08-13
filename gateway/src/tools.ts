@@ -112,6 +112,55 @@ const COMPUTER_TOOLS: ToolDef[] = [
   },
 ]
 
-export function buildTools(hasComputer: boolean): ToolDef[] {
-  return hasComputer ? [MESSAGE_USER_TOOL, ...COMPUTER_TOOLS] : [MESSAGE_USER_TOOL]
+const WORKFLOW_TOOLS: ToolDef[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'hold_for_approval',
+      description:
+        'Hold an outward-facing action for your operator to approve. ALWAYS use this before anything that leaves your workspace — sending, publishing, paying, booking, replying on their behalf. Do the preparation first, then hold the finished draft.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', description: 'The action in one short line, e.g. "send the 4 queued drafts".' },
+          detail: { type: 'string', description: 'What exactly would go out — recipients, amounts, the draft itself.' },
+        },
+        required: ['action'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_memory',
+      description:
+        'Write a standing rule into your MEMORY.md. Use it whenever your operator tells you how to behave from now on ("always...", "never...", "from now on..."). One rule per call, phrased so it still makes sense months later.',
+      parameters: {
+        type: 'object',
+        properties: { rule: { type: 'string', description: 'The rule in one plain sentence.' } },
+        required: ['rule'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_routine',
+      description:
+        'Schedule recurring work for yourself. Use it when your operator says "every day", "each Monday", "from now on at 9". You may also propose one yourself when a task clearly repeats.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Short name, e.g. "Morning digest".' },
+          cron: { type: 'string', description: 'Five-field cron expression in the gateway timezone, e.g. "0 9 * * 1".' },
+          instructions: { type: 'string', description: 'What to do each time it fires, written to yourself.' },
+        },
+        required: ['name', 'cron', 'instructions'],
+      },
+    },
+  },
+]
+
+export function buildTools(opts: { hasComputer: boolean }): ToolDef[] {
+  return [MESSAGE_USER_TOOL, ...WORKFLOW_TOOLS, ...(opts.hasComputer ? COMPUTER_TOOLS : [])]
 }

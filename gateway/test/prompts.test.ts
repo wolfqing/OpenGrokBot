@@ -19,10 +19,21 @@ describe('buildSystemPrompt', () => {
   })
 
   it('swaps the no-computer note for the computer briefing when one is attached', () => {
-    expect(buildSystemPrompt(bot, 'soul', false)).toContain('no shell, browser, or file tools')
-    const withComputer = buildSystemPrompt(bot, 'soul', true)
+    expect(buildSystemPrompt(bot, 'soul')).toContain('no shell, browser, or file tools')
+    const withComputer = buildSystemPrompt(bot, 'soul', { hasComputer: true })
     expect(withComputer).toContain('your own computer')
     expect(withComputer).toContain('browser_screenshot')
     expect(withComputer).not.toContain('no shell, browser, or file tools')
+  })
+
+  it('carries the approval discipline and standing rules', () => {
+    const p = buildSystemPrompt(bot, 'soul', { memory: '- quiet accounts wait for your read' })
+    expect(p).toContain('hold_for_approval')
+    expect(p).toContain('Standing rules')
+    expect(p).toContain('quiet accounts wait for your read')
+  })
+
+  it('omits the standing-rules block when memory is empty', () => {
+    expect(buildSystemPrompt(bot, 'soul', { memory: '   ' })).not.toContain('Standing rules')
   })
 })
