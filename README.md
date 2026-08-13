@@ -11,8 +11,21 @@ xAI's Grok Bot sells always-on teammates that each get a cloud computer — brow
 persistent memory, bot-to-bot handoffs, and an iMessage-shaped app to manage them. It costs **$120–300/month**,
 and every bot runs on xAI's cloud **with your logins inside it**.
 
-This is the same shape, self-hosted. One gateway process on your machine, one Docker container per bot, a web
-client that looks like a messages app, and any OpenAI-compatible model behind it.
+This is the same shape, self-hosted. One gateway process on your machine, one Docker container per bot, a dense
+web client that reads like a workbench, and any OpenAI-compatible model behind it.
+
+![A teammate's thread: it reports what it did, holds what would go out, and shows you what it saw](assets/screenshot-thread.png)
+
+<table>
+<tr>
+<td width="50%"><img src="assets/screenshot-group.png" alt="A group thread: every teammate reports, the chief of staff closes with a dispatch table"></td>
+<td width="50%"><img src="assets/screenshot-panel.png" alt="The computer panel: a teammate's live screen and the routines it runs"></td>
+</tr>
+<tr>
+<td>Ask the room — everyone answers for their own patch, the chief of staff closes with <code>✓ item → @bot · when</code>.</td>
+<td>Its computer: the live screen you can take over to sign in, and what it has scheduled.</td>
+</tr>
+</table>
 
 ## What a teammate actually is here
 

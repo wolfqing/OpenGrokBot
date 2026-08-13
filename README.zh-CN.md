@@ -11,8 +11,21 @@ xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云�
 能交接工作，还有一个 iMessage 形状的 app 来管他们。价格 **每人每月 $120–300**，而且每个 bot 都跑在 xAI 的云
 上，**你的登录态也一起在里面**。
 
-这个仓库是同样的形状，自托管版：你机器上一个 gateway 进程、每个 bot 一个 Docker 容器、一个长得像消息应用的网页
-客户端，后面接任何 OpenAI 兼容的模型。
+这个仓库是同样的形状，自托管版：你机器上一个 gateway 进程、每个 bot 一个 Docker 容器、一个信息密度很高、更像
+工作台的网页客户端，后面接任何 OpenAI 兼容的模型。
+
+![同事的线程：它汇报干了什么、把要出门的动作扣住、把看到的画面贴回来](assets/screenshot-thread.png)
+
+<table>
+<tr>
+<td width="50%"><img src="assets/screenshot-group.png" alt="群线程：每位同事各报各的，幕僚长最后发分派表"></td>
+<td width="50%"><img src="assets/screenshot-panel.png" alt="电脑面板：同事的实时屏幕，以及它排了哪些 routine"></td>
+</tr>
+<tr>
+<td>在群里问一句——每位只报自己那摊，幕僚长收口发 <code>✓ 事项 → @谁 · 期限</code>。</td>
+<td>它的电脑：可以接管去登录的实时屏幕，以及它排了哪些定时任务。</td>
+</tr>
+</table>
 
 ## 这里的「同事」到底是什么
 
