@@ -141,3 +141,7 @@ export function listBotsWithLastMessage(db: Db): SidebarBot[] {
     return { ...b, thread_id: threadId, last_message: last ? parseRow(last) : null }
   })
 }
+
+export function updateMessagePayload(db: Db, messageId: number, payload: unknown): void {
+  db.prepare('UPDATE messages SET payload = ? WHERE id = ?').run(JSON.stringify(payload), messageId)
+}
