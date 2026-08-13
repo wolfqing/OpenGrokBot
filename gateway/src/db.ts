@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 
 export type Db = Database.Database
-export type MessageKind = 'text' | 'report'
+export type MessageKind = 'text' | 'report' | 'screenshot'
 
 export type BotRow = {
   id: string

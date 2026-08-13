@@ -20,14 +20,14 @@ function fakePage(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function fakeConnect(page: unknown) {
+function fakeConnect<P>(page: P) {
   let closed = false
   const browser = {
     contexts: () => [{ pages: () => [page], newPage: async () => page }],
     close: async () => { closed = true },
     get closed() { return closed },
   }
-  return { browser, connect: async () => browser }
+  return { browser, connect: async (_cdpUrl?: string) => browser }
 }
 
 describe('DockerComputer shell/file over shim', () => {
