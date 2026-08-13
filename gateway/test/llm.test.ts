@@ -109,6 +109,49 @@ describe('stub model', () => {
     }
   })
 
+  it('plays its part in a group round and picks up handoffs', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+
+    const member = await llm.chat(
+      [{ role: 'user', content: 'Your operator asked the group: "where are we?". Answer for your own patch only, in two lines or less.' }],
+      toolDefs,
+    )
+    expect(member.toolCalls).toHaveLength(0)
+    expect(member.content).toBeTruthy()
+
+    const chief = await llm.chat(
+      [{ role: 'user', content: 'Everyone else has reported above. Post the dispatch table now — one line each.' }],
+      toolDefs,
+    )
+    expect(chief.content).toMatch(/→ @/)
+
+    const picked = await llm.chat(
+      [{ role: 'user', content: '@Chief (chief) handed you this: price the tiers by Friday' }],
+      toolDefs,
+    )
+    expect(picked.content).toMatch(/picking it up/i)
+  })
+
+  it('hands off when the operator names a teammate, before treating it as an outward action', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+
+    const byName = await llm.chat([{ role: 'user', content: 'ask ticker to price the tiers' }], toolDefs)
+    expect(byName.toolCalls[0]!.name).toBe('message_bot')
+    expect((byName.toolCalls[0]!.args as { to: string }).to).toBe('market-watch')
+
+    // "reply" 会撞上扣审批的关键词，点名转交必须优先
+    const withReply = await llm.chat([{ role: 'user', content: 'tell sorter to reply to those two' }], toolDefs)
+    expect(withReply.toolCalls[0]!.name).toBe('message_bot')
+    expect((withReply.toolCalls[0]!.args as { to: string }).to).toBe('inbox-keeper')
+
+    const closing = await llm.chat(
+      [{ role: 'user', content: 'x' }, { role: 'tool', tool_call_id: 't', content: 'Handed to Ticker.' }],
+      toolDefs,
+    )
+    expect(closing.toolCalls).toHaveLength(0)
+    expect(closing.content).toMatch(/handed off/i)
+  })
+
   it('keeps full urls as written', async () => {
     const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
     const turn = await llm.chat([{ role: 'user', content: 'check https://news.ycombinator.com/news please' }], toolDefs)

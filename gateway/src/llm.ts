@@ -71,6 +71,24 @@ function lastUserText(messages: ChatMsg[]): string {
   return [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
 }
 
+/** 名字或 id 都能指到同一个同事，让 stub 听得懂「ask ticker to …」。 */
+const TEAMMATE_IDS: Record<string, string> = {
+  chief: 'chief',
+  scout: 'researcher',
+  researcher: 'researcher',
+  ticker: 'market-watch',
+  'market-watch': 'market-watch',
+  sorter: 'inbox-keeper',
+  'inbox-keeper': 'inbox-keeper',
+}
+
+/** 「ask ticker to price it」这类说法 → 该转交给谁。 */
+function findTeammate(text: string): string | null {
+  const match = text.toLowerCase()
+    .match(/\b(?:ask|hand|tell|pass|route)\b[^.]*?\b(chief|scout|researcher|ticker|market-watch|sorter|inbox-keeper)\b/)
+  return match ? TEAMMATE_IDS[match[1]!] ?? null : null
+}
+
 /** 最后一条用户消息里提到的网址，用来触发 stub 的浏览器脚本。 */
 function findUrl(messages: ChatMsg[]): string | null {
   const match = lastUserText(messages).match(/\bhttps?:\/\/\S+|\b[a-z0-9-]+\.(?:com|org|net|io|dev|ai)\b/i)
@@ -96,6 +114,8 @@ function createStubLLM(): LLM {
         if (result.startsWith('Held for')) return stubText('Holding until you say go.')
         if (/^Routine .* scheduled/.test(result)) return stubText('Locked in. I will run it and report.')
         if (result.startsWith('Rule saved')) return stubText('Noted for next time.')
+        if (result.startsWith('Handed to')) return stubText('Handed off. I will fold their answer in when it lands.')
+        if (/not allowlisted/i.test(result)) return stubText('I cannot reach them directly — routing it through Chief instead.')
         if (result.startsWith('That rule was already')) return stubText('Already had that one on file.')
         return stubText('All filed. Ping me when you want the next pass.')
       }
@@ -108,6 +128,24 @@ function createStubLLM(): LLM {
       }
       if (text.startsWith('Your operator discarded:')) {
         return stubText('Dropped it. Nothing went out.')
+      }
+      // 群里：Chief 收口发分派表，其他人各报各的；被转交的一方直接接活
+      if (/post the dispatch table/i.test(text)) {
+        return stubText(
+          '✓ Pricing → @market-watch · Friday\n✓ Brief → @researcher · Thursday\n'
+          + 'One thing needs you today: pick the deadline for the Globex reply.',
+        )
+      }
+      if (/answer for your own patch/i.test(text)) {
+        return stubText('Nothing blocking on my side.')
+      }
+      if (/handed you this:/i.test(text)) {
+        return stubText('Got it — picking it up now.')
+      }
+      // 点名同事的要在「send/reply 扣审批」之前判，否则「tell sorter to reply」会被当成对外动作
+      const teammate = findTeammate(text)
+      if (teammate) {
+        return stubToolTurn('message_bot', { to: teammate, content: `${text.trim()} — needed by Friday.` })
       }
       if (/(every day|each day|every morning|daily|每天)/.test(lower)) {
         return stubToolTurn('create_routine', {

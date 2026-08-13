@@ -63,11 +63,28 @@ Route channels to bots once connected:
 
 Every hop happened on your machine, between agents you allowlisted, with the audit trail in each agent's session store.
 
+## Allowlisting agent-to-agent messaging
+
+Agent-to-agent power is something you grant, not something a bot discovers. Two rules hold by default:
+
+- A **chief of staff** agent may message anyone, and anyone may message it. Dispatch flows through one place you can read.
+- **Peer-to-peer is off** until you name the direction:
+
+  ```bash
+  OPENGROKBOT_A2A_ALLOW='researcher>market-watch,market-watch>researcher'
+  ```
+
+  Each entry is one direction. `a>b` does not imply `b>a`.
+
+A relay is capped at two hops, so a handoff can be picked up and answered but cannot echo between two bots. Refused
+handoffs are reported back to the bot in plain words — it says it could not reach the teammate rather than pretending
+it did.
+
 ## Adding a fourth teammate
 
 1. `mkdir -p ~/.openclaw/workspace-editor && cp` your `AGENTS.md` / `SOUL.md` in (start from any folder in [`teammates/`](../teammates/))
 2. Add an entry under `agents.entries`
-3. Add its id to `tools.agentToAgent.allow` **only if** it needs to talk to the others
+3. Allowlist it **only if** it needs to talk to the others (see below)
 4. Restart the gateway
 
 ## Merging into an existing config
