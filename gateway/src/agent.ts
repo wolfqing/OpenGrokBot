@@ -28,6 +28,7 @@ export type AgentDeps = {
   group?: { title: string; members: string[] }
   onMessageBot?: (input: { to: string; content: string }) =>
     Promise<{ delivered: boolean; reason?: string; toName?: string }>
+  onAskForLogin?: (input: { site: string; why: string }) => Promise<void>
 }
 
 const MAX_STEPS = 12
@@ -88,6 +89,7 @@ export async function runTurn(
 
 const COMPUTER_TOOL_NAMES = new Set([
   'shell', 'read_file', 'write_file', 'browser_goto', 'browser_extract', 'browser_click', 'browser_screenshot',
+  'ask_for_login',
 ])
 
 const WORKFLOW_TOOL_NAMES = new Set(['hold_for_approval', 'save_memory', 'create_routine', 'message_bot'])
@@ -220,6 +222,17 @@ async function execComputerTool(
       }))
       return 'Screenshot posted to the thread.'
     }
+    case 'ask_for_login': {
+      if (!deps.onAskForLogin) return 'Asking for a takeover is not available on this gateway.'
+      const site = String(args.site ?? '').trim()
+      if (!site) return 'ask_for_login needs a "site".'
+      const why = String(args.why ?? '').trim()
+      await deps.onAskForLogin({ site, why })
+      events.onMessage(insertMessage(deps.db, {
+        threadId: deps.threadId, sender: deps.bot.id, kind: 'login_request', payload: { site, why },
+      }))
+      return `Asked your operator to sign in to ${site}. Stop here until they say it is done.`
+    }
     default:
       return `Unknown tool: ${name}`
   }
@@ -243,5 +256,6 @@ function toChatMsg(m: MessageRow, selfId: string): ChatMsg {
   if (m.kind === 'memory_updated') return { role: 'assistant', content: `[memory updated] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'routine_created') return { role: 'assistant', content: `[routine created] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'bot_ref') return { role: 'user', content: `[message from teammate] ${JSON.stringify(m.payload)}` }
+  if (m.kind === 'login_request') return { role: 'assistant', content: `[asked for a sign-in] ${JSON.stringify(m.payload)}` }
   return { role: 'assistant', content: m.content }
 }

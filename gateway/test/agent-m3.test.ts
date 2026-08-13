@@ -45,7 +45,7 @@ describe('buildTools', () => {
 
   it('adds the computer surface on top when one is attached', () => {
     const names = buildTools({ hasComputer: true }).map((t) => t.function.name)
-    expect(names).toHaveLength(11)
+    expect(names).toHaveLength(12)
     expect(names).toContain('browser_screenshot')
     expect(names).toContain('hold_for_approval')
   })

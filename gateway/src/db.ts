@@ -10,6 +10,7 @@ export type MessageKind =
   | 'memory_updated'
   | 'routine_created'
   | 'bot_ref'
+  | 'login_request'
 
 export type BotRow = {
   id: string

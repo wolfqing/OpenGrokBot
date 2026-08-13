@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import Docker from 'dockerode'
@@ -19,7 +19,11 @@ import { createApp } from './server.js'
 const config = loadConfig()
 if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
 const db = openDb(config.dbPath)
-const bots = seedTeammates(db, config.teammatesDir)
+// 预置样板来自版本库，用户新雇的同事住在数据目录
+const bots = [
+  ...seedTeammates(db, config.teammatesDir),
+  ...seedTeammates(db, join(config.dataDir, 'teammates')),
+]
 seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const llm = createLLM(config)
 const pool = createPool({ dataDir: config.dataDir, docker: new Docker() })

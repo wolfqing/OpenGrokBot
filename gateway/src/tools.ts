@@ -110,6 +110,22 @@ const COMPUTER_TOOLS: ToolDef[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'ask_for_login',
+      description:
+        'Ask your operator to sign in to a site on your computer. Use it the moment you hit a login wall — you never have their credentials and must never ask for them in chat. They take over your screen, sign in once, and the session stays in your browser from then on.',
+      parameters: {
+        type: 'object',
+        properties: {
+          site: { type: 'string', description: 'The site, e.g. "Zendesk".' },
+          why: { type: 'string', description: 'What you will do once you are in, in one line.' },
+        },
+        required: ['site'],
+      },
+    },
+  },
 ]
 
 const WORKFLOW_TOOLS: ToolDef[] = [

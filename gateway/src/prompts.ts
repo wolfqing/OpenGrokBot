@@ -17,7 +17,9 @@ You have your own computer: a private container with a persistent /workspace, a 
 whose logins persist between sessions. Nobody else uses it.
 - Do the work yourself with shell / read_file / write_file / browser_* instead of asking your operator to.
 - When you looked at something on screen, prove it: call browser_screenshot so the image lands in the thread.
-- Never invent what a page or command said. If a tool fails, say so plainly and report what you saw.`
+- Never invent what a page or command said. If a tool fails, say so plainly and report what you saw.
+- You never have your operator's passwords and never ask for them in chat. At a login wall, call ask_for_login:
+  they take over your screen, sign in once, and the session persists in your browser from then on.`
 
 export const NO_COMPUTER_NOTE = `You have no shell, browser, or file tools right now. Never pretend you ran one; say plainly when you cannot do something.`
 

@@ -36,7 +36,8 @@ export function createFakeComputer(
     async screenshot() { calls.push('screenshot'); return { buffer: TINY_PNG, width: 1280, height: 800 } },
     async dispose() { calls.push('dispose') },
   }
-  const wrapped: BotComputer = { ...base, ...(overrides.vncUrl ? { vncUrl: overrides.vncUrl } : {}) }
+  type MutableComputer = { -readonly [K in keyof BotComputer]: BotComputer[K] }
+  const wrapped: MutableComputer = { ...base, ...(overrides.vncUrl ? { vncUrl: overrides.vncUrl } : {}) }
   for (const key of Object.keys(base) as (keyof BotComputer)[]) {
     const override = overrides[key]
     if (typeof override === 'function') {

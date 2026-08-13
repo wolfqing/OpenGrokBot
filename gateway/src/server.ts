@@ -6,6 +6,7 @@ import {
   attachApprovalMessage, createApproval, getApproval, isThumbsUp, latestPendingApproval, resolveApproval,
 } from './approvals.js'
 import { canMessage, denyReason, type A2ARules } from './a2a.js'
+import { createBot } from './bots.js'
 import {
   ensureDmThread, insertMessage, listBotsWithLastMessage, listConversations, listMessages, threadMembers,
   updateMessagePayload, type BotRow, type Db, type MessageRow,
@@ -64,6 +65,8 @@ export function createApp(deps: {
       hop: opts.hop ?? 0,
       ...(opts.group ? { group: opts.group } : {}),
       onMessageBot: ({ to, content }) => relay(bot, to, content, opts.hop ?? 0),
+      // 提前把容器拉起来，用户点开面板时屏幕已经在了
+      ...(pool ? { onAskForLogin: async () => { await pool.get(bot.id) } } : {}),
       ...(pool ? { getComputer: () => pool.get(bot.id) } : {}),
       ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
       onApproval: async ({ action, detail }) => {
@@ -158,6 +161,40 @@ export function createApp(deps: {
   app.get('/api/bots', (c) => c.json(listBotsWithLastMessage(db)))
 
   app.get('/api/conversations', (c) => c.json(listConversations(db)))
+
+  app.get('/api/bots/:botId/computer', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const routines = listRoutines(db, botId).map((r) => ({ ...r, human: describeCron(r.cron) }))
+    if (!pool) return c.json({ botId, running: false, vncUrl: null, routines })
+    try {
+      const computer = await pool.get(botId)
+      return c.json({ botId, running: true, vncUrl: computer.vncUrl ?? null, routines })
+    } catch (err) {
+      // 面板要显示"为什么没屏幕"——白屏是最难查的故障
+      return c.json({
+        botId, running: false, vncUrl: null, routines,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  })
+
+  app.post('/api/bots', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { name?: string; role?: string } | null
+    const group = db.prepare(`SELECT id FROM threads WHERE kind = 'group' ORDER BY id LIMIT 1`)
+      .get() as { id: string } | undefined
+    try {
+      const bot = await createBot(db, {
+        dataDir,
+        name: String(body?.name ?? ''),
+        role: String(body?.role ?? ''),
+        groupId: group?.id,
+      })
+      return c.json(bot, 201)
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
 
   app.get('/api/bots/:botId/routines', (c) => c.json(listRoutines(db, c.req.param('botId'))))
 
