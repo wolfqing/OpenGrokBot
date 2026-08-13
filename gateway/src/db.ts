@@ -9,6 +9,7 @@ export type MessageKind =
   | 'approval_resolved'
   | 'memory_updated'
   | 'routine_created'
+  | 'bot_ref'
 
 export type BotRow = {
   id: string
@@ -43,7 +44,14 @@ CREATE TABLE IF NOT EXISTS threads (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL DEFAULT 'dm',
   bot_id TEXT,
+  title TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS thread_members (
+  thread_id TEXT NOT NULL,
+  bot_id TEXT NOT NULL,
+  joined_at INTEGER NOT NULL,
+  PRIMARY KEY (thread_id, bot_id)
 );
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,4 +152,63 @@ export function listBotsWithLastMessage(db: Db): SidebarBot[] {
 
 export function updateMessagePayload(db: Db, messageId: number, payload: unknown): void {
   db.prepare('UPDATE messages SET payload = ? WHERE id = ?').run(JSON.stringify(payload), messageId)
+}
+
+export type Conversation = {
+  id: string
+  kind: 'dm' | 'group'
+  title: string
+  emoji: string
+  subtitle: string
+  members: string[]
+  last_message: MessageRow | null
+}
+
+export function ensureGroupThread(db: Db, id: string, title: string, memberIds: string[]): string {
+  const now = Date.now()
+  db.prepare(`INSERT INTO threads (id, kind, bot_id, title, created_at) VALUES (?, 'group', NULL, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET title = excluded.title`).run(id, title, now)
+  const add = db.prepare('INSERT OR IGNORE INTO thread_members (thread_id, bot_id, joined_at) VALUES (?, ?, ?)')
+  memberIds.forEach((botId, i) => add.run(id, botId, now + i))
+  return id
+}
+
+export function threadMembers(db: Db, threadId: string): string[] {
+  return (db.prepare('SELECT bot_id FROM thread_members WHERE thread_id = ? ORDER BY joined_at, bot_id')
+    .all(threadId) as { bot_id: string }[]).map((r) => r.bot_id)
+}
+
+function lastMessageOf(db: Db, threadId: string): MessageRow | null {
+  const row = db.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY id DESC LIMIT 1')
+    .get(threadId) as Record<string, unknown> | undefined
+  return row ? parseRow(row) : null
+}
+
+export function listConversations(db: Db): Conversation[] {
+  const bots = db.prepare('SELECT * FROM bots ORDER BY name').all() as BotRow[]
+  const byId = new Map(bots.map((b) => [b.id, b]))
+  const dms: Conversation[] = bots.map((b) => ({
+    id: `dm:${b.id}`,
+    kind: 'dm',
+    title: b.name,
+    emoji: b.emoji,
+    subtitle: b.role,
+    members: [b.id],
+    last_message: lastMessageOf(db, `dm:${b.id}`),
+  }))
+  const groupRows = db.prepare(`SELECT * FROM threads WHERE kind = 'group' ORDER BY title`)
+    .all() as { id: string; title: string }[]
+  const groups: Conversation[] = groupRows.map((t) => {
+    const members = threadMembers(db, t.id)
+    return {
+      id: t.id,
+      kind: 'group',
+      title: t.title,
+      emoji: '👥',
+      subtitle: members.map((id) => byId.get(id)?.name ?? id).join(', '),
+      members,
+      last_message: lastMessageOf(db, t.id),
+    }
+  })
+  return [...dms, ...groups]
 }

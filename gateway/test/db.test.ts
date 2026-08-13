@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ensureDmThread, insertMessage, listBotsWithLastMessage, listMessages, openDb, updateMessagePayload, upsertBot,
+  ensureDmThread, ensureGroupThread, insertMessage, listBotsWithLastMessage, listConversations, listMessages,
+  openDb, threadMembers, updateMessagePayload, upsertBot,
 } from '../src/db.js'
 
 const scout = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
@@ -75,5 +76,48 @@ describe('schema', () => {
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
       .map((r) => r.name)
     expect(names).toEqual(expect.arrayContaining(['bots', 'threads', 'messages', 'approvals', 'routines']))
+  })
+})
+
+describe('group threads', () => {
+  it('creates a group with members and is idempotent', () => {
+    const db = openDb(':memory:')
+    upsertBot(db, scout)
+    upsertBot(db, { id: 'market-watch', name: 'Ticker', role: 'markets', emoji: '📈', soul_path: '' })
+    const id = ensureGroupThread(db, 'group:offsite-crew', 'Offsite crew', ['researcher', 'market-watch'])
+    expect(id).toBe('group:offsite-crew')
+    expect(threadMembers(db, id)).toEqual(['researcher', 'market-watch'])
+    ensureGroupThread(db, 'group:offsite-crew', 'Offsite crew', ['researcher', 'market-watch'])
+    expect(threadMembers(db, id)).toEqual(['researcher', 'market-watch'])
+  })
+
+  it('adds newly seeded members to an existing group', () => {
+    const db = openDb(':memory:')
+    upsertBot(db, scout)
+    ensureGroupThread(db, 'group:offsite-crew', 'Offsite crew', ['researcher'])
+    upsertBot(db, { id: 'chief', name: 'Chief', role: 'staff', emoji: '🎖️', soul_path: '' })
+    ensureGroupThread(db, 'group:offsite-crew', 'Offsite crew', ['researcher', 'chief'])
+    expect(threadMembers(db, 'group:offsite-crew')).toEqual(['researcher', 'chief'])
+  })
+})
+
+describe('listConversations', () => {
+  it('lists dms by bot name then groups by title, each with its last message', () => {
+    const db = openDb(':memory:')
+    upsertBot(db, scout)
+    upsertBot(db, { id: 'market-watch', name: 'Ticker', role: 'markets', emoji: '📈', soul_path: '' })
+    ensureDmThread(db, 'researcher')
+    ensureDmThread(db, 'market-watch')
+    ensureGroupThread(db, 'group:offsite-crew', 'Offsite crew', ['researcher', 'market-watch'])
+    insertMessage(db, { threadId: 'group:offsite-crew', sender: 'researcher', kind: 'text', content: 'on it' })
+
+    const rows = listConversations(db)
+    expect(rows.map((r) => r.id)).toEqual(['dm:researcher', 'dm:market-watch', 'group:offsite-crew'])
+    expect(rows[0]).toMatchObject({ kind: 'dm', title: 'Scout', emoji: '🔎' })
+    const group = rows[2]!
+    expect(group).toMatchObject({ kind: 'group', title: 'Offsite crew', emoji: '👥' })
+    expect(group.members).toEqual(['researcher', 'market-watch'])
+    expect(group.subtitle).toBe('Scout, Ticker')
+    expect(group.last_message!.content).toBe('on it')
   })
 })
