@@ -38,24 +38,34 @@ export function readEndpoints(inspect: unknown): Endpoints {
   return { shim: pick(SHIM_PORT), cdp: pick(CDP_PORT), vnc: pick(VNC_PORT) }
 }
 
-export async function waitForShim(
-  shimUrl: string,
-  timeoutMs = 60_000,
-  fetchImpl: typeof fetch = fetch,
+async function pollUntilOk(
+  url: string,
+  failureMessage: string,
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let lastError = 'no attempt made'
   while (Date.now() < deadline) {
     try {
-      const res = await fetchImpl(`${shimUrl}/health`)
+      const res = await fetchImpl(url)
       if (res.ok) return
-      lastError = `health returned ${res.status}`
+      lastError = `returned ${res.status}`
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err)
     }
     await new Promise((r) => setTimeout(r, 250))
   }
-  throw new Error(`bot container never became ready at ${shimUrl}: ${lastError}`)
+  throw new Error(`${failureMessage}: ${lastError}`)
+}
+
+export function waitForShim(shimUrl: string, timeoutMs = 60_000, fetchImpl: typeof fetch = fetch): Promise<void> {
+  return pollUntilOk(`${shimUrl}/health`, `bot container never became ready at ${shimUrl}`, timeoutMs, fetchImpl)
+}
+
+/** shim 比 Chromium 先就绪，所以新容器必须单独等 CDP，否则第一次用浏览器必然被拒连。 */
+export function waitForCdp(cdpUrl: string, timeoutMs = 60_000, fetchImpl: typeof fetch = fetch): Promise<void> {
+  return pollUntilOk(`${cdpUrl}/json/version`, `bot browser never became ready at ${cdpUrl}`, timeoutMs, fetchImpl)
 }
 
 export async function ensureContainer(
@@ -76,5 +86,6 @@ export async function ensureContainer(
   }
   const endpoints = readEndpoints(await container.inspect())
   await waitForShim(endpoints.shim)
+  await waitForCdp(endpoints.cdp)
   return endpoints
 }

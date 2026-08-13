@@ -1,13 +1,13 @@
 // 真 Docker 冒烟：拉起一个 bot 容器，走通 shell / 文件 / 浏览器 / 截图。
 // 不进 pnpm test（需要 Docker 且慢）。跑法：
-//   pnpm --filter @opengrokbot/gateway exec tsx ../scripts/smoke-docker.ts
+//   pnpm --filter @opengrokbot/gateway run smoke:docker
 import { mkdir, mkdtemp, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Docker from 'dockerode'
-import { createDockerComputer } from '../gateway/src/computer-docker.js'
-import { ensureContainer } from '../gateway/src/containers.js'
-import { saveScreenshot } from '../gateway/src/screenshots.js'
+import { createDockerComputer } from '../src/computer-docker.js'
+import { ensureContainer } from '../src/containers.js'
+import { saveScreenshot } from '../src/screenshots.js'
 
 const BOT = process.env.SMOKE_BOT || 'smoke'
 const docker = new Docker()

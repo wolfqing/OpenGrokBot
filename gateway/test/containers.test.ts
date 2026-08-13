@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { containerName, createContainerSpec, readEndpoints, waitForShim } from '../src/containers.js'
+import { containerName, createContainerSpec, readEndpoints, waitForCdp, waitForShim } from '../src/containers.js'
 
 const inspect = {
   NetworkSettings: {
@@ -61,5 +61,25 @@ describe('waitForShim', () => {
   it('rejects with a readable error after the timeout', async () => {
     const fakeFetch = (async () => { throw new Error('ECONNREFUSED') }) as typeof fetch
     await expect(waitForShim('http://127.0.0.1:1', 300, fakeFetch)).rejects.toThrow(/never became ready/)
+  })
+})
+
+describe('waitForCdp', () => {
+  it('polls the devtools version endpoint until it answers', async () => {
+    const seen: string[] = []
+    let n = 0
+    const fakeFetch = (async (url: string | URL | Request) => {
+      seen.push(String(url))
+      n += 1
+      if (n < 2) throw new Error('ECONNREFUSED')
+      return new Response(JSON.stringify({ Browser: 'Chrome/151.0.0.0' }))
+    }) as typeof fetch
+    await waitForCdp('http://127.0.0.1:9222', 5000, fakeFetch)
+    expect(seen).toEqual(['http://127.0.0.1:9222/json/version', 'http://127.0.0.1:9222/json/version'])
+  })
+
+  it('names the browser in its timeout error', async () => {
+    const fakeFetch = (async () => { throw new Error('ECONNREFUSED') }) as typeof fetch
+    await expect(waitForCdp('http://127.0.0.1:1', 300, fakeFetch)).rejects.toThrow(/browser never became ready/)
   })
 })

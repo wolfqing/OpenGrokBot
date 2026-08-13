@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:docker": "tsx scripts/smoke-docker.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",
