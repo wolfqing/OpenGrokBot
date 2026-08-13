@@ -20,6 +20,14 @@ export async function sendMessage(threadId: string, text: string): Promise<void>
   })
 }
 
+export async function resolveApproval(approvalId: number, decision: 'approve' | 'discard'): Promise<void> {
+  await fetch(`/api/approvals/${approvalId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision }),
+  })
+}
+
 export function connectEvents(onEvent: (e: GatewayEvent) => void): () => void {
   let ws: WebSocket | null = null
   let closed = false

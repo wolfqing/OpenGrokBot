@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Bot, Message, ReportPayload, ScreenshotPayload } from '../types'
+import type {
+  ApprovalPayload, ApprovalResolvedPayload, Bot, MemoryPayload, Message, ReportPayload, RoutinePayload, ScreenshotPayload,
+} from '../types'
+import { ApprovalChip } from './ApprovalChip'
+import { MemoryChip } from './MemoryChip'
 import { ReportChip } from './ReportChip'
+import { RoutineChip } from './RoutineChip'
 import { ScreenshotChip } from './ScreenshotChip'
 
-export function Thread({ bot, messages, thinking, onSend }: {
+export function Thread({ bot, messages, thinking, onSend, onDecide }: {
   bot: Bot
   messages: Message[]
   thinking: boolean
   onSend: (text: string) => void
+  onDecide: (approvalId: number, decision: 'approve' | 'discard') => void
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -24,6 +30,25 @@ export function Thread({ bot, messages, thinking, onSend }: {
     onSend(text)
   }
 
+  const renderBody = (m: Message) => {
+    if (!m.payload) return <div className="bubble">{m.content}</div>
+    switch (m.kind) {
+      case 'report': return <ReportChip payload={m.payload as ReportPayload} />
+      case 'screenshot': return <ScreenshotChip payload={m.payload as ScreenshotPayload} />
+      case 'approval_request': return <ApprovalChip payload={m.payload as ApprovalPayload} onDecide={onDecide} />
+      case 'memory_updated': return <MemoryChip payload={m.payload as MemoryPayload} />
+      case 'routine_created': return <RoutineChip payload={m.payload as RoutinePayload} />
+      case 'approval_resolved': {
+        const p = m.payload as ApprovalResolvedPayload
+        return <div className="decision">{p.decision === 'approve' ? '✓ Approved' : '✕ Discarded'} · {p.action}</div>
+      }
+      default: return <div className="bubble">{m.content}</div>
+    }
+  }
+
+  const rowClass = (m: Message) =>
+    m.kind === 'approval_resolved' ? 'centered' : m.sender === 'user' ? 'from-user' : 'from-bot'
+
   return (
     <main className="thread">
       <header className="thread-header">
@@ -33,14 +58,8 @@ export function Thread({ bot, messages, thinking, onSend }: {
       </header>
       <div className="thread-scroll" ref={scrollRef}>
         {messages.map((m) => (
-          <div key={m.id} className={`row ${m.sender === 'user' ? 'from-user' : 'from-bot'}`}>
-            {m.kind === 'report' && m.payload ? (
-              <ReportChip payload={m.payload as ReportPayload} />
-            ) : m.kind === 'screenshot' && m.payload ? (
-              <ScreenshotChip payload={m.payload as ScreenshotPayload} />
-            ) : (
-              <div className="bubble">{m.content}</div>
-            )}
+          <div key={m.id} className={`row ${rowClass(m)}`}>
+            {renderBody(m)}
           </div>
         ))}
         {thinking ? <div className="row from-bot"><div className="bubble typing">•••</div></div> : null}

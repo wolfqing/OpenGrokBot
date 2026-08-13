@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { connectEvents, fetchBots, fetchMessages, sendMessage } from './api'
+import { connectEvents, fetchBots, fetchMessages, resolveApproval, sendMessage } from './api'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
 import type { Bot, BotStatus, Message } from './types'
@@ -36,7 +36,14 @@ export default function App() {
     }
     setBots((bs) => bs.map((b) => (b.thread_id === e.threadId ? { ...b, last_message: e.message } : b)))
     if (e.threadId === threadIdRef.current) {
-      setMessages((ms) => (ms.some((m) => m.id === e.message.id) ? ms : [...ms, e.message]))
+      // 同 id 就替换：审批 chip 被放行后网关会重播它，状态要就地翻转
+      setMessages((ms) => {
+        const at = ms.findIndex((m) => m.id === e.message.id)
+        if (at === -1) return [...ms, e.message]
+        const next = [...ms]
+        next[at] = e.message
+        return next
+      })
     }
   }), [])
 
@@ -49,6 +56,7 @@ export default function App() {
           messages={messages}
           thinking={statuses[selected.id] === 'thinking'}
           onSend={(text) => { if (threadId) void sendMessage(threadId, text) }}
+          onDecide={(approvalId, decision) => { void resolveApproval(approvalId, decision) }}
         />
       ) : (
         <main className="thread thread-empty">No teammates yet.</main>

@@ -65,6 +65,42 @@ body {
 .shot-img { display: block; width: 100%; height: auto; border-radius: 9px; background: #f2f2f7; }
 .shot-caption { padding: 7px 6px 3px; color: #8e8e93; }
 
+/* ── approval / memory / routine chips ── */
+.approval-chip {
+  max-width: 78%; background: #fff; border: 1px solid #f0c000; border-left: 3px solid #f0c000;
+  border-radius: 14px; padding: 10px 14px;
+}
+.approval-chip.resolved { border-color: #d1d1d6; border-left-color: #d1d1d6; }
+.approval-label { font-size: 12px; font-weight: 600; color: #9a7b00; text-transform: uppercase; letter-spacing: 0.04em; }
+.approval-chip.resolved .approval-label { color: #8e8e93; }
+.approval-action { margin-top: 4px; font-weight: 600; }
+.approval-detail { margin-top: 2px; color: #8e8e93; }
+.approval-buttons { display: flex; gap: 8px; margin-top: 10px; }
+.approval-buttons button {
+  flex: 1; padding: 7px 10px; border: 0; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.approval-buttons .approve { background: #0a84ff; color: #fff; }
+.approval-buttons .discard { background: #e9e9eb; color: #1c1c1e; }
+.approval-outcome { margin-top: 8px; color: #8e8e93; font-weight: 600; }
+
+.memory-chip, .routine-chip {
+  max-width: 78%; background: #f7f7fa; border: 1px solid #e2e2e8; border-radius: 14px; padding: 10px 14px;
+}
+.memory-label, .routine-label {
+  font-size: 12px; font-weight: 600; color: #8e8e93; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.memory-rule { margin-top: 4px; font-weight: 600; }
+.memory-diff {
+  margin-top: 6px; padding: 6px 8px; background: #eaf6ec; border-radius: 8px; color: #1c6b34;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap;
+}
+.memory-total { margin-top: 6px; color: #8e8e93; font-size: 12px; }
+.routine-name { margin-top: 4px; font-weight: 600; }
+.routine-when { margin-top: 2px; color: #8e8e93; }
+
+.row.centered { justify-content: center; }
+.decision { color: #8e8e93; font-size: 12px; padding: 2px 0; }
+
 /* ── 输入区 ───────────────────────── */
 .composer { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #d1d1d6; }
 .composer input {
