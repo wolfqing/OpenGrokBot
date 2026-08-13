@@ -1,24 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { connectEvents, fetchBots, fetchMessages, resolveApproval, sendMessage } from './api'
+import { connectEvents, fetchBots, fetchConversations, fetchMessages, resolveApproval, sendMessage } from './api'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
-import type { Bot, BotStatus, Message } from './types'
+import type { BotStatus, Conversation, Message } from './types'
 
 export default function App() {
-  const [bots, setBots] = useState<Bot[]>([])
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [roster, setRoster] = useState<Record<string, { name: string; emoji: string }>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [statuses, setStatuses] = useState<Record<string, BotStatus>>({})
 
-  const selected = useMemo(() => bots.find((b) => b.id === selectedId) ?? null, [bots, selectedId])
-  const threadId = selected?.thread_id ?? null
+  const selected = useMemo(
+    () => conversations.find((c) => c.id === selectedId) ?? null,
+    [conversations, selectedId],
+  )
+  const threadId = selected?.id ?? null
   const threadIdRef = useRef<string | null>(null)
   useEffect(() => { threadIdRef.current = threadId }, [threadId])
 
   useEffect(() => {
+    fetchConversations().then((cs) => {
+      setConversations(cs)
+      setSelectedId((id) => id ?? cs[0]?.id ?? null)
+    }).catch(console.error)
+    // 群里要按 id 显示说话人，所以单独拉一份名册
     fetchBots().then((bs) => {
-      setBots(bs)
-      setSelectedId((id) => id ?? bs[0]?.id ?? null)
+      setRoster(Object.fromEntries(bs.map((b) => [b.id, { name: b.name, emoji: b.emoji }])))
     }).catch(console.error)
   }, [])
 
@@ -34,7 +42,7 @@ export default function App() {
       setStatuses((s) => ({ ...s, [e.botId]: e.state }))
       return
     }
-    setBots((bs) => bs.map((b) => (b.thread_id === e.threadId ? { ...b, last_message: e.message } : b)))
+    setConversations((cs) => cs.map((c) => (c.id === e.threadId ? { ...c, last_message: e.message } : c)))
     if (e.threadId === threadIdRef.current) {
       // 同 id 就替换：审批 chip 被放行后网关会重播它，状态要就地翻转
       setMessages((ms) => {
@@ -47,14 +55,17 @@ export default function App() {
     }
   }), [])
 
+  const thinking = selected ? selected.members.some((id) => statuses[id] === 'thinking') : false
+
   return (
     <div className="app">
-      <Sidebar bots={bots} selectedId={selectedId} statuses={statuses} onSelect={setSelectedId} />
+      <Sidebar conversations={conversations} selectedId={selectedId} statuses={statuses} onSelect={setSelectedId} />
       {selected ? (
         <Thread
-          bot={selected}
+          conversation={selected}
           messages={messages}
-          thinking={statuses[selected.id] === 'thinking'}
+          thinking={thinking}
+          roster={roster}
           onSend={(text) => { if (threadId) void sendMessage(threadId, text) }}
           onDecide={(approvalId, decision) => { void resolveApproval(approvalId, decision) }}
         />

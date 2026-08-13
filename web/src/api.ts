@@ -1,8 +1,14 @@
-import type { Bot, GatewayEvent, Message } from './types'
+import type { Bot, Conversation, GatewayEvent, Message } from './types'
 
 export async function fetchBots(): Promise<Bot[]> {
   const res = await fetch('/api/bots')
   if (!res.ok) throw new Error(`GET /api/bots ${res.status}`)
+  return res.json()
+}
+
+export async function fetchConversations(): Promise<Conversation[]> {
+  const res = await fetch('/api/conversations')
+  if (!res.ok) throw new Error(`GET /api/conversations ${res.status}`)
   return res.json()
 }
 

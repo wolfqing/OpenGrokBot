@@ -10,6 +10,7 @@ export type ApprovalPayload = {
 export type ApprovalResolvedPayload = { approvalId: number; action: string; decision: 'approve' | 'discard' }
 export type MemoryPayload = { rule: string; diff: string; total: number }
 export type RoutinePayload = { routineId: number; name: string; cron: string; human: string }
+export type BotRefPayload = { from: string; fromName: string; content: string }
 
 export type MessageKind =
   | 'text'
@@ -19,6 +20,7 @@ export type MessageKind =
   | 'approval_resolved'
   | 'memory_updated'
   | 'routine_created'
+  | 'bot_ref'
 
 export type Message = {
   id: number
@@ -33,8 +35,19 @@ export type Message = {
     | ApprovalResolvedPayload
     | MemoryPayload
     | RoutinePayload
+    | BotRefPayload
     | null
   created_at: number
+}
+
+export type Conversation = {
+  id: string
+  kind: 'dm' | 'group'
+  title: string
+  emoji: string
+  subtitle: string
+  members: string[]
+  last_message: Message | null
 }
 
 export type Bot = {

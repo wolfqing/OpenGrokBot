@@ -65,6 +65,19 @@ body {
 .shot-img { display: block; width: 100%; height: auto; border-radius: 9px; background: #f2f2f7; }
 .shot-caption { padding: 7px 6px 3px; color: #8e8e93; }
 
+/* ── 群里的说话人与转交 chip ── */
+.row-inner { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.row.from-bot .row-inner { align-items: flex-start; }
+.row.from-user .row-inner { align-items: flex-end; }
+.speaker { display: flex; gap: 4px; padding: 0 4px 3px; color: #8e8e93; font-size: 12px; font-weight: 600; }
+
+.botref-chip {
+  max-width: 78%; background: #f7f7fa; border: 1px solid #e2e2e8; border-left: 3px solid #b0b0ba;
+  border-radius: 14px; padding: 10px 14px;
+}
+.botref-label { font-size: 12px; font-weight: 600; color: #8e8e93; }
+.botref-body { margin-top: 4px; white-space: pre-wrap; }
+
 /* ── approval / memory / routine chips ── */
 .approval-chip {
   max-width: 78%; background: #fff; border: 1px solid #f0c000; border-left: 3px solid #f0c000;

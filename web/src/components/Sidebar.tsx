@@ -1,10 +1,11 @@
 import type {
-  ApprovalPayload, ApprovalResolvedPayload, Bot, BotStatus, MemoryPayload, ReportPayload, RoutinePayload, ScreenshotPayload,
+  ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, BotStatus, Conversation, MemoryPayload,
+  ReportPayload, RoutinePayload, ScreenshotPayload,
 } from '../types'
 
-function preview(bot: Bot): string {
-  const m = bot.last_message
-  if (!m) return 'Say hi — first briefing.'
+function preview(c: Conversation): string {
+  const m = c.last_message
+  if (!m) return c.kind === 'group' ? 'Ask the room.' : 'Say hi — first briefing.'
   switch (m.kind) {
     case 'screenshot': {
       const caption = (m.payload as ScreenshotPayload | null)?.caption
@@ -20,6 +21,8 @@ function preview(bot: Bot): string {
       return `🧠 ${(m.payload as MemoryPayload | null)?.rule ?? 'Memory updated'}`
     case 'routine_created':
       return `🕐 ${(m.payload as RoutinePayload | null)?.name ?? 'Routine created'}`
+    case 'bot_ref':
+      return `↪ from @${(m.payload as BotRefPayload | null)?.fromName ?? 'a teammate'}`
     case 'report': {
       const payload = m.payload as ReportPayload | null
       const first = payload?.lines[0]
@@ -30,8 +33,8 @@ function preview(bot: Bot): string {
   }
 }
 
-export function Sidebar({ bots, selectedId, statuses, onSelect }: {
-  bots: Bot[]
+export function Sidebar({ conversations, selectedId, statuses, onSelect }: {
+  conversations: Conversation[]
   selectedId: string | null
   statuses: Record<string, BotStatus>
   onSelect: (id: string) => void
@@ -39,16 +42,18 @@ export function Sidebar({ bots, selectedId, statuses, onSelect }: {
   return (
     <aside className="sidebar">
       <div className="sidebar-title">OpenGrokBot</div>
-      {bots.map((b) => (
+      {conversations.map((c) => (
         <button
-          key={b.id}
-          className={`sidebar-item${b.id === selectedId ? ' selected' : ''}`}
-          onClick={() => onSelect(b.id)}
+          key={c.id}
+          className={`sidebar-item${c.id === selectedId ? ' selected' : ''}`}
+          onClick={() => onSelect(c.id)}
         >
-          <span className="avatar">{b.emoji}</span>
+          <span className="avatar">{c.emoji}</span>
           <span className="sidebar-text">
-            <span className="sidebar-name">{b.name}{statuses[b.id] === 'thinking' ? ' …' : ''}</span>
-            <span className="sidebar-preview">{preview(b)}</span>
+            <span className="sidebar-name">
+              {c.title}{c.members.some((id) => statuses[id] === 'thinking') ? ' …' : ''}
+            </span>
+            <span className="sidebar-preview">{preview(c)}</span>
           </span>
         </button>
       ))}
