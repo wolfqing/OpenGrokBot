@@ -44,4 +44,29 @@ describe('stub model', () => {
     expect(second.toolCalls).toHaveLength(0)
     expect(second.content).toBeTruthy()
   })
+
+  it('drives goto → screenshot → closing text when the user names a site', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const messages: ChatMsg[] = [{ role: 'user', content: 'open example.com and show me' }]
+
+    const goto = await llm.chat(messages, toolDefs)
+    expect(goto.toolCalls[0]!.name).toBe('browser_goto')
+    expect(goto.toolCalls[0]!.args).toEqual({ url: 'https://example.com' })
+
+    messages.push(goto.raw, { role: 'tool', tool_call_id: goto.toolCalls[0]!.id, content: 'Now on "Example Domain" (https://example.com/)' })
+    const shot = await llm.chat(messages, toolDefs)
+    expect(shot.toolCalls[0]!.name).toBe('browser_screenshot')
+    expect((shot.toolCalls[0]!.args as { caption: string }).caption).toContain('Example Domain')
+
+    messages.push(shot.raw, { role: 'tool', tool_call_id: shot.toolCalls[0]!.id, content: 'Screenshot posted to the thread.' })
+    const closing = await llm.chat(messages, toolDefs)
+    expect(closing.toolCalls).toHaveLength(0)
+    expect(closing.content).toBeTruthy()
+  })
+
+  it('keeps full urls as written', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const turn = await llm.chat([{ role: 'user', content: 'check https://news.ycombinator.com/news please' }], toolDefs)
+    expect(turn.toolCalls[0]!.args).toEqual({ url: 'https://news.ycombinator.com/news' })
+  })
 })
