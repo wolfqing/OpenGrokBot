@@ -11,6 +11,23 @@ export type ApprovalResolvedPayload = { approvalId: number; action: string; deci
 export type MemoryPayload = { rule: string; diff: string; total: number }
 export type RoutinePayload = { routineId: number; name: string; cron: string; human: string }
 export type BotRefPayload = { from: string; fromName: string; content: string }
+export type LoginPayload = { site: string; why?: string }
+
+export type ComputerRoutine = {
+  id: number
+  name: string
+  cron: string
+  human: string
+  last_run_at: number | null
+}
+
+export type ComputerInfo = {
+  botId: string
+  running: boolean
+  vncUrl: string | null
+  error?: string
+  routines: ComputerRoutine[]
+}
 
 export type MessageKind =
   | 'text'
@@ -21,6 +38,7 @@ export type MessageKind =
   | 'memory_updated'
   | 'routine_created'
   | 'bot_ref'
+  | 'login_request'
 
 export type Message = {
   id: number
@@ -36,6 +54,7 @@ export type Message = {
     | MemoryPayload
     | RoutinePayload
     | BotRefPayload
+    | LoginPayload
     | null
   created_at: number
 }

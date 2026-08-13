@@ -91,6 +91,34 @@ describe('Thread', () => {
     expect(screen.getByText('Messages from @Chief')).toBeInTheDocument()
   })
 
+  it('offers the screen button in a one-to-one thread only', async () => {
+    const onOpenScreen = vi.fn()
+    const { rerender } = render(
+      <Thread conversation={dm} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Open its computer' }))
+    expect(onOpenScreen).toHaveBeenCalled()
+
+    rerender(
+      <Thread conversation={group} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
+    )
+    expect(screen.queryByRole('button', { name: 'Open its computer' })).toBeNull()
+  })
+
+  it('renders a login request and opens the screen from it', async () => {
+    const onOpenScreen = vi.fn()
+    const asked: Message[] = [{
+      id: 11, thread_id: 'dm:researcher', sender: 'researcher', kind: 'login_request', content: '', created_at: 11,
+      payload: { site: 'Zendesk', why: 'to work the support queue' },
+    }]
+    render(
+      <Thread conversation={dm} roster={roster} messages={asked} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
+    )
+    expect(screen.getByText('Sign in to Zendesk')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Open its screen' }))
+    expect(onOpenScreen).toHaveBeenCalled()
+  })
+
   it('shows typing indicator while thinking', () => {
     render(<Thread conversation={dm} roster={roster} messages={[]} thinking={true} onSend={() => {}} onDecide={() => {}} />)
     expect(screen.getByText('•••')).toBeInTheDocument()

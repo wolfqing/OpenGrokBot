@@ -65,6 +65,77 @@ body {
 .shot-img { display: block; width: 100%; height: auto; border-radius: 9px; background: #f2f2f7; }
 .shot-caption { padding: 7px 6px 3px; color: #8e8e93; }
 
+/* ── 顶栏显示器按钮与新建 ── */
+.screen-button {
+  margin-left: auto; width: 30px; height: 30px; flex-shrink: 0;
+  border: 0; border-radius: 8px; background: transparent; font-size: 16px; cursor: pointer;
+}
+.screen-button:hover { background: #e9e9eb; }
+.sidebar-title { display: flex; align-items: center; justify-content: space-between; }
+.sidebar-new {
+  width: 26px; height: 26px; border: 0; border-radius: 7px; background: #e2e2e8;
+  color: #1c1c1e; font-size: 17px; line-height: 1; cursor: pointer;
+}
+
+/* ── 电脑面板 ── */
+.computer-panel {
+  width: 380px; flex-shrink: 0; border-left: 1px solid #d1d1d6; background: #f7f7fa;
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid #d1d1d6; background: rgba(249, 249, 249, 0.94);
+}
+.panel-title { font-weight: 600; }
+.panel-close { border: 0; background: transparent; font-size: 14px; color: #8e8e93; cursor: pointer; }
+.panel-screen { width: 100%; aspect-ratio: 16 / 10; border: 0; background: #1c1c1e; display: block; }
+.panel-offline { padding: 22px 14px; text-align: center; background: #ececf0; }
+.panel-offline-title { font-weight: 600; }
+.panel-offline-why { margin-top: 4px; color: #8e8e93; font-size: 12px; word-break: break-word; }
+.panel-section { padding: 12px 14px; }
+.panel-section-title {
+  font-size: 12px; font-weight: 600; color: #8e8e93; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.panel-empty { margin-top: 6px; color: #8e8e93; }
+.panel-routine {
+  display: flex; justify-content: space-between; gap: 10px; margin-top: 8px;
+  padding: 8px 10px; background: #fff; border: 1px solid #e2e2e8; border-radius: 10px;
+}
+.panel-routine-name { font-weight: 600; }
+.panel-routine-when { color: #8e8e93; }
+.panel-foot { margin-top: auto; padding: 12px 14px; color: #8e8e93; font-size: 12px; border-top: 1px solid #e2e2e8; }
+
+/* ── 登录 chip ── */
+.login-chip {
+  max-width: 78%; background: #fff; border: 1px solid #0a84ff; border-left: 3px solid #0a84ff;
+  border-radius: 14px; padding: 10px 14px;
+}
+.login-label { font-size: 12px; font-weight: 600; color: #0a6ed1; text-transform: uppercase; letter-spacing: 0.04em; }
+.login-site { margin-top: 4px; font-weight: 600; }
+.login-why { margin-top: 2px; color: #8e8e93; }
+.login-open {
+  margin-top: 10px; padding: 7px 12px; border: 0; border-radius: 9px;
+  background: #0a84ff; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+
+/* ── 新建同事 ── */
+.modal-scrim {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal { width: 340px; background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18); }
+.modal-title { font-weight: 600; margin-bottom: 10px; }
+.new-bot { display: flex; flex-direction: column; gap: 8px; }
+.new-bot input { padding: 9px 12px; border: 1px solid #d1d1d6; border-radius: 10px; font: inherit; outline: none; }
+.new-bot input:focus { border-color: #0a84ff; }
+.new-bot-buttons { display: flex; gap: 8px; margin-top: 2px; }
+.new-bot-buttons button {
+  flex: 1; padding: 8px 10px; border: 0; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.new-bot-buttons button[type="submit"] { background: #0a84ff; color: #fff; }
+.new-bot-buttons button[type="submit"]:disabled { background: #d1d1d6; cursor: default; }
+.new-bot-buttons button[type="button"] { background: #e9e9eb; color: #1c1c1e; }
+
 /* ── 群里的说话人与转交 chip ── */
 .row-inner { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
 .row.from-bot .row-inner { align-items: flex-start; }

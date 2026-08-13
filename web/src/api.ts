@@ -1,4 +1,4 @@
-import type { Bot, Conversation, GatewayEvent, Message } from './types'
+import type { Bot, ComputerInfo, Conversation, GatewayEvent, Message } from './types'
 
 export async function fetchBots(): Promise<Bot[]> {
   const res = await fetch('/api/bots')
@@ -24,6 +24,23 @@ export async function sendMessage(threadId: string, text: string): Promise<void>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
   })
+}
+
+export async function fetchComputer(botId: string): Promise<ComputerInfo> {
+  const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/computer`)
+  if (!res.ok) throw new Error(`GET computer ${res.status}`)
+  return res.json()
+}
+
+export async function createBot(name: string, role: string): Promise<Bot> {
+  const res = await fetch('/api/bots', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, role }),
+  })
+  const data = (await res.json()) as Bot & { error?: string }
+  if (!res.ok) throw new Error(data.error ?? `POST /api/bots ${res.status}`)
+  return data
 }
 
 export async function resolveApproval(approvalId: number, decision: 'approve' | 'discard'): Promise<void> {

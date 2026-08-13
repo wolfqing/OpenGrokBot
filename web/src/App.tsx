@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { connectEvents, fetchBots, fetchConversations, fetchMessages, resolveApproval, sendMessage } from './api'
+import {
+  connectEvents, createBot, fetchBots, fetchComputer, fetchConversations, fetchMessages, resolveApproval, sendMessage,
+} from './api'
+import { ComputerPanel } from './components/ComputerPanel'
+import { NewBotForm } from './components/NewBotForm'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
-import type { BotStatus, Conversation, Message } from './types'
+import type { BotStatus, ComputerInfo, Conversation, Message } from './types'
 
 export default function App() {
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -10,6 +14,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [statuses, setStatuses] = useState<Record<string, BotStatus>>({})
+  const [panel, setPanel] = useState<ComputerInfo | null>(null)
+  const [hiring, setHiring] = useState(false)
 
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -19,15 +25,17 @@ export default function App() {
   const threadIdRef = useRef<string | null>(null)
   useEffect(() => { threadIdRef.current = threadId }, [threadId])
 
+  const loadRoster = () => fetchBots().then((bs) => {
+    setRoster(Object.fromEntries(bs.map((b) => [b.id, { name: b.name, emoji: b.emoji }])))
+  })
+
   useEffect(() => {
     fetchConversations().then((cs) => {
       setConversations(cs)
       setSelectedId((id) => id ?? cs[0]?.id ?? null)
     }).catch(console.error)
     // 群里要按 id 显示说话人，所以单独拉一份名册
-    fetchBots().then((bs) => {
-      setRoster(Object.fromEntries(bs.map((b) => [b.id, { name: b.name, emoji: b.emoji }])))
-    }).catch(console.error)
+    void loadRoster().catch(console.error)
   }, [])
 
   useEffect(() => {
@@ -55,11 +63,40 @@ export default function App() {
     }
   }), [])
 
+  const openScreen = async () => {
+    if (!selected || selected.kind !== 'dm') return
+    const botId = selected.members[0]
+    if (!botId) return
+    try {
+      setPanel(await fetchComputer(botId))
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const hire = async (name: string, role: string) => {
+    try {
+      const bot = await createBot(name, role)
+      setHiring(false)
+      setConversations(await fetchConversations())
+      setSelectedId(`dm:${bot.id}`)
+      await loadRoster()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const thinking = selected ? selected.members.some((id) => statuses[id] === 'thinking') : false
 
   return (
     <div className="app">
-      <Sidebar conversations={conversations} selectedId={selectedId} statuses={statuses} onSelect={setSelectedId} />
+      <Sidebar
+        conversations={conversations}
+        selectedId={selectedId}
+        statuses={statuses}
+        onSelect={setSelectedId}
+        onNewBot={() => setHiring(true)}
+      />
       {selected ? (
         <Thread
           conversation={selected}
@@ -68,10 +105,20 @@ export default function App() {
           roster={roster}
           onSend={(text) => { if (threadId) void sendMessage(threadId, text) }}
           onDecide={(approvalId, decision) => { void resolveApproval(approvalId, decision) }}
+          onOpenScreen={() => { void openScreen() }}
         />
       ) : (
         <main className="thread thread-empty">No teammates yet.</main>
       )}
+      {panel ? <ComputerPanel info={panel} botName={selected?.title ?? ''} onClose={() => setPanel(null)} /> : null}
+      {hiring ? (
+        <div className="modal-scrim" onClick={() => setHiring(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">Hire a teammate</div>
+            <NewBotForm onCreate={(n, r) => void hire(n, r)} onCancel={() => setHiring(false)} />
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

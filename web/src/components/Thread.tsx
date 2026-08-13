@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
-  ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, MemoryPayload, Message,
+  ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, LoginPayload, MemoryPayload, Message,
   ReportPayload, RoutinePayload, ScreenshotPayload,
 } from '../types'
 import { ApprovalChip } from './ApprovalChip'
 import { BotRefChip } from './BotRefChip'
+import { LoginChip } from './LoginChip'
 import { MemoryChip } from './MemoryChip'
 import { ReportChip } from './ReportChip'
 import { RoutineChip } from './RoutineChip'
 import { ScreenshotChip } from './ScreenshotChip'
 
-export function Thread({ conversation, messages, thinking, onSend, onDecide, roster }: {
+export function Thread({ conversation, messages, thinking, onSend, onDecide, roster, onOpenScreen }: {
   conversation: Conversation
   messages: Message[]
   thinking: boolean
   onSend: (text: string) => void
   onDecide: (approvalId: number, decision: 'approve' | 'discard') => void
   roster: Record<string, { name: string; emoji: string }>
+  onOpenScreen?: () => void
 }) {
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -42,6 +44,8 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, ros
       case 'memory_updated': return <MemoryChip payload={m.payload as MemoryPayload} />
       case 'routine_created': return <RoutineChip payload={m.payload as RoutinePayload} />
       case 'bot_ref': return <BotRefChip payload={m.payload as BotRefPayload} />
+      case 'login_request':
+        return <LoginChip payload={m.payload as LoginPayload} onOpenScreen={() => onOpenScreen?.()} />
       case 'approval_resolved': {
         const p = m.payload as ApprovalResolvedPayload
         return <div className="decision">{p.decision === 'approve' ? '✓ Approved' : '✕ Discarded'} · {p.action}</div>
@@ -65,6 +69,11 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, ros
         <span className="avatar">{conversation.emoji}</span>
         <span className="thread-name">{conversation.title}</span>
         {conversation.subtitle ? <span className="thread-role">{conversation.subtitle}</span> : null}
+        {conversation.kind === 'dm' && onOpenScreen ? (
+          <button className="screen-button" onClick={onOpenScreen} aria-label="Open its computer" title="Open its computer">
+            🖥️
+          </button>
+        ) : null}
       </header>
       <div className="thread-scroll" ref={scrollRef}>
         {messages.map((m) => {
