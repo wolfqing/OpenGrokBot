@@ -31,16 +31,7 @@ xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云�
 
 一个带 `SOUL.md` 的文件夹、侧栏里的一条线程，外加一台自己的电脑：
 
-```
-┌─ 网页客户端 ──────── 侧栏即组织架构 · chip 即管理界面
-│      ↕ WebSocket
-├─ Gateway（单个 Node 进程）── agent 循环 · SQLite · 调度器 · a2a 总线 · Docker
-└─ 每个 bot 一个容器
-     ├─ Xvfb 上的有头 Chromium  → 像人一样浏览，登录态能留下来
-     ├─ x11vnc + noVNC          → 你能看它的屏幕，也能接管键盘
-     ├─ 一个迷你 shim           → shell 与文件，只绑在容器内
-     └─ /workspace 卷           → SOUL.md · MEMORY.md · 文件 · 浏览器 profile
-```
+![架构图：浏览器连一个 gateway 进程，它驱动每个同事各自的 Docker 容器——里面是有头 Chromium、可被你接管的 noVNC 屏幕、shell/文件 shim，以及一个持久化的工作区](assets/architecture.svg)
 
 凭证只存在**它的**浏览器 profile、**它的**容器里。gateway 看不到密码，配置文件里也不会有。
 

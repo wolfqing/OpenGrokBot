@@ -31,16 +31,7 @@ web client that reads like a workbench, and any OpenAI-compatible model behind i
 
 A folder with a `SOUL.md`, a thread in the sidebar, and a container of its own:
 
-```
-┌─ Web client ──────── sidebar = your org chart · chips = the management surface
-│      ↕ WebSocket
-├─ Gateway (one Node process) ── agent loop · SQLite · scheduler · a2a bus · Docker
-└─ One container per bot
-     ├─ headed Chromium on Xvfb  → the bot browses like a person, logins persist
-     ├─ x11vnc + noVNC           → you can watch its screen, or take the keyboard
-     ├─ a tiny shim              → shell + files, bound to the container only
-     └─ /workspace volume        → SOUL.md · MEMORY.md · files · browser profile
-```
+![Architecture: your browser talks to one gateway process, which drives one Docker container per teammate — each with a headed Chromium, a noVNC screen you can take over, a shell/file shim, and a persistent workspace](assets/architecture.svg)
 
 The bot's credentials live in **its** browser profile, in **its** container. The gateway never sees a password,
 and neither does your config file.

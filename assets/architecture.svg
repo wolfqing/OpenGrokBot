@@ -1,73 +1,109 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 440" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <style>
-    .t  { fill: #1f2328; }
-    .ts { fill: #59636e; }
-    .box { fill: #8b949e14; stroke: #8b949e88; stroke-width: 1.2; rx: 10; }
-    .accent { stroke: #f97316; stroke-width: 1.6; }
-    .arrow { stroke: #8b949e; stroke-width: 1.4; fill: none; marker-end: url(#ah); }
-    .a2a { stroke: #f97316; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; marker-end: url(#ao); }
-    @media (prefers-color-scheme: dark) {
-      .t  { fill: #e6edf3; }
-      .ts { fill: #9198a1; }
-    }
-  </style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="960" height="620" role="img"
+     aria-label="OpenGrokBot v0.2 architecture: your browser talks to one gateway process, which drives one Docker container per teammate; each container holds a headed Chromium, a noVNC screen you can take over, a shell and file shim, and a persistent workspace where logins live.">
   <defs>
-    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="#8b949e" stroke-width="1.6"/>
+    <style>
+      .bg    { fill: #0d0d0d; }
+      .card  { fill: #1a1a1a; stroke: #343434; stroke-width: 1; }
+      .panel { fill: #141414; stroke: #333333; stroke-width: 1; }
+      .ghost { fill: #131313; stroke: #262626; stroke-width: 1; }
+      .pill  { fill: #202020; stroke: #2e2e2e; stroke-width: 1; }
+      .t     { fill: #ededed; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .dim   { fill: #8f8f8f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .faint { fill: #6a6a6a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .blue  { fill: #4d9fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .b     { font-weight: 600; }
+      .flow  { stroke: #4a4a4a; stroke-width: 1.5; fill: none; }
+      .dash  { stroke: #4a4a4a; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+      .take  { stroke: #4d9fff; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4a4a4a"/>
     </marker>
-    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9" fill="none" stroke="#f97316" stroke-width="1.6"/>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4d9fff"/>
     </marker>
   </defs>
 
-  <!-- You + channels -->
-  <text x="88" y="52" class="t" font-size="15" font-weight="600" text-anchor="middle">You</text>
-  <rect x="24" y="70" width="128" height="150" class="box"/>
-  <text x="88" y="94" class="t" font-size="12.5" font-weight="600" text-anchor="middle">Your chat apps</text>
-  <text x="88" y="120" class="ts" font-size="12" text-anchor="middle">Telegram</text>
-  <text x="88" y="142" class="ts" font-size="12" text-anchor="middle">WhatsApp</text>
-  <text x="88" y="164" class="ts" font-size="12" text-anchor="middle">Slack · Discord</text>
-  <text x="88" y="186" class="ts" font-size="12" text-anchor="middle">iMessage · Signal</text>
-  <text x="88" y="208" class="ts" font-size="12" text-anchor="middle">Control UI</text>
+  <rect class="bg" x="0" y="0" width="960" height="620"/>
 
-  <!-- Gateway host -->
-  <rect x="210" y="40" width="340" height="330" class="box accent"/>
-  <text x="380" y="66" class="t" font-size="14" font-weight="700" text-anchor="middle">OpenClaw Gateway</text>
-  <text x="380" y="86" class="ts" font-size="11.5" text-anchor="middle">your Mac · home server · $5 VPS</text>
+  <!-- You -->
+  <rect class="card" x="250" y="24" width="220" height="52" rx="10"/>
+  <text class="t b" x="360" y="47" font-size="14" text-anchor="middle">You</text>
+  <text class="dim mono" x="360" y="65" font-size="11" text-anchor="middle">browser · localhost:5173</text>
 
-  <rect x="238" y="104" width="284" height="56" class="box"/>
-  <text x="380" y="127" class="t" font-size="13" font-weight="600" text-anchor="middle">Scout · researcher</text>
-  <text x="380" y="146" class="ts" font-size="11" text-anchor="middle">briefs with sources · own workspace + memory</text>
+  <path class="flow" d="M360,76 L360,118" marker-end="url(#a)"/>
+  <text class="faint" x="372" y="101" font-size="11">REST + WebSocket</text>
 
-  <rect x="238" y="180" width="284" height="56" class="box"/>
-  <text x="380" y="203" class="t" font-size="13" font-weight="600" text-anchor="middle">Sorter · inbox-keeper</text>
-  <text x="380" y="222" class="ts" font-size="11" text-anchor="middle">triage + drafts only, never sends</text>
+  <!-- Model provider -->
+  <rect class="card" x="712" y="140" width="170" height="80" rx="10"/>
+  <text class="t b" x="797" y="168" font-size="13" text-anchor="middle">Any OpenAI-</text>
+  <text class="t b" x="797" y="185" font-size="13" text-anchor="middle">compatible model</text>
+  <text class="dim mono" x="797" y="205" font-size="10" text-anchor="middle">xAI · Kimi · DeepSeek · Ollama</text>
+  <path class="dash" d="M664,180 L706,180" marker-end="url(#a)"/>
+  <text class="faint mono" x="685" y="169" font-size="10" text-anchor="middle">BYOK</text>
 
-  <rect x="238" y="256" width="284" height="56" class="box"/>
-  <text x="380" y="279" class="t" font-size="13" font-weight="600" text-anchor="middle">Ticker · market-watch</text>
-  <text x="380" y="298" class="ts" font-size="11" text-anchor="middle">digests + alerts · read-only</text>
+  <!-- Gateway -->
+  <rect class="panel" x="60" y="124" width="600" height="150" rx="12"/>
+  <text class="t b" x="80" y="151" font-size="14">Gateway</text>
+  <text class="faint mono" x="152" y="151" font-size="11">one Node process · :4747 · your machine</text>
 
-  <!-- a2a arrows -->
-  <path class="a2a" d="M 246 160 C 226 170, 226 190, 246 200"/>
-  <path class="a2a" d="M 514 236 C 534 246, 534 266, 514 276"/>
-  <text x="380" y="342" class="ts" font-size="11.5" text-anchor="middle">agent-to-agent handoffs · explicit allowlist · sandboxable</text>
+  <rect class="pill" x="76" y="170" width="104" height="62" rx="8"/>
+  <text class="t" x="128" y="196" font-size="12" text-anchor="middle">Agent loop</text>
+  <text class="faint" x="128" y="213" font-size="10" text-anchor="middle">tools · prompts</text>
 
-  <!-- Models -->
-  <rect x="612" y="70" width="144" height="196" class="box"/>
-  <text x="684" y="94" class="t" font-size="12.5" font-weight="600" text-anchor="middle">Any model (BYOK)</text>
-  <text x="684" y="120" class="ts" font-size="12" text-anchor="middle">xAI Grok API</text>
-  <text x="684" y="142" class="ts" font-size="12" text-anchor="middle">Claude</text>
-  <text x="684" y="164" class="ts" font-size="12" text-anchor="middle">GPT</text>
-  <text x="684" y="186" class="ts" font-size="12" text-anchor="middle">Kimi · DeepSeek</text>
-  <text x="684" y="208" class="ts" font-size="12" text-anchor="middle">Ollama (local, $0)</text>
-  <text x="684" y="246" class="ts" font-size="10.5" text-anchor="middle">swap with one config line</text>
+  <rect class="pill" x="192" y="170" width="104" height="62" rx="8"/>
+  <text class="t" x="244" y="196" font-size="12" text-anchor="middle">SQLite</text>
+  <text class="faint" x="244" y="213" font-size="10" text-anchor="middle">threads · approvals</text>
 
-  <!-- flows -->
-  <path class="arrow" d="M 152 145 L 206 145"/>
-  <path class="arrow" d="M 206 175 L 152 175"/>
-  <path class="arrow" d="M 550 150 L 608 150"/>
-  <path class="arrow" d="M 608 180 L 550 180"/>
+  <rect class="pill" x="308" y="170" width="104" height="62" rx="8"/>
+  <text class="t" x="360" y="196" font-size="12" text-anchor="middle">Scheduler</text>
+  <text class="faint" x="360" y="213" font-size="10" text-anchor="middle">routines fire on time</text>
 
-  <!-- caption -->
-  <text x="390" y="416" class="t" font-size="13" font-weight="600" text-anchor="middle">Your hardware · your credentials · nothing phones home</text>
+  <rect class="pill" x="424" y="170" width="104" height="62" rx="8"/>
+  <text class="t" x="476" y="196" font-size="12" text-anchor="middle">a2a bus</text>
+  <text class="faint" x="476" y="213" font-size="10" text-anchor="middle">allowlist · 2 hops</text>
+
+  <rect class="pill" x="540" y="170" width="104" height="62" rx="8"/>
+  <text class="t" x="592" y="196" font-size="12" text-anchor="middle">Docker</text>
+  <text class="faint" x="592" y="213" font-size="10" text-anchor="middle">one box per bot</text>
+
+  <text class="faint" x="80" y="256" font-size="11">Chips are the management surface: reports, held actions, memory diffs, routines.</text>
+
+  <path class="flow" d="M360,274 L360,316" marker-end="url(#a)"/>
+  <text class="faint mono" x="372" y="299" font-size="10">dockerode</text>
+
+  <!-- Bot containers: two ghosts behind to say "one per teammate" -->
+  <rect class="ghost" x="84" y="346" width="520" height="214" rx="12"/>
+  <rect class="ghost" x="72" y="334" width="520" height="214" rx="12"/>
+  <rect class="card"  x="60" y="322" width="520" height="214" rx="12"/>
+
+  <text class="t b mono" x="80" y="351" font-size="13">opengrokbot-&lt;bot&gt;</text>
+  <text class="faint" x="80" y="369" font-size="11">one container per teammate · starts lazily · survives restarts</text>
+
+  <circle cx="86" cy="400" r="3" fill="#4ec26f"/>
+  <text class="t" x="100" y="404" font-size="12">Chromium — headed, on Xvfb</text>
+  <text class="dim mono" x="560" y="404" font-size="11" text-anchor="end">:9222 CDP</text>
+
+  <circle cx="86" cy="432" r="3" fill="#4d9fff"/>
+  <text class="t" x="100" y="436" font-size="12">x11vnc + noVNC — its screen, and your takeover</text>
+  <text class="dim mono" x="560" y="436" font-size="11" text-anchor="end">:6080</text>
+
+  <circle cx="86" cy="464" r="3" fill="#d9a441"/>
+  <text class="t" x="100" y="468" font-size="12">shim — shell and files</text>
+  <text class="dim mono" x="560" y="468" font-size="11" text-anchor="end">:7717</text>
+
+  <circle cx="86" cy="500" r="3" fill="#8f8f8f"/>
+  <text class="t" x="100" y="504" font-size="12">/workspace</text>
+  <text class="faint mono" x="100" y="521" font-size="10">SOUL.md · MEMORY.md · files · browser profile (logins live here)</text>
+
+  <!-- Takeover path: you reach past the gateway, into the container's own screen -->
+  <path class="take" d="M470,50 L920,50 L920,436 L586,436" marker-end="url(#ab)"/>
+  <text class="blue" x="906" y="290" font-size="11" text-anchor="end">take over its screen</text>
+  <text class="blue" x="906" y="306" font-size="11" text-anchor="end">to sign in once</text>
+
+  <!-- Footer -->
+  <path d="M60,570 L900,570" stroke="#262626" stroke-width="1"/>
+  <text class="faint" x="60" y="592" font-size="11">Every published port binds to 127.0.0.1. Credentials never reach the gateway or your config file — they stay in that</text>
+  <text class="faint" x="60" y="608" font-size="11">container's browser profile. Outward actions are held for your approval; bot-to-bot messaging is off until you allowlist it.</text>
 </svg>
