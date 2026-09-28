@@ -113,6 +113,17 @@ describe('gateway auth', () => {
   })
 })
 
+describe('websocket behind @hono/node-ws', () => {
+  it('uses the Host header, since node-ws rebuilds the upgrade URL without the port', async () => {
+    const { app } = setup()
+    // node-ws 把升级请求的 URL 拼成 http://localhost/ws —— 端口丢了，只有 Host 头是对的
+    const res = await app.request('http://localhost/ws', {
+      headers: { Upgrade: 'websocket', Connection: 'Upgrade', ...cookie, Host: 'localhost:4747', Origin: 'http://localhost:4747' },
+    })
+    expect(res.status).not.toBe(403)
+  })
+})
+
 describe('trusted UI origins', () => {
   it('lists the web UI address so a dev proxy that rewrites Host still works', async () => {
     const { trustedOrigins } = await import('../src/auth.js')

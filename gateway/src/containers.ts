@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type Docker from 'dockerode'
 
 export const BOT_IMAGE = 'opengrokbot/bot:dev'
 /** 所有 bot 电脑共用的网络：关掉容器之间的互访，谁也碰不到别人的 shim、CDP 和屏幕 */
 export const BOT_NETWORK = 'opengrokbot-bots'
 /** 容器规格变了（隔离、限额、密钥……）就升这个号：旧容器会在下次启动时按新规格重建，workspace 不动 */
-export const SPEC_VERSION = '2'
+export const SPEC_VERSION = '3'
 
 const SHIM_PORT = '7717/tcp'
 const CDP_PORT = '9222/tcp'
@@ -39,7 +41,8 @@ export function createContainerSpec(
   return {
     name: containerName(botId),
     Image: BOT_IMAGE,
-    Labels: { 'ai.opengrokbot.bot': botId, 'ai.opengrokbot.spec': SPEC_VERSION },
+    // 归属记在标签上：Docker Desktop 的列表接口把挂载路径报成虚拟机里的 /host_mnt/…，靠它比对会误判
+    Labels: { 'ai.opengrokbot.bot': botId, 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': resolve(workspaceDir) },
     Env: [
       `SHIM_TOKEN=${secrets.shimToken}`,
       `VNC_PASSWORD=${secrets.vncPassword}`,
@@ -47,7 +50,7 @@ export function createContainerSpec(
     ],
     ExposedPorts: { [SHIM_PORT]: {}, [CDP_PORT]: {}, [VNC_PORT]: {} },
     HostConfig: {
-      Binds: [`${workspaceDir}:/workspace`],
+      Binds: [`${resolve(workspaceDir)}:/workspace`], // 相对路径会被 docker 当成卷名
       PortBindings: { [SHIM_PORT]: loopback, [CDP_PORT]: loopback, [VNC_PORT]: loopback },
       RestartPolicy: { Name: 'unless-stopped' },
       NetworkMode: BOT_NETWORK,
@@ -134,6 +137,15 @@ async function ensureNetwork(docker: DockerLike): Promise<void> {
   }
 }
 
+function samePath(a: string, b: string): boolean {
+  if (resolve(a) === resolve(b)) return true
+  try {
+    return realpathSync(a) === realpathSync(b)
+  } catch {
+    return false
+  }
+}
+
 async function currentImageId(docker: DockerLike): Promise<string | null> {
   try {
     return (await docker.getImage(BOT_IMAGE).inspect()).Id
@@ -167,9 +179,13 @@ export async function ensureContainer(
     const imageId = await currentImageId(docker)
     const outdatedSpec = existing.Labels?.['ai.opengrokbot.spec'] !== SPEC_VERSION
     const outdatedImage = imageId !== null && existing.ImageID !== imageId
-    if (outdatedSpec || outdatedImage) {
+    // 同名容器可能是另一个数据目录的网关建的：挂错 workspace 就等于换了一台电脑
+    const owner = existing.Labels?.['ai.opengrokbot.workspace']
+    const otherWorkspace = owner !== undefined && !samePath(owner, workspaceDir)
+    if (outdatedSpec || outdatedImage || otherWorkspace) {
       // 登录态和文件都在挂载的 workspace 里，重建容器不丢东西
-      console.log(`[gateway] rebuilding ${name}: ${outdatedSpec ? 'new container spec' : 'bot image was rebuilt'}`)
+      const why = outdatedSpec ? 'new container spec' : outdatedImage ? 'bot image was rebuilt' : 'it belonged to another data dir'
+      console.log(`[gateway] rebuilding ${name}: ${why}`)
       await container.remove({ force: true })
       container = null
     } else if (existing.State !== 'running') {
@@ -205,8 +221,13 @@ export async function stopBotContainer(docker: Pick<Docker, 'getContainer'>, bot
   }
 }
 
-/** 正在跑的 bot 电脑（包括网关重启之前就开着的） */
-export async function runningBotIds(docker: Pick<Docker, 'listContainers'>): Promise<string[]> {
+/** 这个网关名下正在跑的 bot 电脑（包括网关重启之前就开着的）；别的数据目录建的容器不归它管 */
+export async function runningBotIds(docker: Pick<Docker, 'listContainers'>, dataDir: string): Promise<string[]> {
   const list = await docker.listContainers({ filters: { label: ['ai.opengrokbot.bot'], status: ['running'] } })
-  return list.map((c) => c.Labels?.['ai.opengrokbot.bot']).filter((id): id is string => Boolean(id))
+  return list.flatMap((c) => {
+    const botId = c.Labels?.['ai.opengrokbot.bot']
+    const owner = c.Labels?.['ai.opengrokbot.workspace']
+    if (!botId || !owner) return []
+    return samePath(owner, resolve(dataDir, 'workspaces', botId)) ? [botId] : []
+  })
 }

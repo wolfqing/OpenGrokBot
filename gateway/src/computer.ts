@@ -4,8 +4,8 @@ export type PageLink = { text: string; href: string }
 
 /** 一台 bot 自己的电脑：shell、文件、浏览器。实现见 computer-docker.ts。 */
 export interface BotComputer {
-  /** 这台电脑的屏幕地址（noVNC 页面，已带好连接参数）；没有容器就没有屏幕。 */
-  readonly vncUrl?: string
+  /** 这台电脑的屏幕：noVNC 的地址（只给网关代理用）和 VNC 口令；没有容器就没有屏幕。 */
+  readonly screen?: { base: string; password?: string }
   /** 这台电脑还应答吗？容器一重启端口就全变了，缓存的连接会全废。 */
   ping(): Promise<boolean>
   shell(cmd: string, timeoutMs?: number): Promise<ShellResult>
@@ -54,7 +54,7 @@ export function createFakeComputer(
     async dispose() { calls.push('dispose') },
   }
   type MutableComputer = { -readonly [K in keyof BotComputer]: BotComputer[K] }
-  const wrapped: MutableComputer = { ...base, ...(overrides.vncUrl ? { vncUrl: overrides.vncUrl } : {}) }
+  const wrapped: MutableComputer = { ...base, ...(overrides.screen ? { screen: overrides.screen } : {}) }
   for (const key of Object.keys(base) as (keyof BotComputer)[]) {
     const override = overrides[key]
     if (typeof override === 'function') {

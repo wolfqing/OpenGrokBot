@@ -21,6 +21,7 @@ import {
   createRoutine, deleteRoutine, describeCron, getRoutine, isValidCron, listRoutines, markRoutineRun, setRoutineEnabled,
   type RoutineRow,
 } from './routines.js'
+import { screenPagePath } from './screen.js'
 import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import type { Scheduler } from './scheduler.js'
 import { createTurnQueue } from './turns.js'
@@ -280,7 +281,8 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (!pool) return c.json({ botId, running: false, vncUrl: null, routines, usage })
     try {
       const computer = await pool.get(botId)
-      return c.json({ botId, running: true, vncUrl: computer.vncUrl ?? null, routines, usage })
+      const vncUrl = computer.screen ? screenPagePath(botId, computer.screen.password) : null
+      return c.json({ botId, running: true, vncUrl, routines, usage })
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
       return c.json({

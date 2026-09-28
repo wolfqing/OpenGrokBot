@@ -133,9 +133,6 @@ export function createDockerComputer(endpoints: Endpoints, deps: DockerComputerD
     return pages[pages.length - 1] ?? (await context.newPage())
   }
 
-  const screen = new URLSearchParams({ autoconnect: '1', resize: 'scale', reconnect: '1' })
-  if (endpoints.vncPassword) screen.set('password', endpoints.vncPassword)
-
   const answers = async (url: string) => {
     try {
       return (await fetchImpl(url, { signal: AbortSignal.timeout(5_000) })).ok
@@ -145,7 +142,7 @@ export function createDockerComputer(endpoints: Endpoints, deps: DockerComputerD
   }
 
   return {
-    vncUrl: `${endpoints.vnc}/vnc.html?${screen.toString()}`,
+    screen: { base: endpoints.vnc, ...(endpoints.vncPassword ? { password: endpoints.vncPassword } : {}) },
     async ping() {
       // shim 活着但浏览器挂了，也算这台电脑不可用：换一个新连接（容器里的守护进程会把 Chromium 拉回来）
       return (await answers(`${endpoints.shim}/health`)) && (await answers(`${endpoints.cdp}/json/version`))

@@ -26,12 +26,14 @@ run_chromium() {
   rm -f /workspace/.browser/SingletonLock /workspace/.browser/SingletonSocket /workspace/.browser/SingletonCookie
   # Chromium 会无视 --remote-debugging-address，始终只监听 127.0.0.1，
   # 所以让它开在内部的 9223，再用 socat 把 9222 中继出去给宿主连。
+  # 被拉起来（重建、OOM、守护重启）之后别弹「恢复页面？」：它会挡住 bot 的截图和点击。
   chromium \
     --no-sandbox --disable-dev-shm-usage --disable-gpu \
     --remote-debugging-port=9223 \
     --user-data-dir=/workspace/.browser \
     --window-position=0,0 --window-size=1280,800 \
     --no-first-run --no-default-browser-check --disable-features=Translate \
+    --hide-crash-restore-bubble \
     about:blank
 }
 

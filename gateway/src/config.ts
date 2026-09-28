@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export type Config = {
@@ -47,7 +47,8 @@ function flag(value: string | undefined): boolean {
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  const dataDir = env.OPENGROKBOT_DATA || fileURLToPath(new URL('../data', import.meta.url))
+  // 一律转成绝对路径：相对路径传给 docker 的 bind 会被当成卷名直接报错
+  const dataDir = resolve(env.OPENGROKBOT_DATA || fileURLToPath(new URL('../data', import.meta.url)))
   return {
     baseURL: env.OPENGROKBOT_API_BASE || 'https://api.x.ai/v1',
     apiKey: env.OPENGROKBOT_API_KEY || '',
@@ -55,7 +56,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     host: env.OPENGROKBOT_HOST || '127.0.0.1',
     port: num(env.OPENGROKBOT_PORT, 4747),
     dataDir,
-    dbPath: env.OPENGROKBOT_DB || join(dataDir, 'opengrokbot.db'),
+    dbPath: env.OPENGROKBOT_DB === ':memory:' ? ':memory:' : resolve(env.OPENGROKBOT_DB || join(dataDir, 'opengrokbot.db')),
     teammatesDir: env.OPENGROKBOT_TEAMMATES || fileURLToPath(new URL('../../teammates', import.meta.url)),
     webDist: env.OPENGROKBOT_WEB_DIST || fileURLToPath(new URL('../../web/dist', import.meta.url)),
     webUrl: (env.OPENGROKBOT_WEB_URL || '').replace(/\/$/, ''),

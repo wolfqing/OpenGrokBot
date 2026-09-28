@@ -9,6 +9,8 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:4747',
       '/auth': 'http://127.0.0.1:4747',
       '/ws': { target: 'ws://127.0.0.1:4747', ws: true },
+      // 电脑屏幕（noVNC 页面 + 它的 WebSocket）也经网关
+      '/vnc': { target: 'http://127.0.0.1:4747', ws: true },
     },
   },
   test: {

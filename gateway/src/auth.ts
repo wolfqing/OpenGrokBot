@@ -47,12 +47,18 @@ function sameHost(a: URL, b: URL): boolean {
   return loopback(a.hostname) === loopback(b.hostname) && a.port === b.port
 }
 
+/** 网关自己的地址以 Host 头为准：@hono/node-ws 给升级请求拼的 URL 不带端口 */
+function selfUrl(c: Context): URL {
+  const host = c.req.header('host')
+  return host ? new URL(`http://${host}`) : new URL(c.req.url)
+}
+
 function originAllowed(c: Context, allowedOrigins: string[]): boolean {
   const origin = c.req.header('origin')
   if (!origin) return true // curl、脚本不带 Origin，交给令牌把关
   try {
     const from = new URL(origin)
-    return sameHost(from, new URL(c.req.url)) || allowedOrigins.some((allowed) => sameHost(from, new URL(allowed)))
+    return sameHost(from, selfUrl(c)) || allowedOrigins.some((allowed) => sameHost(from, new URL(allowed)))
   } catch {
     return false
   }

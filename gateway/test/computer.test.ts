@@ -24,8 +24,8 @@ describe('createFakeComputer', () => {
     expect(await c.extract(4)).toBe('abcd')
   })
 
-  it('has no screen address unless one is given', () => {
-    expect(createFakeComputer().vncUrl).toBeUndefined()
-    expect(createFakeComputer({ vncUrl: 'http://127.0.0.1:1' }).vncUrl).toBe('http://127.0.0.1:1')
+  it('has no screen unless one is given', () => {
+    expect(createFakeComputer().screen).toBeUndefined()
+    expect(createFakeComputer({ screen: { base: 'http://127.0.0.1:1' } }).screen).toEqual({ base: 'http://127.0.0.1:1' })
   })
 })

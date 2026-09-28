@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 
@@ -66,6 +67,13 @@ describe('loadConfig', () => {
       idleStopMinutes: 0, botMemoryMb: 1024, botCpus: 1.5, webUrl: 'http://localhost:5173',
       timeZone: 'Europe/Berlin',
     })
+  })
+
+  it('turns a relative data dir into an absolute one (docker would read it as a volume name)', () => {
+    const c = loadConfig({ OPENGROKBOT_DATA: 'data-stub' })
+    expect(isAbsolute(c.dataDir)).toBe(true)
+    expect(c.dataDir.endsWith('/data-stub')).toBe(true)
+    expect(isAbsolute(c.dbPath)).toBe(true)
   })
 
   it('defaults the db inside the data dir', () => {

@@ -11,6 +11,7 @@ import { openDb } from './db.js'
 import { createLLM } from './llm.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
+import { createScreenViewers, mountScreenProxy } from './screen.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
@@ -77,6 +78,40 @@ app.get('/ws', upgradeWebSocket(() => ({
   onClose: (_evt, ws) => hub.remove(ws),
 })))
 
+// 屏幕：noVNC 页面和它的 WebSocket 都经网关转发——同源、同一个登录，一条隧道就能远程接管
+const knownBot = (botId: string) => Boolean(db.prepare('SELECT 1 FROM bots WHERE id = ?').get(botId))
+const viewers = createScreenViewers()
+app.get('/vnc/:botId/websockify', upgradeWebSocket(async (c) => {
+  const botId = c.req.param('botId') ?? ''
+  if (!knownBot(botId)) throw new Error(`unknown bot ${botId}`)
+  const screen = (await pool.get(botId)).screen
+  if (!screen) throw new Error(`${botId} has no screen`)
+  const target = `${screen.base.replace(/^http/, 'ws')}/websockify`
+  let upstream: WebSocket | null = null
+  const queued: (string | ArrayBuffer)[] = []
+  return {
+    onOpen: (_evt, ws) => {
+      viewers.open(botId)
+      upstream = new WebSocket(target)
+      upstream.binaryType = 'arraybuffer'
+      upstream.onopen = () => { for (const data of queued.splice(0)) upstream?.send(data) }
+      upstream.onmessage = (ev) => ws.send(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data as ArrayBuffer))
+      upstream.onclose = () => ws.close()
+      upstream.onerror = () => ws.close()
+    },
+    onMessage: (evt) => {
+      const data = evt.data as string | ArrayBuffer
+      if (upstream?.readyState === WebSocket.OPEN) upstream.send(data)
+      else queued.push(data)
+    },
+    onClose: () => {
+      viewers.close(botId)
+      upstream?.close()
+    },
+  }
+}))
+mountScreenProxy(app, { pool, knownBot })
+
 // pnpm build 之后网关直接托管前端：一个端口、一个进程；dev 下前端走 Vite（5173）
 const servingWeb = serveWeb(app, config.webDist)
 
@@ -103,8 +138,8 @@ if (config.idleStopMinutes > 0) {
     reapIdleComputers({
       pool,
       idleMs: config.idleStopMinutes * 60_000,
-      runningBots: () => runningBotIds(docker),
-      isBusy: gateway.isBusy,
+      runningBots: () => runningBotIds(docker, config.dataDir),
+      isBusy: (botId) => gateway.isBusy(botId) || viewers.watching(botId),
       stop: (botId) => stopBotContainer(docker, botId),
       now: Date.now(),
       startedAt,

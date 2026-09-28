@@ -136,10 +136,10 @@ describe('DockerComputer browser over CDP', () => {
   })
 })
 
-describe('screen address', () => {
-  it('gives the panel a noVNC page that connects, scales and signs in by itself', () => {
+describe('screen', () => {
+  it('tells the gateway where the noVNC server is and its password', () => {
     const c = createDockerComputer({ ...endpoints, vncPassword: 'pw12345x' })
-    expect(c.vncUrl).toBe('http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale&reconnect=1&password=pw12345x')
+    expect(c.screen).toEqual({ base: 'http://127.0.0.1:6080', password: 'pw12345x' })
   })
 })
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BOT_NETWORK, SPEC_VERSION, containerName, createContainerSpec, ensureContainer, readEndpoints, stopBotContainer,
-  waitForCdp, waitForShim,
+  BOT_NETWORK, SPEC_VERSION, containerName, createContainerSpec, ensureContainer, readEndpoints, runningBotIds,
+  stopBotContainer, waitForCdp, waitForShim,
 } from '../src/containers.js'
 
 const inspect = {
@@ -52,7 +52,11 @@ describe('createContainerSpec', () => {
       expect(spec.HostConfig!.PortBindings![port]).toEqual([{ HostIp: '127.0.0.1', HostPort: '' }])
       expect(spec.ExposedPorts![port]).toEqual({})
     }
-    expect(spec.Labels).toMatchObject({ 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION })
+    expect(spec.Labels).toMatchObject({
+      'ai.opengrokbot.bot': 'researcher',
+      'ai.opengrokbot.spec': SPEC_VERSION,
+      'ai.opengrokbot.workspace': '/data/workspaces/researcher',
+    })
   })
 
   it('cages the computer: isolated network, resource limits, no privilege escalation', () => {
@@ -67,13 +71,21 @@ describe('createContainerSpec', () => {
     expect(spec.HostConfig!.SecurityOpt).toContain('no-new-privileges')
   })
 
+  it('always binds an absolute host path, never a volume name', () => {
+    const spec = createContainerSpec('researcher', 'data-stub/workspaces/researcher', secrets)
+    expect(spec.HostConfig!.Binds![0]).toMatch(/^\/.+\/data-stub\/workspaces\/researcher:\/workspace$/)
+  })
+
   it('hands the container its secrets and the gateway timezone', () => {
     const spec = createContainerSpec('researcher', '/w', secrets, { timeZone: 'Asia/Shanghai' })
     expect(spec.Env).toEqual(expect.arrayContaining(['SHIM_TOKEN=tok-123', 'VNC_PASSWORD=pw12345x', 'TZ=Asia/Shanghai']))
   })
 })
 
-type Info = { Id: string; Names: string[]; State: string; ImageID: string; Labels: Record<string, string> }
+type Info = {
+  Id: string; Names: string[]; State: string; ImageID: string; Labels: Record<string, string>
+  Mounts?: { Source: string; Destination: string }[]
+}
 
 /** 假 docker：记录调用，按需返回容器/网络/镜像。 */
 function fakeDocker(opts: { containers?: Info[]; networks?: string[]; imageId?: string; createError?: Error } = {}) {
@@ -106,9 +118,11 @@ function fakeDocker(opts: { containers?: Info[]; networks?: string[]; imageId?: 
 }
 
 const ok = (async () => new Response('{}')) as typeof fetch
+// Docker Desktop（macOS）的列表接口把挂载路径报成虚拟机里的 /host_mnt/…，所以归属看标签，不看这个路径
 const running = (extra: Partial<Info> = {}): Info => ({
   Id: 'c1', Names: ['/opengrokbot-researcher'], State: 'running', ImageID: 'sha256:current',
-  Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION }, ...extra,
+  Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': '/w' },
+  Mounts: [{ Source: '/host_mnt/w', Destination: '/workspace' }], ...extra,
 })
 
 describe('ensureContainer', () => {
@@ -149,6 +163,17 @@ describe('ensureContainer', () => {
     expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
   })
 
+  it('rebuilds a computer that another gateway (another data dir) created', async () => {
+    const { docker, log } = fakeDocker({
+      networks: [BOT_NETWORK],
+      containers: [running({
+        Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': '/other/workspaces/researcher' },
+      })],
+    })
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+  })
+
   it('turns a missing image into the command that fixes it', async () => {
     const error = Object.assign(new Error('(HTTP code 404) no such container - No such image: opengrokbot/bot:dev'), { statusCode: 404 })
     const { docker } = fakeDocker({ networks: [BOT_NETWORK], createError: error })
@@ -162,6 +187,21 @@ describe('docker not running', () => {
     const refused = Object.assign(new Error('connect ECONNREFUSED /Users/me/.docker/run/docker.sock'), { code: 'ECONNREFUSED' })
     const docker = { listNetworks: async () => { throw refused } } as never
     await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toThrow(/Docker is not running/)
+  })
+})
+
+describe('runningBotIds', () => {
+  it('only counts computers that belong to this gateway\'s data dir', async () => {
+    const mine = running({
+      Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.workspace': '/data/workspaces/researcher' },
+      Mounts: [{ Source: '/host_mnt/data/workspaces/researcher', Destination: '/workspace' }],
+    })
+    const theirs = running({
+      Id: 'c2', Names: ['/opengrokbot-chief'],
+      Labels: { 'ai.opengrokbot.bot': 'chief', 'ai.opengrokbot.workspace': '/elsewhere/workspaces/chief' },
+    })
+    const { docker } = fakeDocker({ containers: [mine, theirs] })
+    expect(await runningBotIds(docker, '/data')).toEqual(['researcher'])
   })
 })
 
