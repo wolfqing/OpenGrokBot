@@ -83,6 +83,8 @@ export function createApp(deps: AppDeps): GatewayApp {
   const turns = createTurnQueue((botId, state) => hub.broadcast({ type: 'status', botId, state }))
   const rounds = createTurnQueue(() => {})
   const routinesInFlight = new Set<number>()
+  /** 已落库、还没交给某个回合去回答的用户消息（按线程） */
+  const waiting = new Map<string, Set<number>>()
 
   if (deps.token) {
     app.use('*', authMiddleware(deps.token, deps.allowedOrigins))
@@ -125,6 +127,13 @@ export function createApp(deps: AppDeps): GatewayApp {
 
   function startTurn(bot: BotRow, threadId: string, text: string, opts: TurnOpts = {}): Promise<void> {
     return turns.run(bot.id, threadId, async (signal) => {
+      const waitingHere = [...(waiting.get(threadId) ?? [])]
+      let order: { pendingIds?: number[]; hiddenIds?: number[] } = { hiddenIds: waitingHere }
+      if (opts.alreadyStored) {
+        waiting.delete(threadId)
+        if (!waitingHere.length) return // 排在前面的那一轮已经把它们答了
+        order = { pendingIds: waitingHere }
+      }
       if (pool && opts.prewarm) void pool.get(bot.id).catch(() => {})
       const { soul, manual } = loadPersona(bot)
       const memory = dataDir ? await readMemory(dataDir, bot.id) : ''
@@ -161,7 +170,7 @@ export function createApp(deps: AppDeps): GatewayApp {
           scheduler?.remove(id)
           return { ok: true, name: routine.name }
         },
-      }, text, events(threadId), { persistUserMessage: opts.persistUserMessage, alreadyStored: opts.alreadyStored })
+      }, text, events(threadId), { persistUserMessage: opts.persistUserMessage, alreadyStored: opts.alreadyStored, ...order })
     }, opts.coalesce ? { coalesceKey: `stored:${threadId}` } : undefined)
   }
 
@@ -341,8 +350,9 @@ export function createApp(deps: AppDeps): GatewayApp {
 
   app.post('/api/threads/:threadId/stop', (c) => {
     const threadId = c.req.param('threadId')
-    // 先停轮次（群里剩下的人不再发言），再停正在跑和排着队的回合
+    // 先停轮次（群里剩下的人不再发言），再停正在跑和排着队的回合；排着队的消息也不再回答
     const stopped = rounds.stopThread(threadId) + turns.stopThread(threadId)
+    waiting.delete(threadId)
     return c.json({ stopped })
   })
 
@@ -399,7 +409,9 @@ export function createApp(deps: AppDeps): GatewayApp {
     }
 
     // 先落库并广播：bot 正忙（比如在跑 routine）时，人也要立刻看到自己发出去的话
-    events(threadId).onMessage(insertMessage(db, { threadId, sender: 'user', kind: 'text', content: text }))
+    const stored = insertMessage(db, { threadId, sender: 'user', kind: 'text', content: text })
+    events(threadId).onMessage(stored)
+    waiting.set(threadId, (waiting.get(threadId) ?? new Set()).add(stored.id))
     void startTurn(bot, threadId, text, { alreadyStored: true, prewarm: true, coalesce: true }) // 202 立刻返回，产出走 WS
     return c.json({ ok: true }, 202)
   })

@@ -1,5 +1,5 @@
 #!/bin/bash
-# bot 容器启动序列：X 显示器 → VNC → 有头 Chromium（CDP）→ shim（前台）
+# bot 容器启动序列：X 显示器 → VNC → 有头 Chromium（CDP）→ shim（前台，同时给 CDP 把门）
 set -euo pipefail
 
 export DISPLAY=:99
@@ -25,7 +25,7 @@ run_chromium() {
   # Chromium 的单例锁：非正常退出会留下 SingletonLock 指向已消失的 pid
   rm -f /workspace/.browser/SingletonLock /workspace/.browser/SingletonSocket /workspace/.browser/SingletonCookie
   # Chromium 会无视 --remote-debugging-address，始终只监听 127.0.0.1，
-  # 所以让它开在内部的 9223，再用 socat 把 9222 中继出去给宿主连。
+  # 所以让它开在内部的 9223；对外的 9222 由 shim 验过口令再转进来。
   # 被拉起来（重建、OOM、守护重启）之后别弹「恢复页面？」：它会挡住 bot 的截图和点击。
   chromium \
     --no-sandbox --disable-dev-shm-usage --disable-gpu \
@@ -52,8 +52,8 @@ if [ -n "${VNC_PASSWORD:-}" ]; then
   VNC_AUTH=(-rfbauth /tmp/.vncpass)
 fi
 keep x11vnc x11vnc -display :99 -forever -shared -localhost "${VNC_AUTH[@]}" -quiet -rfbport 5900 &
-keep websockify websockify --web=/usr/share/novnc 6080 localhost:5900 &
+# 只转发 VNC 数据流：屏幕的网页由网关自己提供，不从这台（bot 能改的）电脑上取
+keep websockify websockify 6080 localhost:5900 &
 keep chromium run_chromium &
-keep socat socat TCP-LISTEN:9222,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:9223 &
 
 exec node /opt/shim.mjs

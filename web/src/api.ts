@@ -30,9 +30,10 @@ async function send(method: string, path: string, body?: unknown): Promise<Respo
   return res
 }
 
+/** 只有 401 才算「没登录」：网关重启时 dev 代理回的 502 不该把界面锁死 */
 export async function checkSession(): Promise<boolean> {
   const res = await fetch('/api/session')
-  return res.ok
+  return res.status !== 401
 }
 
 export const fetchBots = () => getJson<Bot[]>('/api/bots')

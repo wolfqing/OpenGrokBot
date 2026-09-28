@@ -9,6 +9,7 @@ import { loadConfig } from './config.js'
 import { runningBotIds, stopBotContainer } from './containers.js'
 import { openDb } from './db.js'
 import { createLLM } from './llm.js'
+import { migrateLegacyMemories } from './memory.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
 import { createScreenViewers, mountScreenProxy } from './screen.js'
@@ -27,6 +28,8 @@ const bots = [
   ...seedTeammates(db, join(config.dataDir, 'teammates')),
 ]
 seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
+const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
+if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
 const llm = createLLM(config)
 const docker = new Docker()
 const pool = createPool({
@@ -110,7 +113,7 @@ app.get('/vnc/:botId/websockify', upgradeWebSocket(async (c) => {
     },
   }
 }))
-mountScreenProxy(app, { pool, knownBot })
+mountScreenProxy(app, { knownBot })
 
 // pnpm build 之后网关直接托管前端：一个端口、一个进程；dev 下前端走 Vite（5173）
 const servingWeb = serveWeb(app, config.webDist)

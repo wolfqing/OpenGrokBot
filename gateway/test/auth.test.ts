@@ -102,6 +102,16 @@ describe('gateway auth', () => {
     expect((await app.request('/auth?token=wrong')).status).toBe(401)
   })
 
+  it('only takes JSON for state changes, which no other page can send without a preflight', async () => {
+    const { app } = setup()
+    const res = await app.request('http://localhost:4747/api/threads/dm:researcher/messages', {
+      method: 'POST',
+      headers: { ...cookie, 'Content-Type': 'text/plain', Origin: 'http://localhost:4747' },
+      body: JSON.stringify({ text: 'hi' }),
+    })
+    expect(res.status).toBe(415)
+  })
+
   it('treats localhost and 127.0.0.1 on the same port as one origin', async () => {
     const { app } = setup()
     const res = await app.request('http://127.0.0.1:4747/api/threads/dm:researcher/messages', {

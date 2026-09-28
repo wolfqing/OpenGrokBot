@@ -46,7 +46,7 @@ const COMPUTER_TOOLS: ToolDef[] = [
         type: 'object',
         properties: {
           cmd: { type: 'string', description: 'The bash command line to run.' },
-          timeoutMs: { type: 'number', description: 'Optional timeout in milliseconds (default 60000).' },
+          timeoutMs: { type: 'number', description: 'Optional timeout in milliseconds (default 60000, at most 600000). Start long-running servers in the background with their output in a file, e.g. `nohup npm run dev > dev.log 2>&1 &`.' },
         },
         required: ['cmd'],
       },

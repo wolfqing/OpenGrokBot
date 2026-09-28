@@ -12,6 +12,8 @@ export type Pool = {
   lastUsed(botId: string): number | undefined
   /** 断开并忘掉缓存的连接（停机前用） */
   forget(botId: string): Promise<void>
+  /** 停机：期间有人要这台电脑，就等停完再按需重新拉起，而不是递给它一台马上要停的 */
+  retire(botId: string, stop: () => Promise<void>): Promise<void>
 }
 
 export function createPool(opts: {
@@ -23,6 +25,7 @@ export function createPool(opts: {
 }): Pool {
   const live = new Map<string, Promise<BotComputer>>()
   const used = new Map<string, number>()
+  const retiring = new Map<string, Promise<void>>()
   const now = opts.now ?? Date.now
 
   const makeComputer = opts.makeComputer ?? (async (botId: string) => {
@@ -47,6 +50,7 @@ export function createPool(opts: {
 
   return {
     async get(botId) {
+      await retiring.get(botId)?.catch(() => {})
       used.set(botId, now())
       const existing = live.get(botId)
       if (existing) {
@@ -67,12 +71,26 @@ export function createPool(opts: {
       await Promise.all(all.map((p) => p.then((c) => c.dispose()).catch(() => {})))
     },
     lastUsed: (botId) => used.get(botId),
-    async forget(botId) {
-      const pending = live.get(botId)
-      live.delete(botId)
-      used.delete(botId)
-      await pending?.then((c) => c.dispose()).catch(() => {})
+    forget,
+    async retire(botId, stop) {
+      const job = (async () => {
+        await forget(botId)
+        await stop()
+      })()
+      retiring.set(botId, job)
+      try {
+        await job
+      } finally {
+        retiring.delete(botId)
+      }
     },
+  }
+
+  async function forget(botId: string): Promise<void> {
+    const pending = live.get(botId)
+    live.delete(botId)
+    used.delete(botId)
+    await pending?.then((c) => c.dispose()).catch(() => {})
   }
 }
 
@@ -95,8 +113,7 @@ export async function reapIdleComputers(opts: {
     if (opts.isBusy(botId)) continue
     const last = opts.pool.lastUsed(botId) ?? opts.startedAt
     if (opts.now - last < opts.idleMs) continue
-    await opts.pool.forget(botId)
-    await opts.stop(botId)
+    await opts.pool.retire(botId, () => opts.stop(botId))
     reaped.push(botId)
   }
   return reaped

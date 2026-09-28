@@ -14,57 +14,50 @@ const bot = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', 
 const okLLM: LLM = { chat: async () => ({ content: 'ok', toolCalls: [], raw: { role: 'assistant', content: 'ok' } }) }
 
 describe('screenPagePath', () => {
-  it('points the panel at a same-origin noVNC page that connects back through the gateway', () => {
-    const url = new URL(screenPagePath('researcher', 'pw12345x'), 'http://localhost:4747')
-    expect(url.pathname).toBe('/vnc/researcher/vnc.html')
-    expect(Object.fromEntries(url.searchParams)).toEqual({
-      autoconnect: '1', resize: 'scale', reconnect: '1', path: 'vnc/researcher/websockify', password: 'pw12345x',
-    })
+  it('points the panel at the gateway\'s own viewer, with the password kept out of every request', () => {
+    expect(screenPagePath('researcher', 'pw12345x')).toBe('/vnc/researcher/view.html#password=pw12345x')
+    expect(screenPagePath('researcher')).toBe('/vnc/researcher/view.html')
   })
 })
 
 describe('mountScreenProxy', () => {
-  function setup(opts: { screen?: boolean; failing?: boolean } = {}) {
-    const seen: string[] = []
-    const fetchImpl = (async (url: string | URL | Request) => {
-      seen.push(String(url))
-      return new Response('<html>noVNC</html>', { headers: { 'content-type': 'text/html', 'set-cookie': 'x=1' } })
-    }) as typeof fetch
-    const computer = createFakeComputer(opts.screen === false ? {} : { screen: { base: 'http://127.0.0.1:53314', password: 'pw' } })
-    const pool = createPool({
-      dataDir: '/data',
-      makeComputer: async () => { if (opts.failing) throw new Error('Docker is not running.'); return computer },
-    })
+  function setup() {
     const app = new Hono()
-    mountScreenProxy(app, { pool, knownBot: (id) => id === 'researcher', fetchImpl })
-    return { app, seen }
+    mountScreenProxy(app, { knownBot: (id) => id === 'researcher' })
+    return app
   }
 
-  it('serves the noVNC page and its assets from the bot computer', async () => {
-    const { app, seen } = setup()
-    const res = await app.request('/vnc/researcher/vnc.html?autoconnect=1')
+  it('serves a viewer page the gateway owns — nothing a bot can rewrite in its container', async () => {
+    const res = await setup().request('/vnc/researcher/view.html')
     expect(res.status).toBe(200)
-    expect(await res.text()).toContain('noVNC')
-    expect(res.headers.get('content-type')).toBe('text/html')
-    expect(res.headers.get('set-cookie')).toBeNull() // 容器的响应头不该原样漏给浏览器
-    await app.request('/vnc/researcher/app/ui.js')
-    expect(seen).toEqual(['http://127.0.0.1:53314/vnc.html?autoconnect=1', 'http://127.0.0.1:53314/app/ui.js'])
+    expect(res.headers.get('content-type')).toContain('text/html')
+    const html = await res.text()
+    expect(html).toContain("from './core/rfb.js'")
+    expect(html).toContain('websockify')
   })
 
-  it('404s unknown bots and explains a missing screen', async () => {
-    expect((await setup().app.request('/vnc/nobody/vnc.html')).status).toBe(404)
-    const down = await setup({ failing: true }).app.request('/vnc/researcher/vnc.html')
-    expect(down.status).toBe(503)
-    expect(await down.text()).toMatch(/Docker is not running/)
-    expect((await setup({ screen: false }).app.request('/vnc/researcher/vnc.html')).status).toBe(503)
+  it('serves the noVNC library from the installed package', async () => {
+    const res = await setup().request('/vnc/researcher/core/rfb.js')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('javascript')
+    expect(await res.text()).toContain('class RFB')
+    expect((await setup().request('/vnc/researcher/vendor/pako/lib/zlib/inflate.js')).status).toBe(200)
+  })
+
+  it('serves nothing else: no container files, no traversal, no unknown bots', async () => {
+    const app = setup()
+    expect((await app.request('/vnc/researcher/vnc.html')).status).toBe(404)
+    expect((await app.request('/vnc/researcher/app/ui.js')).status).toBe(404)
+    expect((await app.request('/vnc/researcher/core/..%2F..%2F..%2Fpackage.json')).status).toBe(404)
+    expect((await app.request('/vnc/researcher/core/%2E%2E/package.json')).status).toBe(404)
+    expect((await app.request('/vnc/nobody/view.html')).status).toBe(404)
   })
 
   it('leaves websocket upgrades to the websocket route', async () => {
-    const { app, seen } = setup()
+    const app = setup()
     app.get('/vnc/:botId/websockify', (c) => c.text('ws route'))
     const res = await app.request('/vnc/researcher/websockify', { headers: { Upgrade: 'websocket' } })
     expect(await res.text()).toBe('ws route')
-    expect(seen).toEqual([])
   })
 })
 

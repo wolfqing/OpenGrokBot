@@ -107,6 +107,34 @@ describe('one turn at a time per bot', () => {
   })
 })
 
+describe('messages that arrive while the bot is busy', () => {
+  it('answers a follow-up as the latest thing said, after the reply it missed', async () => {
+    const { llm, log } = recordingLLM((messages) => text(`reply to ${messages.at(-1)!.content!.split('\n')[0]}`), 40)
+    const { app, db } = setup(llm)
+    await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'one' })
+    await new Promise((r) => setTimeout(r, 10))
+    await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'two' })
+    await vi.waitFor(() => expect(listMessages(db, DM).filter((m) => m.sender === 'researcher')).toHaveLength(2))
+    const second = log.seen[1]!.messages.map((m) => `${m.role}:${(m.content ?? '').split('\n')[0]}`)
+    expect(second.indexOf('assistant:reply to one')).toBeLessThan(second.indexOf('user:two'))
+    expect(second.at(-1)).toBe('user:two')
+  })
+
+  it('keeps a routine that runs first from answering a message still waiting its turn', async () => {
+    const { llm, log } = recordingLLM(() => text('ok'), 40)
+    const { app, db, runRoutine } = setup(llm)
+    await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'one' })
+    const routine = createRoutine(db, { botId: scout.id, name: 'Sweep', cron: '0 9 * * *', instructions: 'sweep the inbox' })
+    void runRoutine(routine)
+    await new Promise((r) => setTimeout(r, 5))
+    await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'waiting question' })
+    await vi.waitFor(() => expect(log.seen).toHaveLength(3))
+    await vi.waitFor(() => expect(log.seen.every((s) => s.done)).toBe(true))
+    const routineCall = log.seen.find((s) => (s.messages.at(-1)!.content ?? '').includes('sweep the inbox'))!
+    expect(routineCall.messages.some((m) => (m.content ?? '').includes('waiting question'))).toBe(false)
+  })
+})
+
 describe('stop', () => {
   it('stops what a thread is doing and says so', async () => {
     const { llm } = recordingLLM(() => text('never'), 5_000)

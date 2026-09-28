@@ -94,6 +94,11 @@ export function authMiddleware(token: string, allowedOrigins: string[] = []): Mi
     if (changesState && !originAllowed(c, allowedOrigins)) {
       return c.json({ error: 'cross-origin request refused' }, 403)
     }
+    // 带请求体的改动只收 JSON：别的页面（哪怕同站别的端口）发 JSON 必须先过预检，而网关从不应答预检
+    const sendsBody = ['POST', 'PUT', 'PATCH'].includes(c.req.method)
+    if (sendsBody && !(c.req.header('content-type') ?? '').toLowerCase().startsWith('application/json')) {
+      return c.json({ error: 'send application/json' }, 415)
+    }
     return next()
   }
 }

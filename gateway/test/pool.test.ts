@@ -126,3 +126,21 @@ describe('idle computers', () => {
     expect(stopped.sort()).toEqual(['chief', 'researcher'])
   })
 })
+
+describe('stopping a computer that is wanted again', () => {
+  it('waits for the stop to finish before starting it again, instead of handing out a dying computer', async () => {
+    const order: string[] = []
+    let finishStop!: () => void
+    const stopped = new Promise<void>((r) => { finishStop = r })
+    const pool = createPool({ dataDir: '/data', makeComputer: async () => { order.push('make'); return createFakeComputer() } })
+    await pool.get('researcher')
+    order.length = 0
+    const retiring = pool.retire('researcher', async () => { order.push('stop:start'); await stopped; order.push('stop:end') })
+    const wanted = pool.get('researcher')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(order).toEqual(['stop:start'])
+    finishStop()
+    await Promise.all([retiring, wanted])
+    expect(order).toEqual(['stop:start', 'stop:end', 'make'])
+  })
+})

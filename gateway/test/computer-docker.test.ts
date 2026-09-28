@@ -286,3 +286,51 @@ describe('DockerComputer typing, keys, scrolling and tabs', () => {
     expect(old.log).toEqual([])
   })
 })
+
+describe('CDP behind the container token', () => {
+  it('asks for the websocket address with the token', async () => {
+    let header: string | null = null
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      header = new Headers(init?.headers).get('x-shim-token')
+      return new Response(JSON.stringify({ webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/browser/x' }))
+    }) as typeof fetch
+    await resolveCdpWsUrl('http://127.0.0.1:53313', fetchImpl, { 'x-shim-token': 'tok-123' })
+    expect(header).toBe('tok-123')
+  })
+
+  it('connects to the browser with the token', async () => {
+    const { page } = fakePage()
+    const { browser } = fakeConnect(page)
+    const seen: (Record<string, string> | undefined)[] = []
+    const c = createDockerComputer({ ...endpoints, shimToken: 'tok-123' }, {
+      connect: async (_url, headers) => { seen.push(headers); return browser },
+    })
+    await c.goto('https://example.com')
+    expect(seen).toEqual([{ 'x-shim-token': 'tok-123' }])
+  })
+
+  it('pings the browser with the token too', async () => {
+    const headers: (string | null)[] = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      headers.push(new Headers(init?.headers).get('x-shim-token'))
+      return new Response('{}')
+    }) as typeof fetch
+    await createDockerComputer({ ...endpoints, shimToken: 'tok-123' }, { fetchImpl }).ping()
+    expect(headers).toEqual(['tok-123', 'tok-123'])
+  })
+})
+
+describe('shim calls can be stopped', () => {
+  it('hands the stop signal to the shell request', async () => {
+    let received: AbortSignal | undefined
+    const fetchImpl = ((_url: string | URL | Request, init?: RequestInit) => {
+      received = init?.signal ?? undefined
+      return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+    }) as typeof fetch
+    const stop = new AbortController()
+    const pending = createDockerComputer(endpoints, { fetchImpl }).shell('sleep 999', 60_000, stop.signal)
+    stop.abort()
+    await expect(pending).rejects.toThrow()
+    expect(received?.aborted).toBe(true)
+  })
+})

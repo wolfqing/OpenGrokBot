@@ -1,16 +1,61 @@
+import { existsSync, statSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { dirname, extname, resolve, sep } from 'node:path'
 import type { Hono } from 'hono'
-import type { Pool } from './pool.js'
 
 /**
- * 屏幕走网关代理：面板里的 noVNC 和网关同源，吃同一个登录 cookie，
- * 经一条 SSH 隧道就能远程接管；容器的 6080 只给网关自己连。
+ * 屏幕：查看页和 noVNC 库都由网关自己提供（npm 装的那份），只把 websockify 的数据流转发给容器。
+ * 绝不代理容器里的网页文件——bot 在自己的容器里是 root，改一下那边的 HTML，
+ * 它的脚本就会以你的身份跑在网关的源上（能放行审批、能摸别的 bot 的屏幕）。
  */
+const NOVNC_ROOT = dirname(dirname(createRequire(import.meta.url).resolve('@novnc/novnc')))
+
 export function screenPagePath(botId: string, password?: string): string {
-  const id = encodeURIComponent(botId)
-  const params = new URLSearchParams({ autoconnect: '1', resize: 'scale', reconnect: '1', path: `vnc/${id}/websockify` })
-  if (password) params.set('password', password)
-  return `/vnc/${id}/vnc.html?${params.toString()}`
+  const page = `/vnc/${encodeURIComponent(botId)}/view.html`
+  // 口令放在 # 后面：浏览器不会把片段发给任何服务器，也就不会出现在日志里
+  return password ? `${page}#password=${encodeURIComponent(password)}` : page
 }
+
+const VIEWER = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screen</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #screen { width: 100%; height: 100%; }
+  #status { position: fixed; left: 8px; bottom: 6px; font: 12px -apple-system, BlinkMacSystemFont, sans-serif; color: #8f8f8f; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<div id="status">Connecting…</div>
+<script type="module">
+  import RFB from './core/rfb.js'
+  const screen = document.getElementById('screen')
+  const status = document.getElementById('status')
+  const password = new URLSearchParams(location.hash.slice(1)).get('password') ?? ''
+  const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + location.pathname.replace(/[^/]*$/, 'websockify')
+  let retry = 0
+  function connect() {
+    screen.replaceChildren()
+    const rfb = new RFB(screen, url, { credentials: { password } })
+    rfb.scaleViewport = true
+    rfb.addEventListener('connect', () => { retry = 0; status.textContent = '' })
+    rfb.addEventListener('credentialsrequired', () => rfb.sendCredentials({ password }))
+    rfb.addEventListener('securityfailure', () => { status.textContent = 'The screen refused the password — reopen the panel.' })
+    rfb.addEventListener('disconnect', () => {
+      status.textContent = 'Reconnecting…'
+      setTimeout(connect, Math.min(1000 * 2 ** retry++, 15000))
+    })
+  }
+  connect()
+</script>
+</body>
+</html>
+`
 
 /** 谁的屏幕正开着：有人在看（比如正在接管登录）就别把那台电脑当成闲置停掉 */
 export type ScreenViewers = { open(botId: string): void; close(botId: string): void; watching(botId: string): boolean }
@@ -28,32 +73,31 @@ export function createScreenViewers(): ScreenViewers {
   }
 }
 
-const PASSED_HEADERS = ['content-type', 'content-length', 'cache-control', 'last-modified', 'etag']
-
-/** noVNC 的页面和静态资源：原样取自那台电脑的 websockify，只转发无害的响应头。 */
-export function mountScreenProxy(
-  app: Hono,
-  deps: { pool: Pool; knownBot: (botId: string) => boolean; fetchImpl?: typeof fetch },
-): void {
-  const fetchImpl = deps.fetchImpl ?? fetch
+/** /vnc/:botId/view.html 与它要的 noVNC 模块；websockify 的升级请求留给 main.ts 里的 WS 路由。 */
+export function mountScreenProxy(app: Hono, deps: { knownBot: (botId: string) => boolean }): void {
   app.get('/vnc/:botId/*', async (c, next) => {
     if (c.req.header('upgrade')?.toLowerCase() === 'websocket') return next()
     const botId = c.req.param('botId')
     if (!deps.knownBot(botId)) return c.json({ error: 'unknown bot' }, 404)
-    let base: string | undefined
+    const rest = c.req.path.slice(`/vnc/${botId}`.length)
+    if (rest === '/view.html') {
+      return c.body(VIEWER, 200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
+    }
+    let decoded: string
     try {
-      base = (await deps.pool.get(botId)).screen?.base
-    } catch (err) {
-      return c.text(`No screen right now: ${err instanceof Error ? err.message : String(err)}`, 503)
+      decoded = decodeURIComponent(rest)
+    } catch {
+      return c.json({ error: 'not found' }, 404)
     }
-    if (!base) return c.text('This teammate has no screen.', 503)
-    const rest = c.req.path.slice(`/vnc/${botId}`.length) || '/'
-    const upstream = await fetchImpl(`${base}${rest}${new URL(c.req.url).search}`)
-    const headers = new Headers()
-    for (const name of PASSED_HEADERS) {
-      const value = upstream.headers.get(name)
-      if (value) headers.set(name, value)
-    }
-    return new Response(upstream.body, { status: upstream.status, headers })
+    const file = resolve(NOVNC_ROOT, `.${decoded}`)
+    const allowed = /^\/(core|vendor)\//.test(decoded)
+      && file.startsWith(NOVNC_ROOT + sep)
+      && extname(file) === '.js'
+      && existsSync(file) && statSync(file).isFile()
+    if (!allowed) return c.json({ error: 'not found' }, 404)
+    return c.body(await readFile(file), 200, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+    })
   })
 }

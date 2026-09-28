@@ -60,7 +60,14 @@ export async function runTurn(
    * persistUserMessage=false：不可见 seed（routine、放行、群发言、转交），只给模型看。
    * alreadyStored=true：用户消息早已落库并广播（排队期间就该让人看见），历史里自然带着它。
    */
-  opts: { persistUserMessage?: boolean; alreadyStored?: boolean } = {},
+  opts: {
+    persistUserMessage?: boolean
+    alreadyStored?: boolean
+    /** 这一轮要回答的、排队时就已落库的用户消息：挪到上下文末尾，它们才是「最新说的话」 */
+    pendingIds?: number[]
+    /** 还在排队等自己那一轮的用户消息：别的回合（routine、放行、转交）看不到，免得被顺手答掉 */
+    hiddenIds?: number[]
+  } = {},
 ): Promise<void> {
   const { db, llm, bot, soul, threadId, signal } = deps
   const hasComputer = Boolean(deps.getComputer)
@@ -81,7 +88,8 @@ export async function runTurn(
           hasComputer, memory: deps.memory, group: deps.group, canRelay, manual: deps.manual, routines: deps.routines,
         }),
       },
-      ...listMessages(db, threadId, HISTORY_LIMIT).map((m) => toChatMsg(m, bot.id)),
+      ...orderHistory(listMessages(db, threadId, HISTORY_LIMIT), opts.pendingIds, opts.hiddenIds)
+        .map((m) => toChatMsg(m, bot.id)),
     ]
     // routine 触发 / 审批放行 / 群发言不落库，但模型必须看到这句话才知道要干什么
     if (!persistUserMessage && !alreadyStored) history.push({ role: 'user', content: userText })
@@ -122,6 +130,13 @@ export async function runTurn(
     activity.close()
     events.onStatus(bot.id, 'idle')
   }
+}
+
+function orderHistory(rows: MessageRow[], pendingIds: number[] = [], hiddenIds: number[] = []): MessageRow[] {
+  const pending = new Set(pendingIds)
+  const hidden = new Set(hiddenIds)
+  const rest = rows.filter((m) => !pending.has(m.id) && !hidden.has(m.id))
+  return [...rest, ...rows.filter((m) => pending.has(m.id))]
 }
 
 function stopped(say: (content: string) => void): void {
@@ -316,6 +331,16 @@ async function execWorkflowTool(
   }
 }
 
+const DEFAULT_SHELL_MS = 60_000
+const MAX_SHELL_MS = 600_000
+
+/** 模型给 0（不限时）或天文数字也不行：一条命令最多占着这位同事十分钟 */
+function shellTimeout(value: unknown): number {
+  const ms = Number(value)
+  if (!Number.isFinite(ms) || ms <= 0) return DEFAULT_SHELL_MS
+  return Math.min(ms, MAX_SHELL_MS)
+}
+
 function numberArg(value: unknown, fallback: number, max: number): number {
   const n = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), max) : fallback
@@ -363,7 +388,7 @@ async function execComputerTool(
   const computer = await deps.getComputer!()
   switch (name) {
     case 'shell': {
-      const r = await computer.shell(String(args.cmd ?? ''), typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined)
+      const r = await computer.shell(String(args.cmd ?? ''), shellTimeout(args.timeoutMs), deps.signal)
       const text = [`exit ${r.exitCode}`, r.stdout.trim(), r.stderr.trim() ? `stderr:\n${r.stderr.trim()}` : '']
         .filter(Boolean).join('\n')
       return { text: headAndTail(text) }
@@ -446,6 +471,8 @@ function describeSteps(payload: unknown): string {
 }
 
 function toChatMsg(m: MessageRow, selfId: string): ChatMsg {
+  // 放行/驳回是操作者发的、但没有正文：写成一句话，别给模型一条空的 user 消息（有的服务商会直接 400）
+  if (m.kind === 'approval_resolved') return { role: 'user', content: `[operator decision] ${JSON.stringify(m.payload)}` }
   if (m.sender === 'user') return { role: 'user', content: m.content }
   // 群里别的 bot 说的话是「同事发言」，不能混成自己的历史
   if (m.sender !== selfId) {
@@ -458,7 +485,6 @@ function toChatMsg(m: MessageRow, selfId: string): ChatMsg {
   if (m.kind === 'report') return { role: 'assistant', content: `[report filed] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'screenshot') return { role: 'assistant', content: '[screenshot posted to the thread]' }
   if (m.kind === 'approval_request') return { role: 'assistant', content: `[held for approval] ${JSON.stringify(m.payload)}` }
-  if (m.kind === 'approval_resolved') return { role: 'user', content: `[operator decision] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'memory_updated') return { role: 'assistant', content: `[memory updated] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'routine_created') return { role: 'assistant', content: `[routine created] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'bot_ref') return { role: 'user', content: `[message from teammate] ${JSON.stringify(m.payload)}` }

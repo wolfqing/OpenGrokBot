@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { runTurn, type AgentEvents } from '../src/agent.js'
 import { createFakeComputer } from '../src/computer.js'
-import { ensureDmThread, listMessages, openDb, upsertBot, type MessageRow } from '../src/db.js'
+import { ensureDmThread, insertMessage, listMessages, openDb, upsertBot, type MessageRow } from '../src/db.js'
 import type { AssistantTurn, ChatMsg, ChatOptions, LLM, Usage } from '../src/llm.js'
 
 const bot = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
@@ -162,5 +162,52 @@ describe('vision', () => {
       saveShot: async () => ({ url: '/x.png', width: 1, height: 1 }),
     }, 'look', events)
     expect(calls[1]!.messages.some((m) => m.images?.length)).toBe(false)
+  })
+})
+
+describe('history hygiene', () => {
+  it('never sends an empty user message (an operator decision becomes a readable line)', async () => {
+    const { db, threadId, events } = setup()
+    insertMessage(db, {
+      threadId, sender: 'user', kind: 'approval_resolved',
+      payload: { approvalId: 1, action: 'send the brief', decision: 'approve' },
+    })
+    const { llm, calls } = scriptedLLM([textTurn()])
+    await runTurn({ db, llm, bot, soul: '', threadId }, 'next?', events)
+    const users = calls[0]!.messages.filter((m) => m.role === 'user')
+    expect(users.every((m) => (m.content ?? '').trim().length > 0)).toBe(true)
+    expect(users.some((m) => (m.content ?? '').includes('[operator decision]'))).toBe(true)
+  })
+})
+
+describe('stopping a long command', () => {
+  it('interrupts a running shell call instead of waiting it out', async () => {
+    const { db, threadId, events } = setup()
+    const stop = new AbortController()
+    let sawSignal = false
+    const computer = createFakeComputer({
+      shell: (_cmd, _timeout, signal) => new Promise((_resolve, reject) => {
+        sawSignal = Boolean(signal)
+        signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+    })
+    const { llm } = scriptedLLM([toolTurn('shell', { cmd: 'npm run dev', timeoutMs: 0 }), textTurn()])
+    const turn = runTurn({ db, llm, bot, soul: '', threadId, signal: stop.signal, getComputer: async () => computer }, 'go', events)
+    await new Promise((r) => setTimeout(r, 20))
+    stop.abort()
+    await turn
+    expect(sawSignal).toBe(true)
+    expect(listMessages(db, threadId).at(-1)!.content).toMatch(/^⏹/)
+  })
+
+  it('caps the timeout a model asks for', async () => {
+    const seen: (number | undefined)[] = []
+    for (const timeoutMs of [0, 99_999_999, 5_000]) {
+      const { db, threadId, events } = setup()
+      const computer = createFakeComputer({ shell: async (_cmd, t) => { seen.push(t); return { stdout: '', stderr: '', exitCode: 0 } } })
+      const { llm } = scriptedLLM([toolTurn('shell', { cmd: 'sleep 1', timeoutMs }), textTurn()])
+      await runTurn({ db, llm, bot, soul: '', threadId, getComputer: async () => computer }, 'go', events)
+    }
+    expect(seen).toEqual([60_000, 600_000, 5_000])
   })
 })

@@ -35,7 +35,7 @@ describe('GET /api/bots/:botId/computer', () => {
     expect(await res.json()).toMatchObject({
       botId: 'researcher',
       running: true,
-      vncUrl: '/vnc/researcher/vnc.html?autoconnect=1&resize=scale&reconnect=1&path=vnc%2Fresearcher%2Fwebsockify&password=pw',
+      vncUrl: '/vnc/researcher/view.html#password=pw',
       routines: [{ name: 'Morning digest', human: 'every day at 09:00' }],
     })
   })

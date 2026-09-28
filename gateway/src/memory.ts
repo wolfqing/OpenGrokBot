@@ -13,18 +13,32 @@ export function memoryPath(dataDir: string, botId: string): string {
   return join(botDataDir(dataDir, botId), 'MEMORY.md')
 }
 
-/** v0.2.0 把 MEMORY.md 放在 workspace 里；第一次读到时搬过来。 */
-async function migrateLegacyMemory(dataDir: string, botId: string): Promise<void> {
-  const target = memoryPath(dataDir, botId)
-  const legacy = join(workspaceDir(dataDir, botId), 'MEMORY.md')
-  if (existsSync(target) || !existsSync(legacy)) return
-  await mkdir(dirname(target), { recursive: true })
-  await rename(legacy, target)
+const MIGRATED_MARKER = '.memory-left-the-workspaces'
+
+/**
+ * v0.2.0 把 MEMORY.md 放在 workspace 里。升级后第一次启动时把它们搬出来，并留一个标记：
+ * 之后 bot 再往自己 workspace 里写 MEMORY.md，也绝不会被当成「操作者给的规矩」搬进来。
+ */
+export async function migrateLegacyMemories(dataDir: string, botIds: string[]): Promise<string[]> {
+  const marker = join(dataDir, 'bots', MIGRATED_MARKER)
+  if (existsSync(marker)) return []
+  const moved: string[] = []
+  for (const botId of botIds) {
+    const target = memoryPath(dataDir, botId)
+    const legacy = join(workspaceDir(dataDir, botId), 'MEMORY.md')
+    if (existsSync(target) || !existsSync(legacy)) continue
+    await mkdir(dirname(target), { recursive: true })
+    await rename(legacy, target)
+    moved.push(botId)
+  }
+  await mkdir(dirname(marker), { recursive: true })
+  await writeFile(marker, `${new Date().toISOString()}\n`, 'utf8')
+  return moved
 }
 
+/** 只读网关自己的那份；workspace 里的同名文件是 bot 能改的，一概不认。 */
 export async function readMemory(dataDir: string, botId: string): Promise<string> {
   try {
-    await migrateLegacyMemory(dataDir, botId)
     return await readFile(memoryPath(dataDir, botId), 'utf8')
   } catch {
     return ''

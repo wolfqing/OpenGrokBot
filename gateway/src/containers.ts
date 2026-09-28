@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type Docker from 'dockerode'
@@ -16,6 +16,15 @@ const VNC_PORT = '6080/tcp'
 export type Endpoints = { shim: string; cdp: string; vnc: string; shimToken?: string; vncPassword?: string }
 export type ContainerSecrets = { shimToken: string; vncPassword: string }
 export type ContainerOptions = { memoryMb?: number; cpus?: number; timeZone?: string }
+
+const DEFAULT_MEMORY_MB = 2048
+const DEFAULT_CPUS = 2
+
+/** 塑造容器的设置（内存、CPU、时区）的指纹：改了设置，旧容器就得按新设置重建，否则改了等于没改 */
+export function containerConfigKey(opts: ContainerOptions): string {
+  const shape = { memoryMb: opts.memoryMb ?? DEFAULT_MEMORY_MB, cpus: opts.cpus ?? DEFAULT_CPUS, timeZone: opts.timeZone ?? '' }
+  return createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 16)
+}
 
 export function containerName(botId: string): string {
   return `opengrokbot-${botId}`
@@ -36,13 +45,18 @@ export function createContainerSpec(
   opts: ContainerOptions = {},
 ): Docker.ContainerCreateOptions {
   const loopback = [{ HostIp: '127.0.0.1', HostPort: '' }] // 空 HostPort = Docker 动态分配
-  const memoryMb = opts.memoryMb ?? 2048
-  const cpus = opts.cpus ?? 2
+  const memoryMb = opts.memoryMb ?? DEFAULT_MEMORY_MB
+  const cpus = opts.cpus ?? DEFAULT_CPUS
   return {
     name: containerName(botId),
     Image: BOT_IMAGE,
     // 归属记在标签上：Docker Desktop 的列表接口把挂载路径报成虚拟机里的 /host_mnt/…，靠它比对会误判
-    Labels: { 'ai.opengrokbot.bot': botId, 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': resolve(workspaceDir) },
+    Labels: {
+      'ai.opengrokbot.bot': botId,
+      'ai.opengrokbot.spec': SPEC_VERSION,
+      'ai.opengrokbot.workspace': resolve(workspaceDir),
+      'ai.opengrokbot.config': containerConfigKey(opts),
+    },
     Env: [
       `SHIM_TOKEN=${secrets.shimToken}`,
       `VNC_PASSWORD=${secrets.vncPassword}`,
@@ -94,12 +108,13 @@ async function pollUntilOk(
   failureMessage: string,
   timeoutMs: number,
   fetchImpl: typeof fetch,
+  headers: Record<string, string> = {},
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let lastError = 'no attempt made'
   while (Date.now() < deadline) {
     try {
-      const res = await fetchImpl(url, { signal: AbortSignal.timeout(5_000) })
+      const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(5_000) })
       if (res.ok) return
       lastError = `returned ${res.status}`
     } catch (err) {
@@ -115,8 +130,14 @@ export function waitForShim(shimUrl: string, timeoutMs = 60_000, fetchImpl: type
 }
 
 /** shim 比 Chromium 先就绪，所以新容器必须单独等 CDP，否则第一次用浏览器必然被拒连。 */
-export function waitForCdp(cdpUrl: string, timeoutMs = 60_000, fetchImpl: typeof fetch = fetch): Promise<void> {
-  return pollUntilOk(`${cdpUrl}/json/version`, `bot browser never became ready at ${cdpUrl}`, timeoutMs, fetchImpl)
+export function waitForCdp(
+  cdpUrl: string,
+  timeoutMs = 60_000,
+  fetchImpl: typeof fetch = fetch,
+  token?: string,
+): Promise<void> {
+  return pollUntilOk(`${cdpUrl}/json/version`, `bot browser never became ready at ${cdpUrl}`, timeoutMs, fetchImpl,
+    token ? { 'x-shim-token': token } : {})
 }
 
 type DockerLike = Pick<Docker, 'listNetworks' | 'createNetwork' | 'listContainers' | 'getContainer' | 'createContainer' | 'getImage'>
@@ -182,9 +203,12 @@ export async function ensureContainer(
     // 同名容器可能是另一个数据目录的网关建的：挂错 workspace 就等于换了一台电脑
     const owner = existing.Labels?.['ai.opengrokbot.workspace']
     const otherWorkspace = owner !== undefined && !samePath(owner, workspaceDir)
-    if (outdatedSpec || outdatedImage || otherWorkspace) {
+    const otherSettings = existing.Labels?.['ai.opengrokbot.config'] !== containerConfigKey(opts)
+    if (outdatedSpec || outdatedImage || otherWorkspace || otherSettings) {
       // 登录态和文件都在挂载的 workspace 里，重建容器不丢东西
-      const why = outdatedSpec ? 'new container spec' : outdatedImage ? 'bot image was rebuilt' : 'it belonged to another data dir'
+      const why = outdatedSpec ? 'new container spec'
+        : outdatedImage ? 'bot image was rebuilt'
+          : otherWorkspace ? 'it belonged to another data dir' : 'memory, CPU or timezone settings changed'
       console.log(`[gateway] rebuilding ${name}: ${why}`)
       await container.remove({ force: true })
       container = null
@@ -207,7 +231,7 @@ export async function ensureContainer(
   const endpoints = readEndpoints(await container.inspect())
   const fetchImpl = opts.fetchImpl ?? fetch
   await waitForShim(endpoints.shim, opts.readyTimeoutMs, fetchImpl)
-  await waitForCdp(endpoints.cdp, opts.readyTimeoutMs, fetchImpl)
+  await waitForCdp(endpoints.cdp, opts.readyTimeoutMs, fetchImpl, endpoints.shimToken)
   return endpoints
 }
 

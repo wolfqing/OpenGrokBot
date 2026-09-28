@@ -23,7 +23,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
       chromium \
       xvfb x11-utils x11vnc \
-      novnc websockify socat \
+      websockify \
       ca-certificates procps tzdata \
       fonts-liberation fonts-wqy-microhei fonts-noto-color-emoji fontconfig \
  && rm -rf /var/lib/apt/lists/*

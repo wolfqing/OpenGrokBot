@@ -17,7 +17,7 @@ function SignIn() {
         <div className="signin-title">This gateway is locked</div>
         <p>
           Open the sign-in link the gateway printed when it started. It looks like{' '}
-          <code>http://localhost:5173/auth?token=…</code> and signs this browser in for a year.
+          <code>{location.origin}/auth?token=…</code> and signs this browser in for a year.
         </p>
         <p className="signin-hint">Lost it? The token is in <code>gateway/data/auth-token</code>.</p>
       </div>
@@ -43,6 +43,25 @@ export default function App() {
   const threadId = selected?.id ?? null
   const threadIdRef = useRef<string | null>(null)
   useEffect(() => { threadIdRef.current = threadId }, [threadId])
+  // 面板属于某一位同事：换了线程就收起，免得新名字盖在旧屏幕上
+  useEffect(() => { setPanel(null) }, [selectedId])
+
+  /** 拉消息期间经 WS 到达的更新先记下来，拉回来后叠在快照上，免得被旧快照覆盖掉 */
+  const liveDuringFetch = useRef<Map<number, Message> | null>(null)
+  const loadMessages = useCallback(async (thread: string) => {
+    liveDuringFetch.current = new Map()
+    try {
+      const fetched = await fetchMessages(thread)
+      const live = liveDuringFetch.current ?? new Map<number, Message>()
+      if (threadIdRef.current !== thread) return
+      const merged = fetched.map((m) => live.get(m.id) ?? m)
+      const known = new Set(merged.map((m) => m.id))
+      for (const m of live.values()) if (!known.has(m.id)) merged.push(m)
+      setMessages(merged.sort((a, b) => a.id - b.id))
+    } finally {
+      liveDuringFetch.current = null
+    }
+  }, [])
 
   const guard = useCallback((err: unknown) => {
     if (err instanceof SignedOut) setSignedOut(true)
@@ -66,14 +85,11 @@ export default function App() {
     try {
       await Promise.all([refreshConversations(), loadRoster()])
       const current = threadIdRef.current
-      if (current) {
-        const ms = await fetchMessages(current)
-        if (threadIdRef.current === current) setMessages(ms)
-      }
+      if (current) await loadMessages(current)
     } catch (err) {
       guard(err)
     }
-  }, [guard, loadRoster, refreshConversations])
+  }, [guard, loadMessages, loadRoster, refreshConversations])
 
   useEffect(() => {
     checkSession()
@@ -86,10 +102,9 @@ export default function App() {
 
   useEffect(() => {
     if (!threadId) return
-    let alive = true
-    fetchMessages(threadId).then((ms) => { if (alive) setMessages(ms) }).catch(guard)
-    return () => { alive = false }
-  }, [threadId, guard])
+    setMessages([])
+    loadMessages(threadId).catch(guard)
+  }, [threadId, guard, loadMessages])
 
   useEffect(() => {
     if (signedOut !== false) return
@@ -112,6 +127,7 @@ export default function App() {
         void refreshConversations().catch(guard)
       }
       if (e.threadId === threadIdRef.current) {
+        liveDuringFetch.current?.set(e.message.id, e.message)
         // 同 id 就替换：审批 chip 被放行、activity 卡片多了一步，都是就地更新
         setMessages((ms) => {
           const at = ms.findIndex((m) => m.id === e.message.id)

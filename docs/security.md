@@ -9,15 +9,16 @@ injection — that follows an agent wherever it runs. This page is precise about
 | Boundary | How it holds |
 |---|---|
 | Only you can drive the gateway | Every API call, the live stream, screenshots and screens need the gateway token — a random secret in `gateway/data/auth-token` (mode `0600`). A browser signs in once through the link printed at startup and keeps an `HttpOnly`, `SameSite=Strict` cookie; scripts send `Authorization: Bearer <token>`. |
-| Other websites cannot act as you | Anything that changes state, and the WebSocket, must come from the gateway's own origin (or the UI's, `OPENGROKBOT_WEB_URL`). A page you happen to visit cannot approve a hold, post into a thread or read the stream. |
+| Other websites cannot act as you | Anything that changes state, and the WebSocket, must come from the gateway's own origin (or the UI's, `OPENGROKBOT_WEB_URL`), and requests with a body must be JSON — which no other page can send without a preflight the gateway never answers. A page you happen to visit cannot approve a hold, post into a thread or read the stream. |
 | Your network cannot reach it | The gateway listens on `127.0.0.1` unless you set `OPENGROKBOT_HOST`. |
 | A bot cannot approve its own holds | The token never enters a bot's workspace. A bot's shell or browser can reach the host, but cannot authenticate. |
-| Bots cannot reach each other | All bot computers share one Docker network with container-to-container traffic switched off. |
-| Each computer is a cage | Its own container with memory, CPU and process limits, `no-new-privileges`, and only its own workspace mounted. The shell/file shim wants a per-container token, the screen a per-container VNC password, and every port is published to `127.0.0.1` only. The screen itself reaches your browser through the gateway, behind the same sign-in. |
-| Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only way in is `save_memory`, which always posts a diff chip. Screenshots — the evidence — are stored outside it too. |
+| Bots cannot reach each other | All bot computers share one Docker network with container-to-container traffic switched off. And because on Docker Desktop a container can still reach ports published on the host, everything a computer publishes wants that computer's own secret: its shell/file shim and its browser control port (CDP) a per-container token, its screen a per-container VNC password. |
+| Each computer is a cage | Its own container with memory, CPU and process limits, `no-new-privileges`, and only its own workspace mounted. Every port is published to `127.0.0.1` only. |
+| A bot cannot put code in front of you | The screen page and its noVNC code are served by the gateway from its own copy; only the raw VNC stream comes from the bot's computer. Nothing a bot changes inside its container reaches your browser as a page. |
+| Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only way in is `save_memory`, which always posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
 | Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENGROKBOT_A2A_ALLOW`, and relays stop after two hops. |
 | Spend has a ceiling if you want one | `OPENGROKBOT_DAILY_TOKENS` stops a bot for the rest of the day once it has used that many tokens. |
-| You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn; routines can be paused or deleted from the computer panel. |
+| You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes. Routines can be paused or deleted from the computer panel. |
 
 ## A convention, not a wall
 

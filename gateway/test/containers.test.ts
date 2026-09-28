@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BOT_NETWORK, SPEC_VERSION, containerName, createContainerSpec, ensureContainer, readEndpoints, runningBotIds,
+  BOT_NETWORK, SPEC_VERSION, containerConfigKey, containerName, createContainerSpec, ensureContainer, readEndpoints,
+  runningBotIds,
   stopBotContainer, waitForCdp, waitForShim,
 } from '../src/containers.js'
 
@@ -76,6 +77,13 @@ describe('createContainerSpec', () => {
     expect(spec.HostConfig!.Binds![0]).toMatch(/^\/.+\/data-stub\/workspaces\/researcher:\/workspace$/)
   })
 
+  it('fingerprints the settings that shape the container', () => {
+    expect(containerConfigKey({ memoryMb: 2048, cpus: 2 })).toBe(containerConfigKey({}))
+    expect(containerConfigKey({ timeZone: 'Asia/Shanghai' })).not.toBe(containerConfigKey({}))
+    expect(createContainerSpec('researcher', '/w', secrets, { cpus: 1 }).Labels!['ai.opengrokbot.config'])
+      .toBe(containerConfigKey({ cpus: 1 }))
+  })
+
   it('hands the container its secrets and the gateway timezone', () => {
     const spec = createContainerSpec('researcher', '/w', secrets, { timeZone: 'Asia/Shanghai' })
     expect(spec.Env).toEqual(expect.arrayContaining(['SHIM_TOKEN=tok-123', 'VNC_PASSWORD=pw12345x', 'TZ=Asia/Shanghai']))
@@ -121,7 +129,10 @@ const ok = (async () => new Response('{}')) as typeof fetch
 // Docker Desktop（macOS）的列表接口把挂载路径报成虚拟机里的 /host_mnt/…，所以归属看标签，不看这个路径
 const running = (extra: Partial<Info> = {}): Info => ({
   Id: 'c1', Names: ['/opengrokbot-researcher'], State: 'running', ImageID: 'sha256:current',
-  Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': '/w' },
+  Labels: {
+    'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': '/w',
+    'ai.opengrokbot.config': containerConfigKey({}),
+  },
   Mounts: [{ Source: '/host_mnt/w', Destination: '/workspace' }], ...extra,
 })
 
@@ -171,6 +182,12 @@ describe('ensureContainer', () => {
       })],
     })
     await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+  })
+
+  it('rebuilds a computer when its memory, CPU or timezone settings changed', async () => {
+    const { docker, log } = fakeDocker({ networks: [BOT_NETWORK], containers: [running()] })
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok, memoryMb: 1024 })
     expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
   })
 
@@ -243,6 +260,16 @@ describe('waitForCdp', () => {
     }) as typeof fetch
     await waitForCdp('http://127.0.0.1:9222', 5000, fakeFetch)
     expect(seen).toEqual(['http://127.0.0.1:9222/json/version', 'http://127.0.0.1:9222/json/version'])
+  })
+
+  it('sends the container token while polling the browser', async () => {
+    const seen: (string | null)[] = []
+    const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('x-shim-token'))
+      return new Response('{}')
+    }) as typeof fetch
+    await waitForCdp('http://127.0.0.1:9222', 5000, fakeFetch, 'tok-123')
+    expect(seen).toEqual(['tok-123'])
   })
 
   it('names the browser in its timeout error', async () => {

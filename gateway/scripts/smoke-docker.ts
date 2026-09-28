@@ -74,9 +74,39 @@ const probe = await computer.shell(
 )
 check('one bot cannot reach another bot\'s computer', probe.stdout.includes('blocked'), `${peerIp}: ${probe.stdout.trim()}`)
 
+// Docker Desktop 上，别的容器能经 host.docker.internal 摸到宿主上发布的端口：CDP 和 shim 都必须要口令
+const peer = (await docker.getContainer(containerName(PEER)).inspect()).NetworkSettings.Ports
+const peerCdpPort = peer['9222/tcp']?.[0]?.HostPort
+const peerShimPort = peer['7717/tcp']?.[0]?.HostPort
+await computer.writeFile('probe-host.js', [
+  "const net = require('net')",
+  "const probe = (port) => new Promise((res) => {",
+  "  const s = net.connect(port, 'host.docker.internal', () => s.write('GET /json/version HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n'))",
+  "  s.on('data', (d) => { res(String(d).split('\\r\\n')[0]); s.destroy() })",
+  "  s.on('error', (e) => res('error ' + e.code)); setTimeout(() => res('timeout'), 4000)",
+  "})",
+  `Promise.all([probe(${peerCdpPort}), probe(${peerShimPort})]).then((r) => console.log(r.join(' | ')))`,
+].join('\n'))
+const viaHost = (await computer.shell('node probe-host.js')).stdout.trim()
+check('another bot cannot drive this one\'s browser or shell via the host', !/ 200 /.test(viaHost), viaHost)
+
+const started = Date.now()
+const background = await computer.shell('(sleep 30 &); echo started')
+check('a background job does not hold the call open', background.stdout.includes('started') && Date.now() - started < 5000,
+  `${Date.now() - started} ms`)
+
+const stop = new AbortController()
+const long = computer.shell('sleep 45; echo done', 60_000, stop.signal).catch(() => 'stopped')
+await new Promise((r) => setTimeout(r, 1500))
+stop.abort()
+await long
+await new Promise((r) => setTimeout(r, 800))
+const leftover = await computer.shell('pgrep -f "slee[p] 45" || echo none')
+check('a stopped command is killed in the container, children included', leftover.stdout.trim() === 'none', leftover.stdout.trim())
+
 await computer.shell('pkill -f "chromium.*remote-debugging-port" || true')
 await new Promise((r) => setTimeout(r, 1500))
-await waitForCdp(endpoints.cdp, 30_000)
+await waitForCdp(endpoints.cdp, 30_000, fetch, endpoints.shimToken)
 const again = await computer.goto('https://example.com')
 check('browser comes back after chromium is killed', /example/i.test(again.title), again.title)
 

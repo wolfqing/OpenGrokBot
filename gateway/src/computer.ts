@@ -8,7 +8,8 @@ export interface BotComputer {
   readonly screen?: { base: string; password?: string }
   /** 这台电脑还应答吗？容器一重启端口就全变了，缓存的连接会全废。 */
   ping(): Promise<boolean>
-  shell(cmd: string, timeoutMs?: number): Promise<ShellResult>
+  /** signal：操作者按了停止，立刻放弃这次调用（容器里的 shim 会把命令一起杀掉） */
+  shell(cmd: string, timeoutMs?: number, signal?: AbortSignal): Promise<ShellResult>
   readFile(path: string): Promise<string>
   writeFile(path: string, content: string): Promise<void>
   goto(url: string): Promise<{ url: string; title: string }>
