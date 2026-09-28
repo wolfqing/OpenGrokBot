@@ -157,6 +157,14 @@ describe('ensureContainer', () => {
   })
 })
 
+describe('docker not running', () => {
+  it('says Docker is not running instead of surfacing a socket error', async () => {
+    const refused = Object.assign(new Error('connect ECONNREFUSED /Users/me/.docker/run/docker.sock'), { code: 'ECONNREFUSED' })
+    const docker = { listNetworks: async () => { throw refused } } as never
+    await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toThrow(/Docker is not running/)
+  })
+})
+
 describe('stopBotContainer', () => {
   it('stops the named computer', async () => {
     const { docker, log } = fakeDocker()

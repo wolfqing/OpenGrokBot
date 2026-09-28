@@ -41,15 +41,37 @@ function presentedToken(c: Context): string | undefined {
   return getCookie(c, SESSION_COOKIE)
 }
 
+/** 同一端口上的 localhost / 127.0.0.1 / [::1] 是同一台机器的同一个服务 */
+function sameHost(a: URL, b: URL): boolean {
+  const loopback = (h: string) => (['127.0.0.1', '[::1]', '::1'].includes(h) ? 'localhost' : h)
+  return loopback(a.hostname) === loopback(b.hostname) && a.port === b.port
+}
+
 function originAllowed(c: Context, allowedOrigins: string[]): boolean {
   const origin = c.req.header('origin')
   if (!origin) return true // curl、脚本不带 Origin，交给令牌把关
-  if (allowedOrigins.includes(origin)) return true
   try {
-    return new URL(origin).host === new URL(c.req.url).host
+    const from = new URL(origin)
+    return sameHost(from, new URL(c.req.url)) || allowedOrigins.some((allowed) => sameHost(from, new URL(allowed)))
   } catch {
     return false
   }
+}
+
+/**
+ * 界面所在的地址天然可信：dev 下是 Vite（5173），它的代理会把 Host 改成网关自己，
+ * 光比 Host 会把正常请求当成跨站。再加上用户显式放行的来源（反代等）。
+ */
+export function trustedOrigins(opts: { webUrl: string; allowedOrigins: string[] }): string[] {
+  const origins = [...opts.allowedOrigins]
+  if (opts.webUrl) {
+    try {
+      origins.push(new URL(opts.webUrl).origin)
+    } catch {
+      // 配错了就当没配
+    }
+  }
+  return origins
 }
 
 /**

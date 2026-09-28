@@ -142,13 +142,23 @@ async function currentImageId(docker: DockerLike): Promise<string | null> {
   }
 }
 
+/** 连不上 docker 的 socket：多半是 Docker Desktop 没开，直接说人话 */
+function explainDockerDown(err: unknown): never {
+  const code = (err as { code?: string }).code
+  const message = err instanceof Error ? err.message : String(err)
+  if (code === 'ECONNREFUSED' || code === 'ENOENT' || /docker\.sock/.test(message)) {
+    throw new Error('Docker is not running. Start Docker Desktop (or the docker service), then open this again.')
+  }
+  throw err
+}
+
 export async function ensureContainer(
   docker: DockerLike,
   botId: string,
   workspaceDir: string,
   opts: ContainerOptions & { fetchImpl?: typeof fetch; readyTimeoutMs?: number } = {},
 ): Promise<Endpoints> {
-  await ensureNetwork(docker)
+  await ensureNetwork(docker).catch(explainDockerDown)
   const name = containerName(botId)
   const existing = (await docker.listContainers({ all: true, filters: { name: [name] } }))
     .find((c) => c.Names.includes(`/${name}`))

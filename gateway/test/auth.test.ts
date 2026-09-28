@@ -101,4 +101,23 @@ describe('gateway auth', () => {
     expect(setCookie).toMatch(/SameSite=Strict/i)
     expect((await app.request('/auth?token=wrong')).status).toBe(401)
   })
+
+  it('treats localhost and 127.0.0.1 on the same port as one origin', async () => {
+    const { app } = setup()
+    const res = await app.request('http://127.0.0.1:4747/api/threads/dm:researcher/messages', {
+      method: 'POST',
+      headers: { ...cookie, 'Content-Type': 'application/json', Origin: 'http://localhost:4747' },
+      body: JSON.stringify({ text: 'hi' }),
+    })
+    expect(res.status).toBe(202)
+  })
+})
+
+describe('trusted UI origins', () => {
+  it('lists the web UI address so a dev proxy that rewrites Host still works', async () => {
+    const { trustedOrigins } = await import('../src/auth.js')
+    expect(trustedOrigins({ webUrl: 'http://localhost:5173/', allowedOrigins: ['https://bots.example.com'] }))
+      .toEqual(['https://bots.example.com', 'http://localhost:5173'])
+    expect(trustedOrigins({ webUrl: '', allowedOrigins: [] })).toEqual([])
+  })
 })

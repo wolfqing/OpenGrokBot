@@ -4,7 +4,7 @@ import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import Docker from 'dockerode'
 import { parseA2AAllow } from './a2a.js'
-import { loadOrCreateToken } from './auth.js'
+import { loadOrCreateToken, trustedOrigins } from './auth.js'
 import { loadConfig } from './config.js'
 import { runningBotIds, stopBotContainer } from './containers.js'
 import { openDb } from './db.js'
@@ -51,7 +51,7 @@ const gateway = createApp({
   chiefId: config.chiefId,
   a2aRules: parseA2AAllow(config.a2aAllow, config.chiefId),
   token,
-  allowedOrigins: config.allowedOrigins,
+  allowedOrigins: trustedOrigins(config),
   dailyTokens: config.dailyTokens,
   vision: config.vision,
   timeZone: config.timeZone,
