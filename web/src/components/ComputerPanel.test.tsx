@@ -4,19 +4,20 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ComputerInfo } from '../types'
 import { ComputerPanel } from './ComputerPanel'
 
+const SCREEN = 'http://127.0.0.1:53314/vnc.html?autoconnect=1&resize=scale&reconnect=1&password=pw12345x'
 const running: ComputerInfo = {
   botId: 'researcher',
   running: true,
-  vncUrl: 'http://127.0.0.1:53314',
-  routines: [{ id: 1, name: 'Morning digest', cron: '0 9 * * *', human: 'every day at 09:00', last_run_at: null }],
+  vncUrl: SCREEN,
+  routines: [{ id: 1, name: 'Morning digest', cron: '0 9 * * *', human: 'every day at 09:00', last_run_at: null, enabled: 1 }],
+  usage: { today: { prompt: 12000, completion: 345, cached: 8000, total: 12345 }, budget: 200000 },
 }
 
 describe('ComputerPanel', () => {
   it('embeds the live screen and lists what is scheduled', () => {
     const { container } = render(<ComputerPanel info={running} botName="Scout" onClose={() => {}} />)
     const frame = container.querySelector('iframe')!
-    expect(frame.getAttribute('src')).toContain('http://127.0.0.1:53314/vnc.html')
-    expect(frame.getAttribute('src')).toContain('autoconnect=1')
+    expect(frame.getAttribute('src')).toBe(SCREEN) // 网关给的地址已带好连接参数
     expect(screen.getByText("Scout's computer")).toBeInTheDocument()
     expect(screen.getByText('Morning digest')).toBeInTheDocument()
     expect(screen.getByText('every day at 09:00')).toBeInTheDocument()
@@ -49,5 +50,23 @@ describe('ComputerPanel', () => {
     render(<ComputerPanel info={running} botName="Scout" onClose={onClose} />)
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('runs, pauses, resumes and deletes routines', async () => {
+    const onRoutine = vi.fn()
+    const paused = { ...running.routines[0]!, id: 2, name: 'Old sweep', enabled: 0 }
+    render(<ComputerPanel info={{ ...running, routines: [running.routines[0]!, paused] }} botName="Scout" onClose={() => {}} onRoutine={onRoutine} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Run Morning digest now' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Pause Morning digest' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Resume Old sweep' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Old sweep' }))
+    expect(onRoutine.mock.calls).toEqual([[1, 'run'], [1, 'pause'], [2, 'resume'], [2, 'delete']])
+    expect(screen.getByText('paused')).toBeInTheDocument()
+  })
+
+  it('shows today\'s token use against the budget', () => {
+    render(<ComputerPanel info={running} botName="Scout" onClose={() => {}} />)
+    expect(screen.getByText(/12,345/)).toBeInTheDocument()
+    expect(screen.getByText(/200,000/)).toBeInTheDocument()
   })
 })

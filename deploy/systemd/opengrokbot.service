@@ -1,0 +1,23 @@
+# OpenGrokBot gateway as a systemd service.
+#   sudo cp deploy/systemd/opengrokbot.service /etc/systemd/system/
+#   sudo install -m 600 /dev/null /etc/opengrokbot.env   # then put OPENGROKBOT_API_KEY=… in it
+#   sudo systemctl daemon-reload && sudo systemctl enable --now opengrokbot
+# The service user must be in the docker group. Edit User and WorkingDirectory to match your box.
+[Unit]
+Description=OpenGrokBot gateway
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=opengrokbot
+WorkingDirectory=/opt/OpenGrokBot
+Environment=OPENGROKBOT_MODEL=grok-4
+Environment=OPENGROKBOT_QUIET_TOKEN=1
+EnvironmentFile=-/etc/opengrokbot.env
+ExecStart=/usr/bin/node gateway/dist/main.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

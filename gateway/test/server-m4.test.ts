@@ -72,11 +72,11 @@ describe('group orchestration', () => {
     const chiefTurn = llm.seen[llm.seen.length - 1]!
     expect(chiefTurn.who).toBe('Chief')
     expect(chiefTurn.system).toContain('Offsite crew')
-    // 前两位的发言必须以"同事说的话"出现在 Chief 的上下文里
+    // 成员的发言必须以"同事说的话"出现在 Chief 的上下文里（成员并行作答，先后不定）
     const colleagues = chiefTurn.history.filter((m) => (m.content ?? '').startsWith('@'))
-    expect(colleagues.map((m) => m.content)).toEqual([
-      '@researcher: Scout reporting.',
+    expect(colleagues.map((m) => m.content).sort()).toEqual([
       '@market-watch: Ticker reporting.',
+      '@researcher: Scout reporting.',
     ])
   })
 

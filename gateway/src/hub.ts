@@ -3,6 +3,7 @@ import type { MessageRow } from './db.js'
 export type GatewayEvent =
   | { type: 'message'; threadId: string; message: MessageRow }
   | { type: 'status'; botId: string; state: 'thinking' | 'idle' }
+  | { type: 'hello'; statuses: Record<string, 'thinking' | 'idle'> }
 
 type WsLike = { send(data: string): void }
 

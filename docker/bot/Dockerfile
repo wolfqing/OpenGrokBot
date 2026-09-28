@@ -8,18 +8,24 @@ ARG APT_MIRROR=""
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
+    LANG=C.UTF-8 \
     SHIM_PORT=7717
 
+# 字体：wqy-microhei 让中文页面不再是一排方块（只有几 MB，比 noto-cjk 小一个量级），noto-color-emoji 管 emoji。
+# tzdata：网关把自己的时区传进来（TZ），bot 在 shell 里看到的时间和 routine 的时间一致。
+# Acquire::Retries：镜像站偶尔 503 / 超时，大包（chromium）重试几次通常就过了。
 RUN if [ -n "$APT_MIRROR" ]; then \
       for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
         [ -f "$f" ] && sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" "$f"; \
       done; \
     fi \
- && apt-get update && apt-get install -y --no-install-recommends \
+ && apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
       chromium \
       xvfb x11-utils x11vnc \
-      novnc websockify socat \
-      ca-certificates fonts-liberation procps \
+      websockify \
+      ca-certificates procps tzdata \
+      fonts-liberation fonts-wqy-microhei fonts-noto-color-emoji fontconfig \
  && rm -rf /var/lib/apt/lists/*
 
 COPY shim.mjs /opt/shim.mjs

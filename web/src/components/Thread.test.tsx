@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Conversation, Message } from '../types'
@@ -6,11 +6,11 @@ import { Thread } from './Thread'
 
 const dm: Conversation = {
   id: 'dm:researcher', kind: 'dm', title: 'Scout', emoji: '🔎', subtitle: 'research',
-  members: ['researcher'], last_message: null,
+  members: ['researcher'], last_message: null, pending: 0,
 }
 const group: Conversation = {
   id: 'group:offsite-crew', kind: 'group', title: 'Offsite crew', emoji: '👥', subtitle: 'Scout, Ticker',
-  members: ['researcher', 'market-watch'], last_message: null,
+  members: ['researcher', 'market-watch'], last_message: null, pending: 0,
 }
 const roster = {
   researcher: { name: 'Scout', emoji: '🔎' },
@@ -131,5 +131,65 @@ describe('Thread', () => {
     await userEvent.type(input, '  hello there{Enter}')
     expect(onSend).toHaveBeenCalledWith('hello there')
     expect(input).toHaveValue('')
+  })
+
+  it('does not send while an input method is still composing (Chinese, Japanese…)', () => {
+    const onSend = vi.fn()
+    render(<Thread conversation={dm} roster={roster} messages={[]} thinking={false} onSend={onSend} onDecide={() => {}} />)
+    const box = screen.getByPlaceholderText('Message Scout')
+    fireEvent.change(box, { target: { value: 'nihao' } })
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
+    fireEvent.keyDown(box, { key: 'Enter', keyCode: 229 }) // Safari 在 compositionend 之后才发这个
+    expect(onSend).not.toHaveBeenCalled()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSend).toHaveBeenCalledWith('nihao')
+  })
+
+  it('keeps Shift+Enter for a new line', async () => {
+    const onSend = vi.fn()
+    render(<Thread conversation={dm} roster={roster} messages={[]} thinking={false} onSend={onSend} onDecide={() => {}} />)
+    const box = screen.getByPlaceholderText('Message Scout')
+    await userEvent.type(box, 'line one{Shift>}{Enter}{/Shift}line two')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(box).toHaveValue('line one\nline two')
+  })
+
+  it('offers a stop button while the bot is working', async () => {
+    const onStop = vi.fn()
+    const { rerender } = render(
+      <Thread conversation={dm} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onStop={onStop} />,
+    )
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    rerender(<Thread conversation={dm} roster={roster} messages={[]} thinking={true} onSend={() => {}} onDecide={() => {}} onStop={onStop} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(onStop).toHaveBeenCalled()
+  })
+
+  it('renders the steps a bot took on its computer', async () => {
+    const worked: Message[] = [{
+      id: 20, thread_id: 'dm:researcher', sender: 'researcher', kind: 'activity', content: '', created_at: 20,
+      payload: {
+        done: true,
+        steps: [
+          { tool: 'shell', summary: 'ls -la reports/', ok: true, ms: 120 },
+          { tool: 'browser_goto', summary: 'https://nope.invalid', ok: false, ms: 900 },
+        ],
+      },
+    }]
+    render(<Thread conversation={dm} roster={roster} messages={worked} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(screen.getByText(/2 steps/)).toBeInTheDocument()
+    expect(screen.getByText(/1 failed/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /2 steps/ }))
+    expect(screen.getByText('ls -la reports/')).toBeInTheDocument()
+    expect(screen.getByText('https://nope.invalid')).toBeInTheDocument()
+  })
+
+  it('shows the step in progress while the bot is still working', () => {
+    const working: Message[] = [{
+      id: 21, thread_id: 'dm:researcher', sender: 'researcher', kind: 'activity', content: '', created_at: 21,
+      payload: { done: false, steps: [{ tool: 'browser_goto', summary: 'https://example.com' }] },
+    }]
+    render(<Thread conversation={dm} roster={roster} messages={working} thinking={true} onSend={() => {}} onDecide={() => {}} />)
+    expect(screen.getByText('https://example.com')).toBeInTheDocument()
   })
 })

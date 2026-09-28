@@ -26,12 +26,113 @@ describe('createLLM (openai-compatible)', () => {
 
   it('throws readable error on non-200', async () => {
     const fakeFetch = (async () => new Response('quota exceeded', { status: 429 })) as typeof fetch
-    const llm = createLLM(loadConfig({}), fakeFetch)
+    const llm = createLLM(loadConfig({}), fakeFetch, async () => {})
     await expect(llm.chat([{ role: 'user', content: 'hi' }], [])).rejects.toThrow(/429/)
   })
 })
 
+const okBody = (extra: Record<string, unknown> = {}) => JSON.stringify({
+  choices: [{ message: { role: 'assistant', content: 'fine' } }],
+  ...extra,
+})
+
+describe('createLLM resilience', () => {
+  const hi: ChatMsg[] = [{ role: 'user', content: 'hi' }]
+
+  it('retries 5xx with backoff and then succeeds', async () => {
+    let calls = 0
+    const waits: number[] = []
+    const fakeFetch = (async () => {
+      calls++
+      return calls < 3 ? new Response('upstream busy', { status: 503 }) : new Response(okBody())
+    }) as typeof fetch
+    const llm = createLLM(loadConfig({}), fakeFetch, async (ms) => { waits.push(ms) })
+    expect((await llm.chat(hi, [])).content).toBe('fine')
+    expect(calls).toBe(3)
+    expect(waits).toHaveLength(2)
+    expect(waits[1]!).toBeGreaterThan(waits[0]!)
+  })
+
+  it('honors Retry-After on 429', async () => {
+    let calls = 0
+    const waits: number[] = []
+    const fakeFetch = (async () => {
+      calls++
+      return calls === 1
+        ? new Response('slow down', { status: 429, headers: { 'retry-after': '2' } })
+        : new Response(okBody())
+    }) as typeof fetch
+    const llm = createLLM(loadConfig({}), fakeFetch, async (ms) => { waits.push(ms) })
+    await llm.chat(hi, [])
+    expect(waits).toEqual([2000])
+  })
+
+  it('does not retry a request the provider rejected', async () => {
+    let calls = 0
+    const fakeFetch = (async () => { calls++; return new Response('bad model', { status: 400 }) }) as typeof fetch
+    const llm = createLLM(loadConfig({}), fakeFetch, async () => {})
+    await expect(llm.chat(hi, [])).rejects.toThrow(/400/)
+    expect(calls).toBe(1)
+  })
+
+  it('gives up on a hung call after the timeout', async () => {
+    const hang = ((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    })) as typeof fetch
+    const llm = createLLM(loadConfig({ OPENGROKBOT_LLM_TIMEOUT_MS: '20', OPENGROKBOT_LLM_RETRIES: '0' }), hang, async () => {})
+    await expect(llm.chat(hi, [])).rejects.toThrow(/timed out/i)
+  })
+
+  it('stops at once when the operator stops the turn, without retrying', async () => {
+    let calls = 0
+    const hang = ((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      calls++
+      init!.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    })) as typeof fetch
+    const llm = createLLM(loadConfig({}), hang, async () => {})
+    const stop = new AbortController()
+    const pending = llm.chat(hi, [], { signal: stop.signal })
+    stop.abort()
+    await expect(pending).rejects.toThrow()
+    expect(calls).toBe(1)
+  })
+
+  it('reports token usage, including cached prompt tokens', async () => {
+    const fakeFetch = (async () => new Response(okBody({
+      usage: { prompt_tokens: 1200, completion_tokens: 80, prompt_tokens_details: { cached_tokens: 1024 } },
+    }))) as typeof fetch
+    const llm = createLLM(loadConfig({}), fakeFetch)
+    expect((await llm.chat(hi, [])).usage).toEqual({ prompt: 1200, completion: 80, cached: 1024 })
+  })
+
+  it('sends attached images as image_url parts', async () => {
+    let body: { messages: unknown[] } | null = null
+    const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init!.body))
+      return new Response(okBody())
+    }) as typeof fetch
+    const llm = createLLM(loadConfig({}), fakeFetch)
+    await llm.chat([{ role: 'user', content: 'what is on screen?', images: ['data:image/png;base64,AAAA'] }], [])
+    expect(body!.messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what is on screen?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+      ],
+    })
+  })
+})
+
 describe('stub model', () => {
+  it('ignores the time note the gateway appends to the last message', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const turn = await llm.chat([{
+      role: 'user',
+      content: 'from now on quiet accounts wait for my read\n\n(Current time: Sunday 2026-09-27 22:40, Asia/Shanghai. Routine cron expressions run in this timezone.)',
+    }], toolDefs)
+    expect((turn.toolCalls[0]!.args as { rule: string }).rule).toBe('quiet accounts wait for my read')
+  })
+
   it('first replies with a report tool call, then closes with text', async () => {
     const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
     const messages: ChatMsg[] = [{ role: 'user', content: 'do the thing' }]

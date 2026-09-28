@@ -70,3 +70,14 @@ describe('createScheduler', () => {
     expect(scheduler.size()).toBe(0)
   })
 })
+
+describe('remove', () => {
+  it('stops and forgets one routine, leaving the rest', () => {
+    const { makeCron, jobs } = fakeCronFactory()
+    const scheduler = createScheduler({ run: () => {}, makeCron })
+    scheduler.load([routine(1), routine(2)])
+    scheduler.remove(1)
+    expect(scheduler.size()).toBe(1)
+    expect(jobs.map((j) => j.stopped)).toEqual([true, false])
+  })
+})

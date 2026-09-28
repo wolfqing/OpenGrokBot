@@ -1,6 +1,6 @@
 import type {
-  ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, BotStatus, Conversation, LoginPayload, MemoryPayload,
-  ReportPayload, RoutinePayload, ScreenshotPayload,
+  ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, BotStatus, Conversation, LoginPayload,
+  MemoryPayload, ReportPayload, RoutinePayload, ScreenshotPayload,
 } from '../types'
 
 function preview(c: Conversation): string {
@@ -25,6 +25,11 @@ function preview(c: Conversation): string {
       return `↪ from @${(m.payload as BotRefPayload | null)?.fromName ?? 'a teammate'}`
     case 'login_request':
       return `🔑 Sign in to ${(m.payload as LoginPayload | null)?.site ?? 'a site'}`
+    case 'activity': {
+      const steps = (m.payload as ActivityPayload | null)?.steps ?? []
+      const last = steps[steps.length - 1]
+      return last ? `⚙ ${last.tool} ${last.summary}` : '⚙ Working'
+    }
     case 'report': {
       const payload = m.payload as ReportPayload | null
       const first = payload?.lines[0]
@@ -61,6 +66,9 @@ export function Sidebar({ conversations, selectedId, statuses, onSelect, onNewBo
             </span>
             <span className="sidebar-preview">{preview(c)}</span>
           </span>
+          {c.pending > 0 ? (
+            <span className="sidebar-badge" aria-label={`${c.pending} waiting on you`}>{c.pending}</span>
+          ) : null}
         </button>
       ))}
     </aside>

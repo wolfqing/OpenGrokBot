@@ -11,6 +11,7 @@ export type MessageKind =
   | 'routine_created'
   | 'bot_ref'
   | 'login_request'
+  | 'activity'
 
 export type BotRow = {
   id: string
@@ -87,6 +88,16 @@ CREATE TABLE IF NOT EXISTS routines (
   last_run_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_routines_bot ON routines(bot_id, enabled);
+CREATE TABLE IF NOT EXISTS usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  cached_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_bot ON usage(bot_id, created_at);
 `
 
 export function openDb(path = ':memory:'): Db {
@@ -96,11 +107,16 @@ export function openDb(path = ':memory:'): Db {
   return db
 }
 
+/** 空的 role/emoji 表示「来源没写」，不能拿它覆盖库里已有的值——否则每次重启都会抹掉新同事的职位。 */
 export function upsertBot(db: Db, bot: BotRow): void {
   db.prepare(
     `INSERT INTO bots (id, name, role, emoji, soul_path, created_at)
-     VALUES (@id, @name, @role, @emoji, @soul_path, @created_at)
-     ON CONFLICT(id) DO UPDATE SET name=@name, role=@role, emoji=@emoji, soul_path=@soul_path`,
+     VALUES (@id, @name, @role, COALESCE(NULLIF(@emoji, ''), '🤖'), @soul_path, @created_at)
+     ON CONFLICT(id) DO UPDATE SET
+       name = @name,
+       role = CASE WHEN @role <> '' THEN @role ELSE bots.role END,
+       emoji = CASE WHEN @emoji <> '' THEN @emoji ELSE bots.emoji END,
+       soul_path = @soul_path`,
   ).run({ ...bot, created_at: Date.now() })
 }
 
@@ -151,6 +167,32 @@ export function listBotsWithLastMessage(db: Db): SidebarBot[] {
   })
 }
 
+export function getMessage(db: Db, id: number): MessageRow | null {
+  const row = db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as Record<string, unknown> | undefined
+  return row ? parseRow(row) : null
+}
+
+export type UsageTotals = { prompt: number; completion: number; cached: number; total: number }
+
+export function recordUsage(
+  db: Db,
+  input: { botId: string; threadId: string; usage: { prompt: number; completion: number; cached: number }; at: number },
+): void {
+  db.prepare(
+    `INSERT INTO usage (bot_id, thread_id, prompt_tokens, completion_tokens, cached_tokens, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(input.botId, input.threadId, input.usage.prompt, input.usage.completion, input.usage.cached, input.at)
+}
+
+export function usageSince(db: Db, botId: string, since: number): UsageTotals {
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(prompt_tokens), 0) AS prompt, COALESCE(SUM(completion_tokens), 0) AS completion,
+            COALESCE(SUM(cached_tokens), 0) AS cached
+     FROM usage WHERE bot_id = ? AND created_at >= ?`,
+  ).get(botId, since) as { prompt: number; completion: number; cached: number }
+  return { ...row, total: row.prompt + row.completion }
+}
+
 export function updateMessagePayload(db: Db, messageId: number, payload: unknown): void {
   db.prepare('UPDATE messages SET payload = ? WHERE id = ?').run(JSON.stringify(payload), messageId)
 }
@@ -163,6 +205,8 @@ export type Conversation = {
   subtitle: string
   members: string[]
   last_message: MessageRow | null
+  /** 这个线程里还等着人拍板的审批数 */
+  pending: number
 }
 
 export function ensureGroupThread(db: Db, id: string, title: string, memberIds: string[]): string {
@@ -188,6 +232,9 @@ function lastMessageOf(db: Db, threadId: string): MessageRow | null {
 export function listConversations(db: Db): Conversation[] {
   const bots = db.prepare('SELECT * FROM bots ORDER BY name').all() as BotRow[]
   const byId = new Map(bots.map((b) => [b.id, b]))
+  const pending = new Map((db.prepare(
+    `SELECT thread_id, COUNT(*) AS n FROM approvals WHERE status = 'pending' GROUP BY thread_id`,
+  ).all() as { thread_id: string; n: number }[]).map((r) => [r.thread_id, r.n]))
   const dms: Conversation[] = bots.map((b) => ({
     id: `dm:${b.id}`,
     kind: 'dm',
@@ -196,6 +243,7 @@ export function listConversations(db: Db): Conversation[] {
     subtitle: b.role,
     members: [b.id],
     last_message: lastMessageOf(db, `dm:${b.id}`),
+    pending: pending.get(`dm:${b.id}`) ?? 0,
   }))
   const groupRows = db.prepare(`SELECT * FROM threads WHERE kind = 'group' ORDER BY title`)
     .all() as { id: string; title: string }[]
@@ -209,6 +257,7 @@ export function listConversations(db: Db): Conversation[] {
       subtitle: members.map((id) => byId.get(id)?.name ?? id).join(', '),
       members,
       last_message: lastMessageOf(db, t.id),
+      pending: pending.get(t.id) ?? 0,
     }
   })
   return [...dms, ...groups]

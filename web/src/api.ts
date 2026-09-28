@@ -1,56 +1,70 @@
-import type { Bot, ComputerInfo, Conversation, GatewayEvent, Message } from './types'
+import type { Bot, ComputerInfo, Conversation, GatewayEvent, Message, RoutineAction } from './types'
 
-export async function fetchBots(): Promise<Bot[]> {
-  const res = await fetch('/api/bots')
-  if (!res.ok) throw new Error(`GET /api/bots ${res.status}`)
-  return res.json()
+/** 网关说「先登录」：界面换成锁屏说明，而不是一片空白。 */
+export class SignedOut extends Error {
+  constructor() { super('sign in first') }
 }
 
-export async function fetchConversations(): Promise<Conversation[]> {
-  const res = await fetch('/api/conversations')
-  if (!res.ok) throw new Error(`GET /api/conversations ${res.status}`)
-  return res.json()
+async function request(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(path, init)
+  if (res.status === 401) throw new SignedOut()
+  return res
 }
 
-export async function fetchMessages(threadId: string): Promise<Message[]> {
-  const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/messages`)
-  if (!res.ok) throw new Error(`GET messages ${res.status}`)
-  return res.json()
+async function getJson<T>(path: string): Promise<T> {
+  const res = await request(path)
+  if (!res.ok) throw new Error(`GET ${path} ${res.status}`)
+  return res.json() as Promise<T>
 }
+
+async function send(method: string, path: string, body?: unknown): Promise<Response> {
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  if (!res.ok && res.status !== 409) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(data.error ?? `${method} ${path} ${res.status}`)
+  }
+  return res
+}
+
+/** 只有 401 才算「没登录」：网关重启时 dev 代理回的 502 不该把界面锁死 */
+export async function checkSession(): Promise<boolean> {
+  const res = await fetch('/api/session')
+  return res.status !== 401
+}
+
+export const fetchBots = () => getJson<Bot[]>('/api/bots')
+export const fetchConversations = () => getJson<Conversation[]>('/api/conversations')
+export const fetchMessages = (threadId: string) => getJson<Message[]>(`/api/threads/${encodeURIComponent(threadId)}/messages`)
+export const fetchComputer = (botId: string) => getJson<ComputerInfo>(`/api/bots/${encodeURIComponent(botId)}/computer`)
 
 export async function sendMessage(threadId: string, text: string): Promise<void> {
-  await fetch(`/api/threads/${encodeURIComponent(threadId)}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  })
+  await send('POST', `/api/threads/${encodeURIComponent(threadId)}/messages`, { text })
 }
 
-export async function fetchComputer(botId: string): Promise<ComputerInfo> {
-  const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/computer`)
-  if (!res.ok) throw new Error(`GET computer ${res.status}`)
-  return res.json()
+export async function stopThread(threadId: string): Promise<void> {
+  await send('POST', `/api/threads/${encodeURIComponent(threadId)}/stop`)
 }
 
 export async function createBot(name: string, role: string): Promise<Bot> {
-  const res = await fetch('/api/bots', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, role }),
-  })
-  const data = (await res.json()) as Bot & { error?: string }
-  if (!res.ok) throw new Error(data.error ?? `POST /api/bots ${res.status}`)
-  return data
+  const res = await send('POST', '/api/bots', { name, role })
+  return res.json() as Promise<Bot>
 }
 
 export async function resolveApproval(approvalId: number, decision: 'approve' | 'discard'): Promise<void> {
-  await fetch(`/api/approvals/${approvalId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ decision }),
-  })
+  await send('POST', `/api/approvals/${approvalId}`, { decision })
 }
 
+export async function updateRoutine(id: number, action: RoutineAction): Promise<void> {
+  if (action === 'run') await send('POST', `/api/routines/${id}/run`)
+  else if (action === 'delete') await send('DELETE', `/api/routines/${id}`)
+  else await send('PATCH', `/api/routines/${id}`, { enabled: action === 'resume' })
+}
+
+/** 断线自动重连；网关每次连上都会先发一份 hello 快照，调用方据此补拉错过的消息。 */
 export function connectEvents(onEvent: (e: GatewayEvent) => void): () => void {
   let ws: WebSocket | null = null
   let closed = false

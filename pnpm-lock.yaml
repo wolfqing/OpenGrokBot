@@ -16,6 +16,9 @@ importers:
       '@hono/node-ws':
         specifier: ^1.3.1
         version: 1.3.1(@hono/node-server@1.19.17(hono@4.13.1))(hono@4.13.1)
+      '@novnc/novnc':
+        specifier: 1.7.0
+        version: 1.7.0
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
@@ -356,6 +359,9 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
   '@oxc-project/types@0.143.0':
     resolution: {integrity: sha512-u6JZdLBTLotrNC9Vd6vPssINdzcCzleKAH6EJKImQb7GtYvX5keN2dxkoK44stCc4tffE6QQRtZTXVSzsLUlWA==}
@@ -1559,6 +1565,8 @@ snapshots:
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@novnc/novnc@1.7.0': {}
 
   '@oxc-project/types@0.143.0': {}
 

@@ -26,4 +26,9 @@ describe('NewBotForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onCancel).toHaveBeenCalled()
   })
+
+  it('says why a hire failed, right in the form', () => {
+    render(<NewBotForm onCreate={() => {}} onCancel={() => {}} error="A teammate called Ops already exists." />)
+    expect(screen.getByRole('alert')).toHaveTextContent('already exists')
+  })
 })

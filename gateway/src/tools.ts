@@ -46,7 +46,7 @@ const COMPUTER_TOOLS: ToolDef[] = [
         type: 'object',
         properties: {
           cmd: { type: 'string', description: 'The bash command line to run.' },
-          timeoutMs: { type: 'number', description: 'Optional timeout in milliseconds (default 60000).' },
+          timeoutMs: { type: 'number', description: 'Optional timeout in milliseconds (default 60000, at most 600000). Start long-running servers in the background with their output in a file, e.g. `nohup npm run dev > dev.log 2>&1 &`.' },
         },
         required: ['cmd'],
       },
@@ -56,8 +56,16 @@ const COMPUTER_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a UTF-8 text file from your workspace. Paths are relative to /workspace.',
-      parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      description: 'Read a UTF-8 text file from your workspace. Paths are relative to /workspace. Long files come back in slices; the reply tells you the offset for the next one.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          offset: { type: 'number', description: 'Character to start from (default 0).' },
+          maxChars: { type: 'number', description: 'How many characters to return (default 4000, max 12000).' },
+        },
+        required: ['path'],
+      },
     },
   },
   {
@@ -84,10 +92,13 @@ const COMPUTER_TOOLS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_extract',
-      description: 'Read the visible text of the current page.',
+      description: 'Read the visible text of the current page, plus the links on it (first slice only). Long pages come back in slices; the reply tells you the offset for the next one.',
       parameters: {
         type: 'object',
-        properties: { maxChars: { type: 'number', description: 'Truncate to this many characters (default 4000).' } },
+        properties: {
+          offset: { type: 'number', description: 'Character to start from (default 0).' },
+          maxChars: { type: 'number', description: 'How many characters to return (default 4000, max 12000).' },
+        },
       },
     },
   },
@@ -97,6 +108,50 @@ const COMPUTER_TOOLS: ToolDef[] = [
       name: 'browser_click',
       description: 'Click something on the current page: pass a CSS selector, or the visible text of the control.',
       parameters: { type: 'object', properties: { target: { type: 'string' } }, required: ['target'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type',
+      description: 'Type into a field on the current page: pass a CSS selector, or the field\'s label or placeholder text. Set submit to press Enter afterwards. Never type a password — ask for a takeover instead.',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string' },
+          text: { type: 'string' },
+          submit: { type: 'boolean', description: 'Press Enter after typing (default false).' },
+        },
+        required: ['target', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_press',
+      description: 'Press a key on the current page, e.g. "Enter", "Escape", "Tab", "PageDown".',
+      parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_scroll',
+      description: 'Scroll the current page by about one screen.',
+      parameters: {
+        type: 'object',
+        properties: { direction: { type: 'string', enum: ['down', 'up'] } },
+        required: ['direction'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_back',
+      description: 'Go back to the previous page.',
+      parameters: { type: 'object', properties: {} },
     },
   },
   {
@@ -172,6 +227,19 @@ const WORKFLOW_TOOLS: ToolDef[] = [
           instructions: { type: 'string', description: 'What to do each time it fires, written to yourself.' },
         },
         required: ['name', 'cron', 'instructions'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'stop_routine',
+      description:
+        'Stop one of your routines for good — when your operator says to, or when it no longer makes sense. Your routines and their ids are listed in your instructions.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'number', description: 'The routine id, e.g. 3.' } },
+        required: ['id'],
       },
     },
   },

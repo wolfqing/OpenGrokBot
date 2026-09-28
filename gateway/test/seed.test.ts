@@ -60,3 +60,25 @@ describe('missing directories', () => {
     expect(seedTeammates(openDb(':memory:'), '/no/such/dir')).toEqual([])
   })
 })
+
+describe('teammate metadata', () => {
+  it('keeps a role already on file when SOUL.md carries none (hired teammates across restarts)', () => {
+    const db = openDb(':memory:')
+    const dir = mkdtempSync(join(tmpdir(), 'teammates-'))
+    mkdirSync(join(dir, 'ledger'))
+    writeFileSync(join(dir, 'ledger', 'SOUL.md'), '# Ledger\n\nYou are Ledger.\n')
+    db.prepare(`INSERT INTO bots (id, name, role, emoji, soul_path, created_at) VALUES ('ledger', 'Ledger', 'Reconciles invoices', '🧾', '', 0)`).run()
+    seedTeammates(db, dir)
+    expect(db.prepare(`SELECT role, emoji FROM bots WHERE id = 'ledger'`).get()).toEqual({ role: 'Reconciles invoices', emoji: '🧾' })
+  })
+
+  it('reads role and emoji from SOUL.md frontmatter', () => {
+    const db = openDb(':memory:')
+    const dir = mkdtempSync(join(tmpdir(), 'teammates-'))
+    mkdirSync(join(dir, 'ledger'))
+    writeFileSync(join(dir, 'ledger', 'SOUL.md'), '---\nrole: Reconciles invoices\nemoji: 🧾\n---\n# Ledger\n\nYou are Ledger.\n')
+    seedTeammates(db, dir)
+    expect(db.prepare(`SELECT name, role, emoji FROM bots WHERE id = 'ledger'`).get())
+      .toEqual({ name: 'Ledger', role: 'Reconciles invoices', emoji: '🧾' })
+  })
+})

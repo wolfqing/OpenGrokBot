@@ -4,8 +4,8 @@ set -euo pipefail
 # OpenGrokBot — assemble a self-hosted Grok Bot alternative from OpenClaw + your own model key.
 #
 # Usage:
-#   ./setup.sh                     interactive
-#   XAI_API_KEY=... ./setup.sh     non-interactive (also: ANTHROPIC_API_KEY / OPENAI_API_KEY)
+#   docs/openclaw-recipe/setup.sh                     interactive
+#   XAI_API_KEY=... docs/openclaw-recipe/setup.sh     non-interactive (also: ANTHROPIC_API_KEY / OPENAI_API_KEY)
 #
 # What it does:
 #   1. Installs OpenClaw via the official installer (skips if already installed)
@@ -15,7 +15,8 @@ set -euo pipefail
 #
 # It does NOT run interactive onboarding for you; it prints the exact next commands.
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 这个脚本住在 docs/openclaw-recipe/ 下：仓库根目录在两级之上
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OC_DIR="${OPENCLAW_CONFIG_DIR:-$HOME/.openclaw}"
 CONFIG="$OC_DIR/openclaw.json"
 GEN_DIR="$REPO_DIR/generated"
@@ -168,7 +169,7 @@ if [ -f "$CONFIG" ]; then
   write_config_to "$GEN_DIR/openclaw.grokbot.json5"
   warn "Existing config found at $CONFIG — leaving it untouched."
   say  "Wrote $GEN_DIR/openclaw.grokbot.json5 instead."
-  say  "Merge the models / agents / tools blocks into your config (guide: docs/multi-bot.md)."
+  say  "Merge the models / agents / tools blocks into your config (guide: docs/openclaw-recipe/multi-bot.md)."
 else
   mkdir -p "$OC_DIR"
   write_config_to "$CONFIG"

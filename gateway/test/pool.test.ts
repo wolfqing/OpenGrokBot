@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createFakeComputer } from '../src/computer.js'
-import { createPool } from '../src/pool.js'
+import { createPool, reapIdleComputers } from '../src/pool.js'
 
 describe('createPool', () => {
   it('starts one computer per bot and reuses it', async () => {
@@ -85,5 +85,62 @@ describe('a restarted container', () => {
     await pool.get('researcher')
     await pool.get('researcher')
     expect(made[0]!.calls).toContain('dispose')
+  })
+})
+
+describe('idle computers', () => {
+  it('remembers when each computer was last used and can forget one', async () => {
+    let clock = 1000
+    const computer = createFakeComputer()
+    const pool = createPool({ dataDir: '/data', makeComputer: async () => computer, now: () => clock })
+    expect(pool.lastUsed('researcher')).toBeUndefined()
+    await pool.get('researcher')
+    expect(pool.lastUsed('researcher')).toBe(1000)
+    clock = 5000
+    await pool.get('researcher')
+    expect(pool.lastUsed('researcher')).toBe(5000)
+    await pool.forget('researcher')
+    expect(computer.calls).toContain('dispose')
+  })
+
+  it('stops computers nobody used for a while, but never one that is working', async () => {
+    const HOUR = 3_600_000
+    let clock = 10 * HOUR
+    const pool = createPool({ dataDir: '/data', makeComputer: async () => createFakeComputer(), now: () => clock })
+    clock = 7 * HOUR
+    await pool.get('researcher') // 3 小时前用过
+    clock = 10 * HOUR - 5 * 60_000
+    await pool.get('market-watch') // 5 分钟前用过
+    clock = 10 * HOUR
+    const stopped: string[] = []
+    const reaped = await reapIdleComputers({
+      pool,
+      idleMs: HOUR,
+      runningBots: async () => ['researcher', 'market-watch', 'chief', 'inbox-keeper'],
+      isBusy: (id) => id === 'inbox-keeper',
+      stop: async (id) => { stopped.push(id) },
+      now: clock,
+      startedAt: 8 * HOUR, // chief 自网关启动（2 小时前）就没被用过
+    })
+    expect(reaped.sort()).toEqual(['chief', 'researcher'])
+    expect(stopped.sort()).toEqual(['chief', 'researcher'])
+  })
+})
+
+describe('stopping a computer that is wanted again', () => {
+  it('waits for the stop to finish before starting it again, instead of handing out a dying computer', async () => {
+    const order: string[] = []
+    let finishStop!: () => void
+    const stopped = new Promise<void>((r) => { finishStop = r })
+    const pool = createPool({ dataDir: '/data', makeComputer: async () => { order.push('make'); return createFakeComputer() } })
+    await pool.get('researcher')
+    order.length = 0
+    const retiring = pool.retire('researcher', async () => { order.push('stop:start'); await stopped; order.push('stop:end') })
+    const wanted = pool.get('researcher')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(order).toEqual(['stop:start'])
+    finishStop()
+    await Promise.all([retiring, wanted])
+    expect(order).toEqual(['stop:start', 'stop:end', 'make'])
   })
 })

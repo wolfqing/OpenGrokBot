@@ -3,7 +3,9 @@ internal/
 .DS_Store
 *.log
 .env
-docker/data/
+docs/openclaw-recipe/data/
 node_modules/
 dist/
 gateway/data/
+gateway/data-stub/
+*.tsbuildinfo

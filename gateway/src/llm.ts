@@ -5,34 +5,97 @@ export type ChatMsg = {
   content: string | null
   tool_call_id?: string
   tool_calls?: unknown[]
+  /** 附在 user 消息上的图片（data URL）；发给模型时转成 image_url 片段 */
+  images?: string[]
 }
 
 export type ToolDef = { type: 'function'; function: { name: string; description?: string; parameters: unknown } }
 export type ToolCall = { id: string; name: string; args: unknown }
-export type AssistantTurn = { content: string | null; toolCalls: ToolCall[]; raw: ChatMsg }
+export type Usage = { prompt: number; completion: number; cached: number }
+export type AssistantTurn = { content: string | null; toolCalls: ToolCall[]; raw: ChatMsg; usage?: Usage }
+export type ChatOptions = { signal?: AbortSignal }
 
 export interface LLM {
-  chat(messages: ChatMsg[], tools: ToolDef[]): Promise<AssistantTurn>
+  chat(messages: ChatMsg[], tools: ToolDef[], opts?: ChatOptions): Promise<AssistantTurn>
 }
 
-export function createLLM(config: Config, fetchImpl: typeof fetch = fetch): LLM {
-  if (config.model === 'stub') return createStubLLM()
+type Sleep = (ms: number) => Promise<void>
+const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** 这些状态码是「服务端忙/网络抖」：等一等再试有意义；4xx 里的其余错误重试也不会变。 */
+const RETRYABLE = new Set([408, 409, 425, 429, 500, 502, 503, 504])
+const backoffMs = (attempt: number) => 1000 * 2 ** attempt
+
+class ProviderError extends Error {}
+
+function retryAfterMs(res: Response): number | null {
+  const value = res.headers.get('retry-after')
+  if (!value) return null
+  const seconds = Number(value)
+  if (Number.isFinite(seconds)) return Math.min(seconds * 1000, 30_000)
+  const at = Date.parse(value)
+  return Number.isFinite(at) ? Math.min(Math.max(at - Date.now(), 0), 30_000) : null
+}
+
+function toWire(m: ChatMsg): Record<string, unknown> {
+  const { images, ...rest } = m
+  if (!images?.length) return rest
   return {
-    async chat(messages, tools) {
-      const res = await fetchImpl(`${config.baseURL.replace(/\/$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-        },
-        body: JSON.stringify({ model: config.model, messages, ...(tools.length ? { tools } : {}) }),
-      })
-      if (!res.ok) {
-        throw new Error(`LLM API ${res.status}: ${(await res.text()).slice(0, 300)}`)
-      }
+    ...rest,
+    content: [
+      { type: 'text', text: m.content ?? '' },
+      ...images.map((url) => ({ type: 'image_url', image_url: { url } })),
+    ],
+  }
+}
+
+export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep: Sleep = realSleep): LLM {
+  if (config.model === 'stub') return createStubLLM()
+  const url = `${config.baseURL.replace(/\/$/, '')}/chat/completions`
+  return {
+    async chat(messages, tools, opts = {}) {
+      const body = JSON.stringify({ model: config.model, messages: messages.map(toWire), ...(tools.length ? { tools } : {}) })
       type WireToolCall = { id: string; function?: { name?: string; arguments?: string } }
-      const data = (await res.json()) as {
+      type WireResponse = {
         choices?: { message?: { role: 'assistant'; content?: string | null; tool_calls?: WireToolCall[] } }[]
+        usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
+      }
+      let data: WireResponse
+      for (let attempt = 0; ; attempt++) {
+        const canRetry = attempt < config.llmRetries
+        // 没有超时的话，一个挂住的请求会让 bot 在「思考中」里卡五分钟（undici 的默认值）
+        const timeout = AbortSignal.timeout(config.llmTimeoutMs)
+        const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
+        try {
+          const res = await fetchImpl(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+            },
+            body,
+            signal,
+          })
+          if (!res.ok) {
+            const detail = (await res.text().catch(() => '')).slice(0, 300)
+            if (RETRYABLE.has(res.status) && canRetry) {
+              await sleep(retryAfterMs(res) ?? backoffMs(attempt))
+              continue
+            }
+            throw new ProviderError(`LLM API ${res.status}: ${detail}`)
+          }
+          data = (await res.json()) as WireResponse
+          break
+        } catch (err) {
+          if (err instanceof ProviderError) throw err
+          if (opts.signal?.aborted) throw err // 操作者按了停止：立刻收手，不重试
+          if (canRetry) {
+            await sleep(backoffMs(attempt))
+            continue
+          }
+          if (timeout.aborted) throw new Error(`LLM API timed out after ${config.llmTimeoutMs / 1000}s`)
+          throw new Error(`LLM API unreachable: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
       const msg = data.choices?.[0]?.message
       if (!msg) throw new Error('LLM API: empty choices')
@@ -44,6 +107,13 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch): LLM 
           args: safeParseJson(t.function?.arguments),
         })),
         raw: msg as ChatMsg,
+        ...(data.usage ? {
+          usage: {
+            prompt: data.usage.prompt_tokens ?? 0,
+            completion: data.usage.completion_tokens ?? 0,
+            cached: data.usage.prompt_tokens_details?.cached_tokens ?? 0,
+          },
+        } : {}),
       }
     },
   }
@@ -67,8 +137,10 @@ function stubText(content: string): AssistantTurn {
   return { content, toolCalls: [], raw: { role: 'assistant', content } }
 }
 
+/** 网关会在最后一条 user 消息后面贴当前时间；stub 按用户原话匹配，先把它剥掉。 */
 function lastUserText(messages: ChatMsg[]): string {
-  return [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+  const text = [...messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+  return text.replace(/\n\n\(Current time: [^)]*\)\s*$/, '')
 }
 
 /** 名字或 id 都能指到同一个同事，让 stub 听得懂「ask ticker to …」。 */

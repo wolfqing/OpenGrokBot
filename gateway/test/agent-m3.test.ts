@@ -39,13 +39,13 @@ const toolResult = (llm: { calls: { messages: ChatMsg[] }[] }, at: number) =>
 describe('buildTools', () => {
   it('always offers approval, memory and routine tools', () => {
     expect(buildTools({ hasComputer: false }).map((t) => t.function.name)).toEqual([
-      'message_user', 'hold_for_approval', 'save_memory', 'create_routine',
+      'message_user', 'hold_for_approval', 'save_memory', 'create_routine', 'stop_routine',
     ])
   })
 
   it('adds the computer surface on top when one is attached', () => {
     const names = buildTools({ hasComputer: true }).map((t) => t.function.name)
-    expect(names).toHaveLength(12)
+    expect(names).toHaveLength(17)
     expect(names).toContain('browser_screenshot')
     expect(names).toContain('hold_for_approval')
   })
@@ -135,7 +135,8 @@ describe('invisible seeds', () => {
     const llm = scriptedLLM([textTurn])
     await runTurn({ db, llm, bot, soul: '', threadId }, 'Routine "Morning digest" fired.', events, { persistUserMessage: false })
 
-    expect(llm.calls[0]!.messages.some((m) => m.role === 'user' && m.content === 'Routine "Morning digest" fired.')).toBe(true)
+    // 最后一条 user 消息后面会贴当前时间
+    expect(llm.calls[0]!.messages.some((m) => m.role === 'user' && m.content?.startsWith('Routine "Morning digest" fired.'))).toBe(true)
     expect(listMessages(db, threadId).map((m) => [m.sender, m.kind])).toEqual([['inbox-keeper', 'text']])
     expect(messages.every((m) => m.sender !== 'user')).toBe(true)
   })

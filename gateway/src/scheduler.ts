@@ -7,6 +7,7 @@ export type CronFactory = (expr: string, onTick: () => void) => CronJob
 export type Scheduler = {
   load(routines: RoutineRow[]): void
   add(routine: RoutineRow): void
+  remove(id: number): void
   stopAll(): void
   size(): number
 }
@@ -39,6 +40,10 @@ export function createScheduler(deps: {
 
   return {
     add,
+    remove(id) {
+      jobs.get(id)?.stop()
+      jobs.delete(id)
+    },
     stopAll,
     load(routines) {
       stopAll()

@@ -28,14 +28,14 @@ function setup(makeComputer?: (botId: string) => Promise<BotComputer>) {
 
 describe('GET /api/bots/:botId/computer', () => {
   it('reports the screen address and what is scheduled', async () => {
-    const { app, db } = setup(async () => createFakeComputer({ vncUrl: 'http://127.0.0.1:53314' }))
+    const { app, db } = setup(async () => createFakeComputer({ screen: { base: 'http://127.0.0.1:53314', password: 'pw' } }))
     createRoutine(db, { botId: bot.id, name: 'Morning digest', cron: '0 9 * * *', instructions: 'x' })
     const res = await app.request('/api/bots/researcher/computer')
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
       botId: 'researcher',
       running: true,
-      vncUrl: 'http://127.0.0.1:53314',
+      vncUrl: '/vnc/researcher/view.html#password=pw',
       routines: [{ name: 'Morning digest', human: 'every day at 09:00' }],
     })
   })

@@ -1,95 +1,73 @@
-# Multi-bot: the Grok Bot party trick, self-hosted
+# Many teammates, one crew
 
-Grok Bot's headline demo is bots that message each other and hand off work. OpenClaw has the same primitive — it just ships disabled by default (correctly: agent-to-agent power is something you allowlist, not something you discover).
+Grok Bot's headline demo is bots that report to a room and hand work to each other. Here is how that works in
+OpenGrokBot, and where you set the boundaries.
 
-## How the pieces fit
+## A teammate is a folder
 
 ```
-Telegram ──┐                        ┌── researcher  (workspace-researcher)
-Slack ─────┼──► Gateway ──bindings──┼── inbox-keeper (workspace-inbox-keeper)
-WhatsApp ──┘        │               └── market-watch (workspace-market-watch)
-                    └── tools.agentToAgent (explicit allowlist)
+teammates/researcher/
+  SOUL.md     # who it is: temperament, voice, what it refuses to be
+  AGENTS.md   # how it works: protocol, where it files things, hard boundaries
 ```
 
-- **One Gateway process, N agents.** Each agent is a fully isolated persona: own workspace (`AGENTS.md`, `SOUL.md`, files), own session store, own memory. State lives at `~/.openclaw/agents/<agentId>/`.
-- **Bindings** decide which channel/account/peer reaches which agent — most-specific match wins.
-- **agentToAgent** lets allowlisted agents message each other and hand off tasks.
+Both files go into the system prompt, the persona first and the operating manual after it. Role and emoji sit
+in `SOUL.md`'s frontmatter:
 
-## The config (what setup.sh writes)
-
-```json5
-{
-  agents: {
-    defaults: {
-      model: { primary: "xai/grok-4.5" },   // or anthropic/…, openai/…, local
-    },
-    entries: {
-      researcher:     { default: true, workspace: "~/.openclaw/workspace-researcher" },
-      "inbox-keeper": { workspace: "~/.openclaw/workspace-inbox-keeper" },
-      "market-watch": { workspace: "~/.openclaw/workspace-market-watch" },
-    },
-  },
-  tools: {
-    agentToAgent: {
-      enabled: true,
-      allow: ["researcher", "inbox-keeper", "market-watch"],
-    },
-  },
-}
+```markdown
+---
+role: Turns a one-line question into a decision-ready brief with sources
+emoji: 🔎
+---
+# Scout
 ```
 
-Route channels to bots once connected:
+The crew that ships with the repo lives in [`teammates/`](../teammates/). Teammates you hire from the sidebar
+(`+`, a name, one line of job description) are written to `gateway/data/teammates/<id>/` and join the default
+group. To add one by hand, drop a folder with a `SOUL.md` (and ideally an `AGENTS.md`) into either place and
+restart the gateway.
 
-```json5
-{
-  bindings: [
-    // DM Scout on Telegram, Sorter lives in Slack:
-    { agentId: "researcher",   match: { channel: "telegram" } },
-    { agentId: "inbox-keeper", match: { channel: "slack" } },
-    // most-specific wins; first match breaks ties — order matters.
-  ],
-}
+## Group threads
+
+Ask the room a question and every member answers for its own patch — in parallel, since nobody needs to wait for
+anyone else. Then the chief of staff reads all of it and closes with a dispatch table:
+
+```
+✓ Pricing → @market-watch · Friday
+✓ Brief → @researcher · Thursday
+One thing needs you today: pick the deadline for the Globex reply.
 ```
 
-## What a handoff looks like
+A second question waits until the first round has closed, so answers never interleave. The stop button ends the
+round: whoever is still talking stops, and the chief does not close.
 
-> **You → Scout (Telegram):** worth switching our stack from Postgres to Turso? need a call by Friday
->
-> **Scout:** On it. Restating: decision is migrate-or-stay for a ~40GB single-region app, deadline Friday. I'll brief architecture + ops; pricing deltas I'm handing to Ticker.
->
-> *(Scout → Ticker over agentToAgent: "Price comparison needed: Turso scaler tiers vs. our current RDS bill shape, sources + dates. Findings land in workspace-researcher/memory/briefs/2026-08-12-turso.md.")*
->
-> **Scout (later):** Brief ready — TL;DR: stay, revisit at multi-region. 5 sources, Ticker's cost table attached. Full brief in my memory, ask me to expand any section.
+## Handoffs
 
-Every hop happened on your machine, between agents you allowlisted, with the audit trail in each agent's session store.
+A teammate can pass a scoped task with `message_bot`. It lands in the other teammate's thread as a
+*Messages from @…* chip, and that teammate picks it up right away.
 
-## Allowlisting agent-to-agent messaging
+Who may reach whom is an allowlist:
 
-Agent-to-agent power is something you grant, not something a bot discovers. Two rules hold by default:
-
-- A **chief of staff** agent may message anyone, and anyone may message it. Dispatch flows through one place you can read.
-- **Peer-to-peer is off** until you name the direction:
+- The chief of staff (`OPENGROKBOT_CHIEF`, default `chief`) can message anyone, and anyone can message it.
+- Everything else is off until you name a direction:
 
   ```bash
   OPENGROKBOT_A2A_ALLOW='researcher>market-watch,market-watch>researcher'
   ```
 
-  Each entry is one direction. `a>b` does not imply `b>a`.
+- A relay can go two hops — a dispatch and a reply — and no further, so two bots cannot echo at each other.
 
-A relay is capped at two hops, so a handoff can be picked up and answered but cannot echo between two bots. Refused
-handoffs are reported back to the bot in plain words — it says it could not reach the teammate rather than pretending
-it did.
+A refused handoff is reported back to the bot, which tells you plainly instead of pretending; routing it through
+the chief always works.
 
-## Adding a fourth teammate
+## One thing at a time
 
-1. `mkdir -p ~/.openclaw/workspace-editor && cp` your `AGENTS.md` / `SOUL.md` in (start from any folder in [`teammates/`](../teammates/))
-2. Add an entry under `agents.entries`
-3. Allowlist it **only if** it needs to talk to the others (see below)
-4. Restart the gateway
+Each teammate does one turn at a time. A message you send while it is busy shows up immediately and is answered
+next; several messages that pile up are answered together. Routines, approvals and handoffs queue the same way,
+so two jobs never fight over one browser. The same routine never runs twice at once.
 
-## Merging into an existing config
+## Budgets
 
-Already run OpenClaw? `setup.sh` refuses to touch your config and writes `generated/openclaw.grokbot.json5` instead. Merge the three blocks (`models.providers.xai` if using Grok, `agents.entries`, `tools.agentToAgent`) into your `~/.openclaw/openclaw.json`. Two rules from upstream docs worth repeating:
-
-- Never point two agents at the same `agentDir` — state collisions.
-- Auth profiles don't auto-share between agents; static API keys are fine to copy.
+`OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; its computer panel shows today's count. A
+routine that fires every minute cannot run up your bill past that line — and you can pause or delete it from the
+same panel, or tell the bot to `stop_routine`.
