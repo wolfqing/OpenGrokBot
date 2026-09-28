@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  bot-image:
+    name: Bot computer image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t opengrokbot/bot:dev docker/bot
+      - name: Fonts, timezone data and supervisor are in the image
+        run: |
+          docker run --rm --entrypoint sh opengrokbot/bot:dev -c \
+            'fc-list | grep -qi wqy && fc-list | grep -qi "noto color emoji" && test -d /usr/share/zoneinfo && bash -n /opt/entrypoint.sh && node --check /opt/shim.mjs'

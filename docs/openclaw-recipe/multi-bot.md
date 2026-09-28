@@ -1,4 +1,7 @@
-# Multi-bot: the Grok Bot party trick, self-hosted
+# Multi-bot on OpenClaw (v0.1 recipe)
+
+> This is the v0.1 OpenClaw setup. For how teammates talk to each other in v0.2 — group threads, the chief of
+> staff, allowlisted handoffs — see [../multi-bot.md](../multi-bot.md).
 
 Grok Bot's headline demo is bots that message each other and hand off work. OpenClaw has the same primitive — it just ships disabled by default (correctly: agent-to-agent power is something you allowlist, not something you discover).
 
@@ -82,7 +85,7 @@ it did.
 
 ## Adding a fourth teammate
 
-1. `mkdir -p ~/.openclaw/workspace-editor && cp` your `AGENTS.md` / `SOUL.md` in (start from any folder in [`teammates/`](../teammates/))
+1. `mkdir -p ~/.openclaw/workspace-editor && cp` your `AGENTS.md` / `SOUL.md` in (start from any folder in [`teammates/`](../../teammates/))
 2. Add an entry under `agents.entries`
 3. Allowlist it **only if** it needs to talk to the others (see below)
 4. Restart the gateway

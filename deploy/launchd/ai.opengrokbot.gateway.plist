@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  OpenGrokBot gateway as a macOS LaunchAgent: starts at login, restarts if it dies.
+  1. Replace every /Users/YOU and the node path (`which node`), put your key in.
+  2. cp deploy/launchd/ai.opengrokbot.gateway.plist ~/Library/LaunchAgents/
+  3. launchctl load ~/Library/LaunchAgents/ai.opengrokbot.gateway.plist
+  Docker Desktop must start at login too: Settings → General → "Start Docker Desktop when you sign in".
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.opengrokbot.gateway</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/YOU/OpenGrokBot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>gateway/dist/main.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENGROKBOT_API_KEY</key>
+    <string>REPLACE_ME</string>
+    <key>OPENGROKBOT_MODEL</key>
+    <string>grok-4</string>
+    <!-- The log is a file: keep the gateway token out of it. Sign in with the one in gateway/data/auth-token. -->
+    <key>OPENGROKBOT_QUIET_TOKEN</key>
+    <string>1</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/YOU/Library/Logs/opengrokbot.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOU/Library/Logs/opengrokbot.log</string>
+</dict>
+</plist>

@@ -6,8 +6,17 @@ client, and one container per bot — because the two things this product is act
 surface and a private computer per teammate) are not things OpenClaw models: it runs a single assistant on a
 shared host, inside chat apps you already use.
 
-This page keeps the old recipe for anyone who wants the distribution shape instead. **It is no longer the main
-path**, and it is not what the rest of this repo builds.
+This folder keeps the old recipe for anyone who wants the distribution shape instead. **It is no longer the main
+path**, and it is not what the rest of this repo builds. Everything v0.1 shipped lives here now:
+
+| File | What it was |
+|---|---|
+| [`setup.sh`](setup.sh) | Installs OpenClaw and writes the three-teammate config |
+| [`openclaw.example.json5`](openclaw.example.json5) | The annotated config `setup.sh` generates |
+| [`multi-bot.md`](multi-bot.md) | Bindings and agent-to-agent on OpenClaw |
+| [`docker-compose.yml`](docker-compose.yml) · [`vps.md`](vps.md) | The OpenClaw gateway on a VPS |
+
+For the v0.2 equivalents see [../multi-bot.md](../multi-bot.md) and [../always-on.md](../always-on.md).
 
 ## What it did
 
@@ -18,7 +27,7 @@ OpenClaw config — it generated a merge file instead.
 ```bash
 git clone https://github.com/wolfqing/OpenGrokBot.git
 cd OpenGrokBot
-./setup.sh
+docs/openclaw-recipe/setup.sh
 
 openclaw onboard --install-daemon   # first-time setup
 openclaw dashboard                  # Control UI
@@ -76,5 +85,5 @@ Three things the distribution could not give you, and v0.2 does:
 - **Takeover login.** Signing in once, on the bot's own browser, so the session persists — that needs a browser
   the bot owns.
 
-The personas in [`teammates/`](../teammates/) survived the rewrite unchanged: they are just Markdown, and v0.2
-reads the same folders.
+The personas in [`teammates/`](../../teammates/) survived the rewrite: they are just Markdown, and v0.2 reads
+the same folders — `SOUL.md` as the persona, `AGENTS.md` as the operating manual with its hard boundaries.

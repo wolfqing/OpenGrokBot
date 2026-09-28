@@ -4,12 +4,12 @@
 # If this file and the official docs ever disagree, trust the docs and open an issue here.
 #
 # Quick use:
-#   cd docker
+#   cd docs/openclaw-recipe
 #   docker compose up -d
 #   docker compose exec openclaw-gateway openclaw onboard     # first time
 #
 # Then from the repo root, install the teammates into the mounted config dir:
-#   OPENCLAW_CONFIG_DIR=./docker/data/config ../setup.sh
+#   OPENCLAW_CONFIG_DIR=./docs/openclaw-recipe/data/config docs/openclaw-recipe/setup.sh
 #
 # Notes:
 # - 2GB+ RAM host recommended (image builds can OOM on 1GB).
