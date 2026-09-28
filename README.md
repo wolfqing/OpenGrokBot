@@ -7,6 +7,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-blue?style=flat-square)](../../pulls)
 
+> 🖥️ **Also from this author: [Grok Desktop](https://github.com/wolfqing/GrokDesktop)** — a native macOS window
+> for Grok Chat and the official `grok` CLI. Chat embeds grok.com; Build picks up your `~/.grok` sessions over ACP.
+
 xAI's Grok Bot sells always-on teammates that each get a cloud computer — browser, filesystem, terminal — with
 persistent memory, bot-to-bot handoffs, and an iMessage-shaped app to manage them. It costs **$120–300/month**,
 and every bot runs on xAI's cloud **with your logins inside it**.
@@ -29,7 +32,8 @@ web client that reads like a workbench, and any OpenAI-compatible model behind i
 
 ## What a teammate actually is here
 
-A folder with a `SOUL.md`, a thread in the sidebar, and a container of its own:
+A folder with a `SOUL.md` (who it is) and an `AGENTS.md` (how it works, with its hard boundaries), a thread in
+the sidebar, and a container of its own:
 
 ![Architecture: your browser talks to one gateway process, which drives one Docker container per teammate — each with a headed Chromium, a noVNC screen you can take over, a shell/file shim, and a persistent workspace](assets/architecture.svg)
 
@@ -43,37 +47,48 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 **The management surface**
 
 - **Sidebar as org chart.** One thread per teammate, plus group threads. Previews are completion states, so a
-  glance down the list is a walk past everyone's desk.
+  glance down the list is a walk past everyone's desk. An amber badge counts the approvals waiting on you, and
+  the tab title carries the total.
 - **One report grammar.** Work comes back as `✓ system → result · count` lines with a single closing sentence
   that surfaces only what needs you. Same shape from every teammate.
 - **Draft-and-hold approvals.** Anything leaving the workspace stops at the door: the chip shows exactly what
   would go out, with Approve / Discard. A bare 👍 in the thread releases the newest one. Decisions are
   idempotent — a second click gets a 409, not a second send.
 - **Visible memory.** "From now on, quiet accounts wait for my read" writes a rule into that bot's `MEMORY.md`
-  and posts the diff as a chip. The rule is in its system prompt from the next turn on.
+  and posts the diff as a chip. The file lives outside the bot's computer, so the chip is the only way a rule
+  ever changes.
 - **Routines from the conversation.** "Post a digest every day" registers a cron job, shows the schedule in
-  plain English, survives restarts, and fires on time.
+  plain English, survives restarts, and never runs twice at once. Pause it, run it now or delete it from the
+  computer panel — or tell the bot to stop it.
+- **See the work, stop the work.** Every step on its computer — the command, the page, the click — shows live
+  in one card that folds away when the turn ends. A stop button ends the turn.
+- **A budget, if you want one.** `OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; the panel
+  shows today's count.
 
 **The computer**
 
-- `shell`, `read_file`, `write_file` inside the container.
-- `browser_goto` / `browser_extract` / `browser_click` against a real headed Chromium — so login-walled sites
-  work, which pure API/MCP setups cannot do.
-- `browser_screenshot` posts what the bot saw into the thread as evidence.
+- `shell`, `read_file`, `write_file` inside the container; long files and pages come back in slices instead of
+  being cut off.
+- `browser_goto` / `browser_extract` (with the page's links) / `browser_click` / `browser_type` /
+  `browser_press` / `browser_scroll` / `browser_back` against a real headed Chromium — so login-walled sites and
+  forms work, which pure API/MCP setups cannot do. CJK and emoji fonts included.
+- `browser_screenshot` posts what the bot saw into the thread as evidence — and, with `OPENGROKBOT_VISION=1`,
+  shows it to a vision model too.
 - **Takeover login.** At a login wall the bot calls `ask_for_login` instead of asking for a password. You open
   its screen from the thread, sign in once in *its* browser, and the session persists in its profile — across
   container restarts.
-- Containers start lazily, survive restarts, and publish their ports to `127.0.0.1` only.
+- Computers start on demand, stop after an hour without use, and come back with their logins. Each one is
+  capped (memory, CPU, processes) and cannot reach any other bot's computer.
 
 **The crew**
 
-- **Group threads.** Ask the room a question: each teammate answers for its own patch, then the chief of staff
-  closes with a dispatch table — `✓ item → @bot · when` — and one line on what needs you today.
+- **Group threads.** Ask the room a question: each teammate answers for its own patch — in parallel — then the
+  chief of staff closes with a dispatch table — `✓ item → @bot · when` — and one line on what needs you today.
 - **Allowlisted handoffs.** `message_bot` drops a scoped task into a teammate's thread and wakes it up. By
   default only the chief can reach everyone; peer-to-peer is off until you name the direction. Relays are
   capped at two hops so two bots cannot echo at each other.
-- **Hire from the sidebar.** `+`, a name, one line of job description. No workflow editor, no tool checklist —
-  the complexity accumulates in use, not in a setup form.
+- **Hire from the sidebar.** `+`, a name in any language, one line of job description. No workflow editor, no
+  tool checklist — the complexity accumulates in use, not in a setup form.
 
 ## Quickstart
 
@@ -92,7 +107,8 @@ Try it with no API key at all — a scripted stub model drives every path end to
 OPENGROKBOT_MODEL=stub pnpm dev
 ```
 
-Then open http://localhost:5173.
+The gateway prints a sign-in link — `http://localhost:5173/auth?token=…`. Open it once per browser; nothing
+reaches the gateway without that token.
 
 Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a local Ollama):
 
@@ -100,13 +116,21 @@ Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a 
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 ```
 
+To keep it running — one process, one port, started at boot, reachable through a tunnel — `pnpm build &&
+pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/always-on.md).
+
 | Variable | Default | What it does |
 |---|---|---|
 | `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
 | `OPENGROKBOT_API_KEY` | — | Your key. Never written to disk by this repo |
 | `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
-| `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot workspaces, screenshots |
+| `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
 | `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
+| `OPENGROKBOT_DAILY_TOKENS` | `0` (off) | Per-teammate daily token budget |
+| `OPENGROKBOT_VISION` | *(off)* | Show the model its own screenshots |
+
+Every other setting — listen address, idle stop, per-computer limits, timeouts — is in
+[docs/always-on.md](docs/always-on.md#configuration).
 
 In a slow-network region, build with a mirror: `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`
 
@@ -115,16 +139,19 @@ In a slow-network region, build with a mirror: `docker build --build-arg APT_MIR
 The loudest objection to hosted always-on agents: an agent that never sleeps, holding all your credentials, on
 someone else's infrastructure, exposed to prompt injection. The self-hosted answers:
 
-- **Credentials never leave your machine.** They live in the bot's browser profile, inside its container.
+- **Credentials never leave your machine.** They live in the bot's browser profile, inside its workspace.
 - **The bot never asks for a password in chat.** It asks you to take over its screen instead.
-- **Every bot is in a cage by default** — separate container, its own workspace, no access to your host.
-- **Outward actions are held**, not sent, until you approve them.
+- **Nothing reaches the gateway without its token.** It listens on `127.0.0.1`, each browser signs in once, and
+  only its own pages may change state. A website you visit cannot approve a hold — and neither can the bot.
+- **Every bot is in its own cage** — a separate container with its own workspace and resource limits, and no
+  route to any other bot's computer.
+- **Rules change only through the memory chip.** A bot cannot quietly rewrite what you told it.
+- **Outward actions are held for your approval.** That is an instruction every teammate follows, not a sandbox
+  rule — so give bots their own accounts rather than yours.
 - **Bot-to-bot messaging is off** until you allowlist a direction.
-- **Screens bind to `127.0.0.1`.** The panel is for your machine; do not port-forward it.
-- **Inbound messages are untrusted input.** Read [docs/security.md](docs/security.md) before exposing anything.
 
-Give bots their own accounts rather than yours — separate email, separate calendar, invited only into what they
-need. That is the right answer for hosted agents too; here it is enforceable.
+[docs/security.md](docs/security.md) lists exactly what is enforced, what is a convention, and what is still
+on you.
 
 ## Cost
 
@@ -138,6 +165,14 @@ need. That is the right answer for hosted agents too; here it is enforceable.
 Honest note: Grok Bot's zero-setup polish, iOS app, and teach-by-demonstration are real advantages. If you are
 happy putting your accounts on xAI's cloud and paying for the convenience, buy it. This repo is for everyone who
 answered *"are you comfortable with that?"* with **no**.
+
+## Sister project: Grok Desktop
+
+OpenGrokBot is for the work that happens while you are away. For the hours you spend in Grok yourself there is
+**[Grok Desktop](https://github.com/wolfqing/GrokDesktop)**: a native SwiftUI window for macOS 14+ that embeds
+grok.com for Chat and drives your local `grok` CLI for Build — sessions grouped by project, Markdown, plans,
+diffs and live terminals in an inspector, Imagine without leaving the window. Free, community-built, not an
+official xAI product. [Download the latest release](https://github.com/wolfqing/GrokDesktop/releases/latest).
 
 ## Roadmap
 
@@ -154,13 +189,14 @@ opposite custody model, and **zero shared code** (Grok Bot is closed-source; the
 even run on the same brain: point it at the Grok API.
 
 **Relative to OpenClaw?** v0.1 of this repo was a distribution on top of OpenClaw. v0.2 is its own core, because
-a private computer per teammate pulls against OpenClaw's shared-host model. The old recipe is kept at
-[docs/openclaw-recipe.md](docs/openclaw-recipe.md). Not an official OpenClaw project.
+a private computer per teammate pulls against OpenClaw's shared-host model. The old recipe is kept in
+[docs/openclaw-recipe/](docs/openclaw-recipe/README.md). Not an official OpenClaw project.
 
 **Do I have to use Docker?** For the computers, yes. Everything else — threads, approvals, memory, routines,
 group dispatch — runs without it; bots simply report that they have no computer attached.
 
-More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/comparison.md](docs/comparison.md)
+More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
+[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md)
 
 ## Disclaimer
 
