@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "dev": "OPENGROKBOT_WEB_URL=${OPENGROKBOT_WEB_URL:-http://localhost:5173} tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
     "smoke:docker": "tsx scripts/smoke-docker.ts"
   },

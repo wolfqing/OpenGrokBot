@@ -37,15 +37,16 @@ function setup() {
 describe('buildTools', () => {
   it('advertises only the always-on tools without a computer', () => {
     expect(buildTools({ hasComputer: false }).map((t) => t.function.name)).toEqual([
-      'message_user', 'hold_for_approval', 'save_memory', 'create_routine',
+      'message_user', 'hold_for_approval', 'save_memory', 'create_routine', 'stop_routine',
     ])
   })
 
   it('advertises the full computer surface when one is attached', () => {
     expect(buildTools({ hasComputer: true }).map((t) => t.function.name)).toEqual([
-      'message_user', 'hold_for_approval', 'save_memory', 'create_routine',
+      'message_user', 'hold_for_approval', 'save_memory', 'create_routine', 'stop_routine',
       'shell', 'read_file', 'write_file',
-      'browser_goto', 'browser_extract', 'browser_click', 'browser_screenshot', 'ask_for_login',
+      'browser_goto', 'browser_extract', 'browser_click', 'browser_type', 'browser_press', 'browser_scroll',
+      'browser_back', 'browser_screenshot', 'ask_for_login',
     ])
   })
 })
@@ -79,7 +80,7 @@ describe('runTurn with a computer', () => {
 
     expect(computer.calls).toEqual(['goto:https://example.com', 'extract', 'screenshot'])
     const kinds = listMessages(db, threadId).map((m) => m.kind)
-    expect(kinds).toEqual(['text', 'screenshot', 'text'])
+    expect(kinds).toEqual(['text', 'activity', 'screenshot', 'text']) // 电脑上的每一步进同一张 activity 卡片
     const shotMsg = messages.find((m) => m.kind === 'screenshot')!
     expect(shotMsg.payload).toEqual({ url: '/api/screenshots/researcher/7.png', width: 1280, height: 800, caption: 'the homepage' })
     expect(llm.calls[3]!.messages.some((m) => m.role === 'tool' && m.content === 'Screenshot posted to the thread.')).toBe(true)
@@ -92,7 +93,8 @@ describe('runTurn with a computer', () => {
     await runTurn({ db, llm, bot, soul: '', threadId, getComputer: async () => computer }, 'go', events)
     const toolMsg = llm.calls[1]!.messages.find((m) => m.role === 'tool')
     expect(toolMsg!.content).toMatch(/ERR_NAME_NOT_RESOLVED/)
-    expect(listMessages(db, threadId).map((m) => m.kind)).toEqual(['text', 'text']) // 线程里没留垃圾
+    // 线程里只多一张标着失败步骤的 activity 卡片，没有别的垃圾
+    expect(listMessages(db, threadId).map((m) => m.kind)).toEqual(['text', 'activity', 'text'])
   })
 
   it('tells the model plainly when no computer is attached', async () => {
@@ -107,10 +109,10 @@ describe('runTurn with a computer', () => {
     const { db, threadId, events } = setup()
     const withComputer = scriptedLLM([textTurn])
     await runTurn({ db, llm: withComputer, bot, soul: '', threadId, getComputer: async () => createFakeComputer() }, 'hi', events)
-    expect((withComputer.calls[0]!.tools as { function: { name: string } }[]).length).toBe(12)
+    expect((withComputer.calls[0]!.tools as { function: { name: string } }[]).length).toBe(17)
 
     const without = scriptedLLM([textTurn])
     await runTurn({ db, llm: without, bot, soul: '', threadId }, 'hi', events)
-    expect((without.calls[0]!.tools as { function: { name: string } }[]).length).toBe(4)
+    expect((without.calls[0]!.tools as { function: { name: string } }[]).length).toBe(5)
   })
 })

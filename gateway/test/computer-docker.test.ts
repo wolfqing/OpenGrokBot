@@ -110,7 +110,7 @@ describe('DockerComputer browser over CDP', () => {
   it('clicks css selectors directly and falls back to text matching', async () => {
     const { page, state } = fakePage()
     const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
-    expect(await c.click('#submit')).toEqual({ clicked: '#submit' })
+    expect(await c.click('#submit')).toMatchObject({ clicked: '#submit' })
     expect(state.clicked).toEqual(['#submit'])
 
     const textClicks: string[] = []
@@ -119,7 +119,7 @@ describe('DockerComputer browser over CDP', () => {
       getByText: (t: string) => ({ first: () => ({ click: async () => { textClicks.push(t) } }) }),
     })
     const c2 = createDockerComputer(endpoints, { connect: fakeConnect(textPage).connect })
-    expect(await c2.click('Sign in')).toEqual({ clicked: 'Sign in' })
+    expect(await c2.click('Sign in')).toMatchObject({ clicked: 'Sign in' })
     expect(textClicks).toEqual(['Sign in'])
   })
 
@@ -137,9 +137,21 @@ describe('DockerComputer browser over CDP', () => {
 })
 
 describe('screen address', () => {
-  it('exposes the published noVNC url so the panel can embed it', () => {
-    const c = createDockerComputer(endpoints)
-    expect(c.vncUrl).toBe('http://127.0.0.1:6080')
+  it('gives the panel a noVNC page that connects, scales and signs in by itself', () => {
+    const c = createDockerComputer({ ...endpoints, vncPassword: 'pw12345x' })
+    expect(c.vncUrl).toBe('http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale&reconnect=1&password=pw12345x')
+  })
+})
+
+describe('shim token', () => {
+  it('sends the container secret with every shim call', async () => {
+    let header: string | null = null
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      header = new Headers(init?.headers).get('x-shim-token')
+      return new Response(JSON.stringify({ stdout: '', stderr: '', exitCode: 0 }))
+    }) as typeof fetch
+    await createDockerComputer({ ...endpoints, shimToken: 'tok-123' }, { fetchImpl }).shell('true')
+    expect(header).toBe('tok-123')
   })
 })
 
@@ -153,5 +165,124 @@ describe('ping', () => {
 
     const broken = (async () => new Response('nope', { status: 502 })) as typeof fetch
     expect(await createDockerComputer(endpoints, { fetchImpl: broken }).ping()).toBe(false)
+  })
+
+  it('is false when the shim answers but the browser does not', async () => {
+    const browserDown = (async (url: string | URL | Request) => {
+      if (String(url).includes('9222')) throw new Error('ECONNREFUSED')
+      return new Response(JSON.stringify({ ok: true }))
+    }) as typeof fetch
+    expect(await createDockerComputer(endpoints, { fetchImpl: browserDown }).ping()).toBe(false)
+  })
+})
+
+describe('DockerComputer browser connection recovery', () => {
+  it('tries the CDP connection again after a failed first attempt', async () => {
+    const { page } = fakePage()
+    const { browser } = fakeConnect(page)
+    let attempts = 0
+    const c = createDockerComputer(endpoints, {
+      connect: async () => {
+        attempts++
+        if (attempts === 1) throw new Error('ECONNREFUSED')
+        return browser
+      },
+    })
+    await expect(c.goto('https://example.com')).rejects.toThrow(/ECONNREFUSED/)
+    await expect(c.goto('https://example.com')).resolves.toMatchObject({ url: 'https://example.com' })
+    expect(attempts).toBe(2)
+  })
+
+  it('reconnects once the browser has gone away (chromium restarted)', async () => {
+    const { page } = fakePage()
+    let connected = true
+    let attempts = 0
+    const browser = {
+      contexts: () => [{ pages: () => [page], newPage: async () => page }],
+      close: async () => {},
+      isConnected: () => connected,
+    }
+    const c = createDockerComputer(endpoints, { connect: async () => { attempts++; connected = true; return browser } })
+    await c.goto('https://a.example')
+    connected = false
+    await c.goto('https://b.example')
+    expect(attempts).toBe(2)
+  })
+})
+
+describe('DockerComputer typing, keys, scrolling and tabs', () => {
+  function richPage(overrides: Record<string, unknown> = {}) {
+    const log: string[] = []
+    const page = {
+      async goto(url: string) { log.push(`goto:${url}`) },
+      async title() { return 'Results' },
+      url: () => 'https://example.com/results',
+      async innerText() { return 'body' },
+      async screenshot() { return Buffer.from('PNG') },
+      async click(sel: string) { log.push(`click:${sel}`) },
+      async fill(sel: string, text: string) { log.push(`fill:${sel}=${text}`) },
+      getByLabel: (t: string) => ({ first: () => ({ fill: async (text: string) => { log.push(`label:${t}=${text}`) } }) }),
+      getByPlaceholder: (t: string) => ({ first: () => ({ fill: async (text: string) => { log.push(`placeholder:${t}=${text}`) } }) }),
+      keyboard: { press: async (key: string) => { log.push(`key:${key}`) } },
+      mouse: { wheel: async (_x: number, y: number) => { log.push(`wheel:${y}`) } },
+      async goBack() { log.push('back') },
+      async waitForLoadState() {},
+      async evaluate() { return [{ text: 'Pricing', href: 'https://example.com/pricing' }] },
+      viewportSize: () => ({ width: 1280, height: 800 }),
+      ...overrides,
+    }
+    return { page, log }
+  }
+
+  it('types into a field by selector and presses Enter to submit', async () => {
+    const { page, log } = richPage()
+    const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
+    await c.type('input[name=q]', 'grok bot', true)
+    expect(log).toEqual(['fill:input[name=q]=grok bot', 'key:Enter'])
+  })
+
+  it('falls back to the label, then the placeholder, when the target is not a selector', async () => {
+    const { page, log } = richPage({
+      async fill() { throw new Error('not a selector') },
+      getByLabel: () => ({ first: () => ({ fill: async () => { throw new Error('no label') } }) }),
+    })
+    const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
+    await c.type('Search the docs', 'cdp')
+    expect(log).toEqual(['placeholder:Search the docs=cdp'])
+  })
+
+  it('presses keys, scrolls a screen at a time and goes back', async () => {
+    const { page, log } = richPage()
+    const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
+    await c.press('Escape')
+    await c.scroll('down')
+    await c.scroll('up')
+    expect(await c.back()).toEqual({ url: 'https://example.com/results', title: 'Results' })
+    expect(log).toEqual(['key:Escape', 'wheel:700', 'wheel:-700', 'back'])
+  })
+
+  it('lists the links on the page', async () => {
+    const { page } = richPage()
+    const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
+    expect(await c.links()).toEqual([{ text: 'Pricing', href: 'https://example.com/pricing' }])
+  })
+
+  it('says where a click landed', async () => {
+    const { page } = richPage()
+    const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
+    expect(await c.click('#go')).toEqual({ clicked: '#go', url: 'https://example.com/results', title: 'Results' })
+  })
+
+  it('follows the newest tab, where a click that opened one left the user', async () => {
+    const old = richPage({ url: () => 'https://old.example' })
+    const fresh = richPage({ url: () => 'https://new.example' })
+    const browser = {
+      contexts: () => [{ pages: () => [old.page, fresh.page], newPage: async () => fresh.page }],
+      close: async () => {},
+    }
+    const c = createDockerComputer(endpoints, { connect: async () => browser })
+    await c.goto('https://x.example')
+    expect(fresh.log).toEqual(['goto:https://x.example'])
+    expect(old.log).toEqual([])
   })
 })

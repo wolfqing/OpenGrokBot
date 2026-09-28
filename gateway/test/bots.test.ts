@@ -61,3 +61,26 @@ describe('createBot', () => {
     expect(bot.id).toBe('solo')
   })
 })
+
+describe('names without latin letters', () => {
+  it('hires a teammate whose name is all CJK and keeps the name as written', async () => {
+    const db = openDb(':memory:')
+    const bot = await createBot(db, { dataDir: newDir(), name: '小账房', role: '每周五对账' })
+    expect(bot.id).toMatch(/^mate-[0-9a-f]{6}$/)
+    expect(bot.name).toBe('小账房')
+    expect(readFileSync(bot.soul_path, 'utf8')).toContain('# 小账房')
+  })
+
+  it('still refuses the same name twice', async () => {
+    const db = openDb(':memory:')
+    const dataDir = newDir()
+    await createBot(db, { dataDir, name: '小账房', role: 'x' })
+    await expect(createBot(db, { dataDir, name: '小账房', role: 'y' })).rejects.toThrow(/already/i)
+  })
+
+  it('writes the role into SOUL.md so a restart cannot lose it', async () => {
+    const db = openDb(':memory:')
+    const bot = await createBot(db, { dataDir: newDir(), name: 'Ledger', role: 'Reconciles invoices' })
+    expect(readFileSync(bot.soul_path, 'utf8')).toMatch(/^---\nrole: Reconciles invoices\n/)
+  })
+})

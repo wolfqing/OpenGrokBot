@@ -29,6 +29,45 @@ describe('loadConfig', () => {
     })
   })
 
+  it('defaults to a loopback-only, token-guarded gateway with sane budgets', () => {
+    const c = loadConfig({})
+    expect(c.host).toBe('127.0.0.1')
+    expect(c.token).toBe('')
+    expect(c.allowedOrigins).toEqual([])
+    expect(c.llmTimeoutMs).toBe(120_000)
+    expect(c.llmRetries).toBe(2)
+    expect(c.dailyTokens).toBe(0)
+    expect(c.vision).toBe(false)
+    expect(c.idleStopMinutes).toBe(60)
+    expect(c.botMemoryMb).toBe(2048)
+    expect(c.botCpus).toBe(2)
+    expect(c.timeZone).toBeTruthy()
+  })
+
+  it('reads the new knobs from the environment', () => {
+    const c = loadConfig({
+      OPENGROKBOT_HOST: '0.0.0.0',
+      OPENGROKBOT_TOKEN: 'fixed',
+      OPENGROKBOT_ALLOWED_ORIGINS: 'https://bots.example.com, http://mini.local:4747',
+      OPENGROKBOT_LLM_TIMEOUT_MS: '30000',
+      OPENGROKBOT_LLM_RETRIES: '0',
+      OPENGROKBOT_DAILY_TOKENS: '200000',
+      OPENGROKBOT_VISION: '1',
+      OPENGROKBOT_IDLE_STOP_MINUTES: '0',
+      OPENGROKBOT_BOT_MEMORY_MB: '1024',
+      OPENGROKBOT_BOT_CPUS: '1.5',
+      OPENGROKBOT_WEB_URL: 'http://localhost:5173',
+      TZ: 'Europe/Berlin',
+    })
+    expect(c).toMatchObject({
+      host: '0.0.0.0', token: 'fixed',
+      allowedOrigins: ['https://bots.example.com', 'http://mini.local:4747'],
+      llmTimeoutMs: 30_000, llmRetries: 0, dailyTokens: 200_000, vision: true,
+      idleStopMinutes: 0, botMemoryMb: 1024, botCpus: 1.5, webUrl: 'http://localhost:5173',
+      timeZone: 'Europe/Berlin',
+    })
+  })
+
   it('defaults the db inside the data dir', () => {
     expect(loadConfig({ OPENGROKBOT_DATA: '/tmp/data' }).dbPath).toBe('/tmp/data/opengrokbot.db')
   })

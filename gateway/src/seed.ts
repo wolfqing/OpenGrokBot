@@ -1,21 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { type Db, ensureDmThread, ensureGroupThread, upsertBot } from './db.js'
+import { parseSoul } from './soul.js'
 
-const EMOJI: Record<string, string> = {
-  chief: '🎖️',
-  researcher: '🔎',
-  'inbox-keeper': '📥',
-  'market-watch': '📈',
-}
-
-const ROLE: Record<string, string> = {
-  chief: 'Keeps the board: who owns what, by when, and what needs you today',
-  researcher: 'Turns a one-line question into a decision-ready brief with sources',
-  'inbox-keeper': 'Triages what you forward, drafts replies — drafts only, never sends',
-  'market-watch': 'Watches your list, digests and threshold alerts — read-only, never trades',
-}
-
+/** 每个带 SOUL.md 的子目录就是一位同事；role/emoji 取自 SOUL.md 的 frontmatter，没写就保留库里已有的。 */
 export function seedTeammates(db: Db, teammatesDir: string): string[] {
   if (!existsSync(teammatesDir)) return [] // 用户目录是可选的，第一次跑还不存在
   const ids: string[] = []
@@ -23,13 +11,13 @@ export function seedTeammates(db: Db, teammatesDir: string): string[] {
     if (!entry.isDirectory()) continue
     const soulPath = join(teammatesDir, entry.name, 'SOUL.md')
     if (!existsSync(soulPath)) continue
-    const soul = readFileSync(soulPath, 'utf8')
-    const name = soul.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? entry.name
+    const { meta, body } = parseSoul(readFileSync(soulPath, 'utf8'))
+    const name = body.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? entry.name
     upsertBot(db, {
       id: entry.name,
       name,
-      role: ROLE[entry.name] ?? '',
-      emoji: EMOJI[entry.name] ?? '🤖',
+      role: meta.role ?? '',
+      emoji: meta.emoji ?? '',
       soul_path: soulPath,
     })
     ensureDmThread(db, entry.name)

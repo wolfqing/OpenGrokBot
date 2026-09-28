@@ -1,16 +1,30 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { workspaceDir } from './screenshots.js'
+import { botDataDir, workspaceDir } from './screenshots.js'
 
 const HEADING = '# MEMORY'
 
-/** 放在 bot 自己的 workspace 里：宿主直接读写，容器里也能 read_file 看到同一份。 */
+/**
+ * 放在网关自己的目录里、不挂进容器：规则只能经 save_memory 改（每次都有 diff chip），
+ * bot 在自己电脑上写文件改不动「操作者给的规矩」。
+ */
 export function memoryPath(dataDir: string, botId: string): string {
-  return join(workspaceDir(dataDir, botId), 'MEMORY.md')
+  return join(botDataDir(dataDir, botId), 'MEMORY.md')
+}
+
+/** v0.2.0 把 MEMORY.md 放在 workspace 里；第一次读到时搬过来。 */
+async function migrateLegacyMemory(dataDir: string, botId: string): Promise<void> {
+  const target = memoryPath(dataDir, botId)
+  const legacy = join(workspaceDir(dataDir, botId), 'MEMORY.md')
+  if (existsSync(target) || !existsSync(legacy)) return
+  await mkdir(dirname(target), { recursive: true })
+  await rename(legacy, target)
 }
 
 export async function readMemory(dataDir: string, botId: string): Promise<string> {
   try {
+    await migrateLegacyMemory(dataDir, botId)
     return await readFile(memoryPath(dataDir, botId), 'utf8')
   } catch {
     return ''

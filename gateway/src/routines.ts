@@ -61,3 +61,16 @@ export function listRoutines(db: Db, botId?: string): RoutineRow[] {
 export function markRoutineRun(db: Db, id: number, at: number): void {
   db.prepare('UPDATE routines SET last_run_at = ? WHERE id = ?').run(at, id)
 }
+
+export function getRoutine(db: Db, id: number): RoutineRow | null {
+  return (db.prepare('SELECT * FROM routines WHERE id = ?').get(id) as RoutineRow | undefined) ?? null
+}
+
+export function setRoutineEnabled(db: Db, id: number, enabled: boolean): RoutineRow | null {
+  db.prepare('UPDATE routines SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id)
+  return getRoutine(db, id)
+}
+
+export function deleteRoutine(db: Db, id: number): boolean {
+  return db.prepare('DELETE FROM routines WHERE id = ?').run(id).changes > 0
+}

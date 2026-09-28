@@ -7,19 +7,21 @@ import { saveScreenshot, screenshotFilePath, workspaceDir } from '../src/screens
 const shot = { buffer: Buffer.from('PNGDATA'), width: 1280, height: 800 }
 
 describe('saveScreenshot', () => {
-  it('writes under the bot workspace and returns a servable url', async () => {
+  it('writes outside the bot workspace, where the bot cannot doctor its own evidence', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ogb-'))
     const saved = await saveScreenshot(dir, 'researcher', shot, 1786530000000)
     expect(saved).toEqual({ url: '/api/screenshots/researcher/1786530000000.png', width: 1280, height: 800 })
-    const onDisk = join(dir, 'workspaces', 'researcher', 'screenshots', '1786530000000.png')
+    const onDisk = join(dir, 'bots', 'researcher', 'screenshots', '1786530000000.png')
     expect(readFileSync(onDisk).toString()).toBe('PNGDATA')
   })
 })
 
 describe('screenshotFilePath', () => {
-  it('resolves well-formed names', () => {
-    expect(screenshotFilePath('/data', 'researcher', '1786530000000.png'))
-      .toBe('/data/workspaces/researcher/screenshots/1786530000000.png')
+  it('resolves well-formed names, new location first and the old workspace one as a fallback', () => {
+    expect(screenshotFilePath('/data', 'researcher', '1786530000000.png')).toEqual([
+      '/data/bots/researcher/screenshots/1786530000000.png',
+      '/data/workspaces/researcher/screenshots/1786530000000.png',
+    ])
   })
 
   it('rejects traversal and non-screenshot names', () => {

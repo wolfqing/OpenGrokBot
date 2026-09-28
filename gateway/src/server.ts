@@ -1,25 +1,31 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { Hono } from 'hono'
 import { runTurn } from './agent.js'
 import {
   attachApprovalMessage, createApproval, getApproval, isThumbsUp, latestPendingApproval, resolveApproval,
 } from './approvals.js'
 import { canMessage, denyReason, type A2ARules } from './a2a.js'
+import { authMiddleware, loginHandler } from './auth.js'
 import { createBot } from './bots.js'
 import {
-  ensureDmThread, insertMessage, listBotsWithLastMessage, listConversations, listMessages, threadMembers,
-  updateMessagePayload, type BotRow, type Db, type MessageRow,
+  ensureDmThread, getMessage, insertMessage, listBotsWithLastMessage, listConversations, listMessages, recordUsage,
+  threadMembers, updateMessagePayload, usageSince, type BotRow, type Db, type MessageRow,
 } from './db.js'
-import { createHub, type Hub } from './hub.js'
+import { createHub, type GatewayEvent, type Hub } from './hub.js'
 import type { LLM } from './llm.js'
 import { appendMemoryRule, readMemory } from './memory.js'
 import type { Pool } from './pool.js'
-import { createRoutine, describeCron, isValidCron, listRoutines } from './routines.js'
+import {
+  createRoutine, deleteRoutine, describeCron, getRoutine, isValidCron, listRoutines, markRoutineRun, setRoutineEnabled,
+  type RoutineRow,
+} from './routines.js'
 import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import type { Scheduler } from './scheduler.js'
+import { createTurnQueue } from './turns.js'
 
-export function createApp(deps: {
+export type AppDeps = {
   db: Db
   llm: LLM
   pool?: Pool
@@ -27,18 +33,80 @@ export function createApp(deps: {
   scheduler?: Scheduler
   chiefId?: string
   a2aRules?: A2ARules
-}): { app: Hono; hub: Hub } {
+  /** 网关令牌。main.ts 总会传；只有单元测试会省略它来跳过鉴权。 */
+  token?: string
+  allowedOrigins?: string[]
+  /** 每个 bot 每天的 token 上限；0 或不传 = 不限 */
+  dailyTokens?: number
+  vision?: boolean
+  timeZone?: string
+  now?: () => Date
+}
+
+export type GatewayApp = {
+  app: Hono
+  hub: Hub
+  /** 新连上的客户端先收一份「谁在忙」的快照，断线期间错过的状态灯就不会卡住 */
+  hello(): GatewayEvent
+  runRoutine(routine: RoutineRow, opts?: { force?: boolean }): Promise<'ran' | 'skipped' | 'gone'>
+  isBusy(botId: string): boolean
+}
+
+type TurnOpts = {
+  persistUserMessage?: boolean
+  alreadyStored?: boolean
+  hop?: number
+  group?: { title: string; members: string[] }
+  /** 容器冷启动要十几秒：和第一次调模型并行地先把它拉起来 */
+  prewarm?: boolean
+  /** 排队期间又来的用户消息并进同一个回合 */
+  coalesce?: boolean
+}
+
+function startOfLocalDay(now: Date): number {
+  const day = new Date(now)
+  day.setHours(0, 0, 0, 0)
+  return day.getTime()
+}
+
+const formatCount = (n: number) => n.toLocaleString('en-US')
+
+export function createApp(deps: AppDeps): GatewayApp {
   const { db, llm, pool, scheduler } = deps
   const dataDir = deps.dataDir ?? ''
   const chiefId = deps.chiefId ?? 'chief'
   const a2aRules = deps.a2aRules ?? { chiefId, pairs: [] }
+  const now = deps.now ?? (() => new Date())
   const hub = createHub()
   const app = new Hono()
+  const turns = createTurnQueue((botId, state) => hub.broadcast({ type: 'status', botId, state }))
+  const rounds = createTurnQueue(() => {})
+  const routinesInFlight = new Set<number>()
+
+  if (deps.token) {
+    app.use('*', authMiddleware(deps.token, deps.allowedOrigins))
+    app.get('/auth', loginHandler(deps.token))
+  }
+  app.get('/api/session', (c) => c.json({ ok: true }))
 
   const botById = (id: string) => db.prepare('SELECT * FROM bots WHERE id = ?').get(id) as BotRow | undefined
 
-  const readSoul = (bot: BotRow): string => {
-    try { return bot.soul_path ? readFileSync(bot.soul_path, 'utf8') : '' } catch { return '' /* soul 缺失可运行 */ }
+  /** SOUL.md 是人格，旁边的 AGENTS.md 是操作手册（硬边界写在那里）；缺哪个都能跑。 */
+  const loadPersona = (bot: BotRow): { soul: string; manual: string } => {
+    if (!bot.soul_path) return { soul: '', manual: '' }
+    const read = (path: string) => {
+      try { return existsSync(path) ? readFileSync(path, 'utf8') : '' } catch { return '' }
+    }
+    return { soul: read(bot.soul_path), manual: read(join(dirname(bot.soul_path), 'AGENTS.md')) }
+  }
+
+  const budgetNote = (bot: BotRow): string | null => {
+    const budget = deps.dailyTokens ?? 0
+    if (!budget) return null
+    const used = usageSince(db, bot.id, startOfLocalDay(now())).total
+    if (used < budget) return null
+    return `⚠️ ${bot.name} hit today's token budget (${formatCount(used)} of ${formatCount(budget)} tokens). `
+      + 'It picks up again tomorrow — or raise OPENGROKBOT_DAILY_TOKENS.'
   }
 
   const events = (threadId: string) => ({
@@ -50,37 +118,50 @@ export function createApp(deps: {
       }
       hub.broadcast({ type: 'message', threadId, message: m })
     },
-    onStatus: (botId: string, state: 'thinking' | 'idle') => hub.broadcast({ type: 'status', botId, state }),
+    // 状态灯由车道统一发，回合自己的开关不再直接广播
+    onStatus: () => {},
   })
 
-  async function startTurn(
-    bot: BotRow,
-    threadId: string,
-    text: string,
-    opts: { persistUserMessage?: boolean; hop?: number; group?: { title: string; members: string[] } } = {},
-  ): Promise<void> {
-    const memory = dataDir ? await readMemory(dataDir, bot.id) : ''
-    await runTurn({
-      db, llm, bot, soul: readSoul(bot), threadId, memory,
-      hop: opts.hop ?? 0,
-      ...(opts.group ? { group: opts.group } : {}),
-      onMessageBot: ({ to, content }) => relay(bot, to, content, opts.hop ?? 0),
-      // 提前把容器拉起来，用户点开面板时屏幕已经在了
-      ...(pool ? { onAskForLogin: async () => { await pool.get(bot.id) } } : {}),
-      ...(pool ? { getComputer: () => pool.get(bot.id) } : {}),
-      ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
-      onApproval: async ({ action, detail }) => {
-        const approval = createApproval(db, { threadId, botId: bot.id, action, detail })
-        return { approvalId: approval.id }
-      },
-      ...(dataDir ? { onSaveMemory: (rule: string) => appendMemoryRule(dataDir, bot.id, rule) } : {}),
-      onCreateRoutine: async ({ name, cron, instructions }) => {
-        if (!isValidCron(cron)) throw new Error(`not a valid cron expression: ${cron}`)
-        const routine = createRoutine(db, { botId: bot.id, name, cron, instructions })
-        scheduler?.add(routine)
-        return { id: routine.id, name: routine.name, cron: routine.cron, human: describeCron(routine.cron) }
-      },
-    }, text, events(threadId), { persistUserMessage: opts.persistUserMessage })
+  function startTurn(bot: BotRow, threadId: string, text: string, opts: TurnOpts = {}): Promise<void> {
+    return turns.run(bot.id, threadId, async (signal) => {
+      if (pool && opts.prewarm) void pool.get(bot.id).catch(() => {})
+      const { soul, manual } = loadPersona(bot)
+      const memory = dataDir ? await readMemory(dataDir, bot.id) : ''
+      const routines = listRoutines(db, bot.id)
+        .map((r) => ({ id: r.id, name: r.name, human: describeCron(r.cron), enabled: r.enabled === 1 }))
+      await runTurn({
+        db, llm, bot, soul, manual, memory, routines, threadId, signal, now,
+        hop: opts.hop ?? 0,
+        vision: deps.vision === true,
+        ...(deps.timeZone ? { timeZone: deps.timeZone } : {}),
+        ...(opts.group ? { group: opts.group } : {}),
+        onUsage: (usage) => recordUsage(db, { botId: bot.id, threadId, usage, at: now().getTime() }),
+        checkBudget: () => budgetNote(bot),
+        onMessageBot: ({ to, content }) => relay(bot, to, content, opts.hop ?? 0),
+        // 提前把容器拉起来，用户点开面板时屏幕已经在了
+        ...(pool ? { onAskForLogin: async () => { await pool.get(bot.id) } } : {}),
+        ...(pool ? { getComputer: () => pool.get(bot.id) } : {}),
+        ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
+        onApproval: async ({ action, detail }) => {
+          const approval = createApproval(db, { threadId, botId: bot.id, action, detail })
+          return { approvalId: approval.id }
+        },
+        ...(dataDir ? { onSaveMemory: (rule: string) => appendMemoryRule(dataDir, bot.id, rule) } : {}),
+        onCreateRoutine: async ({ name, cron, instructions }) => {
+          if (!isValidCron(cron)) throw new Error(`not a valid cron expression: ${cron}`)
+          const routine = createRoutine(db, { botId: bot.id, name, cron, instructions })
+          scheduler?.add(routine)
+          return { id: routine.id, name: routine.name, cron: routine.cron, human: describeCron(routine.cron) }
+        },
+        onStopRoutine: async (id) => {
+          const routine = getRoutine(db, id)
+          if (!routine || routine.bot_id !== bot.id) return { ok: false, reason: `You have no routine #${id}.` }
+          setRoutineEnabled(db, id, false)
+          scheduler?.remove(id)
+          return { ok: true, name: routine.name }
+        },
+      }, text, events(threadId), { persistUserMessage: opts.persistUserMessage, alreadyStored: opts.alreadyStored })
+    }, opts.coalesce ? { coalesceKey: `stored:${threadId}` } : undefined)
   }
 
   /** a2a：把任务放进目标 bot 的单聊，并让它接着干。 */
@@ -108,24 +189,30 @@ export function createApp(deps: {
       target,
       targetThread,
       `@${from.name} (${from.id}) handed you this: ${content}\nPick it up now and report back in this thread.`,
-      { persistUserMessage: false, hop: hop + 1 },
+      { persistUserMessage: false, hop: hop + 1, prewarm: true },
     )
     return { delivered: true, toName: target.name }
   }
 
-  /** 群里一轮：成员依次发言，Chief 收口——所以每个人都看得见前面的话。 */
-  async function runGroupRound(threadId: string, title: string, text: string): Promise<void> {
-    const members = threadMembers(db, threadId)
-      .map((id) => botById(id))
-      .filter((b): b is BotRow => Boolean(b))
-    const names = members.map((b) => b.name)
-    const speakers = [...members.filter((b) => b.id !== chiefId), ...members.filter((b) => b.id === chiefId)]
-    for (const bot of speakers) {
-      const seed = bot.id === chiefId
-        ? `Your operator asked the group: "${text}". Everyone else has reported above. Post the dispatch table now — one "✓ item → @bot · when" line each — then one sentence on what needs your operator today.`
-        : `Your operator asked the group: "${text}". Answer for your own patch only, in two lines or less.`
-      await startTurn(bot, threadId, seed, { persistUserMessage: false, group: { title, members: names } })
-    }
+  /**
+   * 群里一轮：成员各报各的摊子、彼此不用等，所以并行；Chief 要看完所有人的话再发分派表，所以最后。
+   * 同一个群的两轮排队进行，不会互相插话。
+   */
+  function startGroupRound(threadId: string, title: string, text: string): Promise<void> {
+    return rounds.run(threadId, threadId, async (signal) => {
+      const members = threadMembers(db, threadId)
+        .map((id) => botById(id))
+        .filter((b): b is BotRow => Boolean(b))
+      const group = { title, members: members.map((b) => b.name) }
+      const chief = members.find((b) => b.id === chiefId)
+      await Promise.all(members.filter((b) => b.id !== chiefId).map((bot) => startTurn(bot, threadId,
+        `Your operator asked the group: "${text}". Answer for your own patch only, in two lines or less.`,
+        { persistUserMessage: false, group })))
+      if (signal.aborted || !chief) return
+      await startTurn(chief, threadId,
+        `Your operator asked the group: "${text}". Everyone else has reported above. Post the dispatch table now — one "✓ item → @bot · when" line each — then one sentence on what needs your operator today.`,
+        { persistUserMessage: false, group })
+    })
   }
 
   /** 放行/驳回：翻转 chip、留一条决定记录、再用不可见 seed 让 bot 续跑。 */
@@ -138,7 +225,8 @@ export function createApp(deps: {
       updateMessagePayload(db, approval.message_id, {
         approvalId: approval.id, action: approval.action, detail: approval.detail, status: approval.status,
       })
-      const updated = listMessages(db, approval.thread_id).find((m) => m.id === approval.message_id)
+      // 按 id 直接取：chip 可能早就不在最近 200 条里了
+      const updated = getMessage(db, approval.message_id)
       if (updated) hub.broadcast({ type: 'message', threadId: approval.thread_id, message: updated })
     }
 
@@ -153,10 +241,32 @@ export function createApp(deps: {
       const seed = decision === 'approve'
         ? `Your operator approved: ${approval.action}. Carry it out now and report what actually happened.`
         : `Your operator discarded: ${approval.action}. Do not do it. Acknowledge in one line and move on.`
-      void startTurn(bot, approval.thread_id, seed, { persistUserMessage: false }) // 放行的响应不等 bot 干完
+      // 放行的响应不等 bot 干完
+      void startTurn(bot, approval.thread_id, seed, { persistUserMessage: false, prewarm: decision === 'approve' })
     }
     return 'ok'
   }
+
+  /** routine 触发和「立即运行」走同一条路：完整的工具与回调，且同一条 routine 不重入。 */
+  async function runRoutine(routine: RoutineRow, opts: { force?: boolean } = {}): Promise<'ran' | 'skipped' | 'gone'> {
+    const fresh = getRoutine(db, routine.id)
+    if (!fresh || (!fresh.enabled && !opts.force)) return 'gone'
+    const bot = botById(fresh.bot_id)
+    if (!bot) return 'gone'
+    if (routinesInFlight.has(fresh.id)) return 'skipped'
+    routinesInFlight.add(fresh.id)
+    try {
+      markRoutineRun(db, fresh.id, now().getTime())
+      await startTurn(bot, ensureDmThread(db, bot.id),
+        `Your routine "${fresh.name}" just fired. Do this now: ${fresh.instructions}`,
+        { persistUserMessage: false, prewarm: true })
+      return 'ran'
+    } finally {
+      routinesInFlight.delete(fresh.id)
+    }
+  }
+
+  const routineView = (r: RoutineRow) => ({ ...r, human: describeCron(r.cron) })
 
   app.get('/api/bots', (c) => c.json(listBotsWithLastMessage(db)))
 
@@ -165,15 +275,16 @@ export function createApp(deps: {
   app.get('/api/bots/:botId/computer', async (c) => {
     const botId = c.req.param('botId')
     if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
-    const routines = listRoutines(db, botId).map((r) => ({ ...r, human: describeCron(r.cron) }))
-    if (!pool) return c.json({ botId, running: false, vncUrl: null, routines })
+    const routines = listRoutines(db, botId).map(routineView)
+    const usage = { today: usageSince(db, botId, startOfLocalDay(now())), budget: deps.dailyTokens ?? 0 }
+    if (!pool) return c.json({ botId, running: false, vncUrl: null, routines, usage })
     try {
       const computer = await pool.get(botId)
-      return c.json({ botId, running: true, vncUrl: computer.vncUrl ?? null, routines })
+      return c.json({ botId, running: true, vncUrl: computer.vncUrl ?? null, routines, usage })
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
       return c.json({
-        botId, running: false, vncUrl: null, routines,
+        botId, running: false, vncUrl: null, routines, usage,
         error: err instanceof Error ? err.message : String(err),
       })
     }
@@ -198,17 +309,53 @@ export function createApp(deps: {
 
   app.get('/api/bots/:botId/routines', (c) => c.json(listRoutines(db, c.req.param('botId'))))
 
+  app.patch('/api/routines/:id', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (!getRoutine(db, id)) return c.json({ error: 'unknown routine' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null
+    if (typeof body?.enabled !== 'boolean') return c.json({ error: 'enabled must be true or false' }, 400)
+    const updated = setRoutineEnabled(db, id, body.enabled)!
+    if (body.enabled) scheduler?.add(updated)
+    else scheduler?.remove(id)
+    return c.json(routineView(updated))
+  })
+
+  app.delete('/api/routines/:id', (c) => {
+    const id = Number(c.req.param('id'))
+    if (!deleteRoutine(db, id)) return c.json({ error: 'unknown routine' }, 404)
+    scheduler?.remove(id)
+    return c.json({ ok: true })
+  })
+
+  app.post('/api/routines/:id/run', (c) => {
+    const routine = getRoutine(db, Number(c.req.param('id')))
+    if (!routine) return c.json({ error: 'unknown routine' }, 404)
+    if (routinesInFlight.has(routine.id)) return c.json({ error: 'already running' }, 409)
+    void runRoutine(routine, { force: true })
+    return c.json({ ok: true }, 202)
+  })
+
   app.get('/api/threads/:threadId/messages', (c) => c.json(listMessages(db, c.req.param('threadId'))))
 
+  app.post('/api/threads/:threadId/stop', (c) => {
+    const threadId = c.req.param('threadId')
+    // 先停轮次（群里剩下的人不再发言），再停正在跑和排着队的回合
+    const stopped = rounds.stopThread(threadId) + turns.stopThread(threadId)
+    return c.json({ stopped })
+  })
+
   app.get('/api/screenshots/:botId/:file', async (c) => {
-    const path = dataDir ? screenshotFilePath(dataDir, c.req.param('botId'), c.req.param('file')) : null
-    if (!path) return c.json({ error: 'not found' }, 404)
-    try {
-      const body = await readFile(path)
-      return c.body(body, 200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' })
-    } catch {
-      return c.json({ error: 'not found' }, 404)
+    const paths = dataDir ? screenshotFilePath(dataDir, c.req.param('botId'), c.req.param('file')) : null
+    if (!paths) return c.json({ error: 'not found' }, 404)
+    for (const path of paths) {
+      try {
+        const body = await readFile(path)
+        return c.body(body, 200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=31536000, immutable' })
+      } catch {
+        // 试下一个位置
+      }
     }
+    return c.json({ error: 'not found' }, 404)
   })
 
   app.post('/api/approvals/:id', async (c) => {
@@ -233,7 +380,7 @@ export function createApp(deps: {
         .get(threadId) as { title: string } | undefined
       if (!group) return c.json({ error: 'unknown thread' }, 404)
       events(threadId).onMessage(insertMessage(db, { threadId, sender: 'user', kind: 'text', content: text }))
-      void runGroupRound(threadId, group.title, text)
+      void startGroupRound(threadId, group.title, text)
       return c.json({ ok: true }, 202)
     }
 
@@ -249,9 +396,17 @@ export function createApp(deps: {
       }
     }
 
-    void startTurn(bot, threadId, text) // 202 立刻返回，产出走 WS
+    // 先落库并广播：bot 正忙（比如在跑 routine）时，人也要立刻看到自己发出去的话
+    events(threadId).onMessage(insertMessage(db, { threadId, sender: 'user', kind: 'text', content: text }))
+    void startTurn(bot, threadId, text, { alreadyStored: true, prewarm: true, coalesce: true }) // 202 立刻返回，产出走 WS
     return c.json({ ok: true }, 202)
   })
 
-  return { app, hub }
+  return {
+    app,
+    hub,
+    hello: () => ({ type: 'hello', statuses: turns.statuses() }),
+    runRoutine,
+    isBusy: (botId) => turns.isBusy(botId),
+  }
 }

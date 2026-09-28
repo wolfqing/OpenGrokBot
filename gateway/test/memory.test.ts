@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -7,8 +7,18 @@ import { appendMemoryRule, memoryPath, readMemory } from '../src/memory.js'
 const newDir = () => mkdtempSync(join(tmpdir(), 'ogb-mem-'))
 
 describe('memoryPath', () => {
-  it('lives in the bot workspace so the bot can read it too', () => {
-    expect(memoryPath('/data', 'researcher')).toBe('/data/workspaces/researcher/MEMORY.md')
+  it('lives outside the bot workspace, so a bot cannot quietly rewrite its own standing rules', () => {
+    expect(memoryPath('/data', 'researcher')).toBe('/data/bots/researcher/MEMORY.md')
+  })
+
+  it('moves a MEMORY.md left in the old workspace location on first read', async () => {
+    const dir = newDir()
+    const legacy = join(dir, 'workspaces', 'researcher', 'MEMORY.md')
+    mkdirSync(join(dir, 'workspaces', 'researcher'), { recursive: true })
+    writeFileSync(legacy, '# MEMORY\n\n- old rule\n')
+    expect(await readMemory(dir, 'researcher')).toContain('- old rule')
+    expect(existsSync(legacy)).toBe(false)
+    expect(readFileSync(memoryPath(dir, 'researcher'), 'utf8')).toContain('- old rule')
   })
 })
 

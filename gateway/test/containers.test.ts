@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { containerName, createContainerSpec, readEndpoints, waitForCdp, waitForShim } from '../src/containers.js'
+import {
+  BOT_NETWORK, SPEC_VERSION, containerName, createContainerSpec, ensureContainer, readEndpoints, stopBotContainer,
+  waitForCdp, waitForShim,
+} from '../src/containers.js'
 
 const inspect = {
   NetworkSettings: {
@@ -26,15 +29,22 @@ describe('readEndpoints', () => {
     })
   })
 
+  it('reads the per-container secrets back from its environment', () => {
+    const withEnv = { ...inspect, Config: { Env: ['PATH=/usr/bin', 'SHIM_TOKEN=tok-123', 'VNC_PASSWORD=pw12345x'] } }
+    expect(readEndpoints(withEnv)).toMatchObject({ shimToken: 'tok-123', vncPassword: 'pw12345x' })
+  })
+
   it('throws a readable error when a port is unpublished', () => {
     expect(() => readEndpoints({ NetworkSettings: { Ports: { '7717/tcp': [{ HostPort: '1' }] } } }))
       .toThrow(/9222/)
   })
 })
 
+const secrets = { shimToken: 'tok-123', vncPassword: 'pw12345x' }
+
 describe('createContainerSpec', () => {
   it('binds the workspace and publishes all three ports to loopback only', () => {
-    const spec = createContainerSpec('researcher', '/data/workspaces/researcher')
+    const spec = createContainerSpec('researcher', '/data/workspaces/researcher', secrets)
     expect(spec.name).toBe('opengrokbot-researcher')
     expect(spec.Image).toBe('opengrokbot/bot:dev')
     expect(spec.HostConfig!.Binds).toEqual(['/data/workspaces/researcher:/workspace'])
@@ -42,7 +52,116 @@ describe('createContainerSpec', () => {
       expect(spec.HostConfig!.PortBindings![port]).toEqual([{ HostIp: '127.0.0.1', HostPort: '' }])
       expect(spec.ExposedPorts![port]).toEqual({})
     }
-    expect(spec.Labels).toMatchObject({ 'ai.opengrokbot.bot': 'researcher' })
+    expect(spec.Labels).toMatchObject({ 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION })
+  })
+
+  it('cages the computer: isolated network, resource limits, no privilege escalation', () => {
+    const spec = createContainerSpec('researcher', '/w', secrets, { memoryMb: 1024, cpus: 1.5 })
+    expect(spec.HostConfig).toMatchObject({
+      NetworkMode: BOT_NETWORK,
+      Memory: 1024 * 1024 * 1024,
+      NanoCpus: 1_500_000_000,
+      PidsLimit: 512,
+      Init: true,
+    })
+    expect(spec.HostConfig!.SecurityOpt).toContain('no-new-privileges')
+  })
+
+  it('hands the container its secrets and the gateway timezone', () => {
+    const spec = createContainerSpec('researcher', '/w', secrets, { timeZone: 'Asia/Shanghai' })
+    expect(spec.Env).toEqual(expect.arrayContaining(['SHIM_TOKEN=tok-123', 'VNC_PASSWORD=pw12345x', 'TZ=Asia/Shanghai']))
+  })
+})
+
+type Info = { Id: string; Names: string[]; State: string; ImageID: string; Labels: Record<string, string> }
+
+/** 假 docker：记录调用，按需返回容器/网络/镜像。 */
+function fakeDocker(opts: { containers?: Info[]; networks?: string[]; imageId?: string; createError?: Error } = {}) {
+  const log: string[] = []
+  const networks = [...(opts.networks ?? [])]
+  let lastSpec: { Env?: string[] } = {}
+  const ports = inspect.NetworkSettings
+  const docker = {
+    listNetworks: async () => networks.map((Name) => ({ Name })),
+    createNetwork: async (spec: { Name: string; Options: Record<string, string> }) => {
+      log.push(`network:${spec.Name}:icc=${spec.Options['com.docker.network.bridge.enable_icc']}`)
+      networks.push(spec.Name)
+    },
+    listContainers: async () => opts.containers ?? [],
+    getContainer: (id: string) => ({
+      start: async () => { log.push(`start:${id}`) },
+      stop: async () => { log.push(`stop:${id}`) },
+      remove: async () => { log.push(`remove:${id}`) },
+      inspect: async () => ({ NetworkSettings: ports, Config: { Env: lastSpec.Env ?? ['SHIM_TOKEN=old', 'VNC_PASSWORD=oldpass1'] } }),
+    }),
+    createContainer: async (spec: { name: string; Env?: string[] }) => {
+      if (opts.createError) throw opts.createError
+      log.push(`create:${spec.name}`)
+      lastSpec = spec
+      return docker.getContainer('new')
+    },
+    getImage: () => ({ inspect: async () => ({ Id: opts.imageId ?? 'sha256:current' }) }),
+  }
+  return { docker: docker as never, log }
+}
+
+const ok = (async () => new Response('{}')) as typeof fetch
+const running = (extra: Partial<Info> = {}): Info => ({
+  Id: 'c1', Names: ['/opengrokbot-researcher'], State: 'running', ImageID: 'sha256:current',
+  Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION }, ...extra,
+})
+
+describe('ensureContainer', () => {
+  it('creates the isolated bot network once, with container-to-container traffic off', async () => {
+    const { docker, log } = fakeDocker()
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log[0]).toBe(`network:${BOT_NETWORK}:icc=false`)
+    const again = fakeDocker({ networks: [BOT_NETWORK] })
+    await ensureContainer(again.docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(again.log.some((l) => l.startsWith('network:'))).toBe(false)
+  })
+
+  it('creates a fresh computer with its own random secrets', async () => {
+    const { docker, log } = fakeDocker({ networks: [BOT_NETWORK] })
+    const endpoints = await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual(['create:opengrokbot-researcher', 'start:new'])
+    expect(endpoints.shimToken!.length).toBeGreaterThanOrEqual(24)
+    expect(endpoints.vncPassword).toMatch(/^[A-Za-z0-9]{8}$/)
+  })
+
+  it('reuses a running computer built from the current spec and image', async () => {
+    const { docker, log } = fakeDocker({ networks: [BOT_NETWORK], containers: [running()] })
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual([])
+  })
+
+  it('rebuilds a computer created by an older gateway (no cage, no secrets)', async () => {
+    const { docker, log } = fakeDocker({
+      networks: [BOT_NETWORK], containers: [running({ Labels: { 'ai.opengrokbot.bot': 'researcher' } })],
+    })
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+  })
+
+  it('rebuilds a computer when the bot image has been rebuilt', async () => {
+    const { docker, log } = fakeDocker({ networks: [BOT_NETWORK], containers: [running({ ImageID: 'sha256:old' })] })
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+  })
+
+  it('turns a missing image into the command that fixes it', async () => {
+    const error = Object.assign(new Error('(HTTP code 404) no such container - No such image: opengrokbot/bot:dev'), { statusCode: 404 })
+    const { docker } = fakeDocker({ networks: [BOT_NETWORK], createError: error })
+    await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok }))
+      .rejects.toThrow(/docker build -t opengrokbot\/bot:dev docker\/bot/)
+  })
+})
+
+describe('stopBotContainer', () => {
+  it('stops the named computer', async () => {
+    const { docker, log } = fakeDocker()
+    await stopBotContainer(docker, 'researcher')
+    expect(log).toEqual(['stop:opengrokbot-researcher'])
   })
 })
 
