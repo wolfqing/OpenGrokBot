@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "gateway-stub",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["OPENGROKBOT_MODEL=stub", "OPENGROKBOT_DATA=data-stub", "pnpm", "--filter", "@opengrokbot/gateway", "dev"],
+      "port": 4747
+    },
+    {
       "name": "web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@opengrokbot/web", "dev"],

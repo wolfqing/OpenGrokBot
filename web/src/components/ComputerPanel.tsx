@@ -1,9 +1,12 @@
-import type { ComputerInfo } from '../types'
+import type { ComputerInfo, RoutineAction } from '../types'
 
-export function ComputerPanel({ info, botName, onClose }: {
+const formatCount = (n: number) => n.toLocaleString('en-US')
+
+export function ComputerPanel({ info, botName, onClose, onRoutine }: {
   info: ComputerInfo
   botName: string
   onClose: () => void
+  onRoutine?: (id: number, action: RoutineAction) => void
 }) {
   return (
     <aside className="computer-panel">
@@ -13,11 +16,7 @@ export function ComputerPanel({ info, botName, onClose }: {
       </header>
 
       {info.vncUrl ? (
-        <iframe
-          className="panel-screen"
-          title={`${botName}'s screen`}
-          src={`${info.vncUrl}/vnc.html?autoconnect=1&resize=scale&reconnect=1`}
-        />
+        <iframe className="panel-screen" title={`${botName}'s screen`} src={info.vncUrl} />
       ) : (
         <div className="panel-offline">
           <div className="panel-offline-title">No screen right now</div>
@@ -30,14 +29,45 @@ export function ComputerPanel({ info, botName, onClose }: {
         {info.routines.length === 0 ? (
           <div className="panel-empty">No routines yet.</div>
         ) : (
-          info.routines.map((r) => (
-            <div className="panel-routine" key={r.id}>
-              <span className="panel-routine-name">{r.name}</span>
-              <span className="panel-routine-when">{r.human}</span>
-            </div>
-          ))
+          info.routines.map((r) => {
+            const paused = r.enabled === 0
+            return (
+              <div className={`panel-routine${paused ? ' paused' : ''}`} key={r.id}>
+                <div className="panel-routine-text">
+                  <span className="panel-routine-name">{r.name}</span>
+                  <span className="panel-routine-when">
+                    {r.human}
+                    {paused ? <span className="panel-routine-paused">paused</span> : null}
+                  </span>
+                </div>
+                {onRoutine ? (
+                  <div className="panel-routine-actions">
+                    <button onClick={() => onRoutine(r.id, 'run')} aria-label={`Run ${r.name} now`} title="Run now">▶</button>
+                    <button
+                      onClick={() => onRoutine(r.id, paused ? 'resume' : 'pause')}
+                      aria-label={`${paused ? 'Resume' : 'Pause'} ${r.name}`}
+                      title={paused ? 'Resume' : 'Pause'}
+                    >
+                      {paused ? '↻' : '❚❚'}
+                    </button>
+                    <button onClick={() => onRoutine(r.id, 'delete')} aria-label={`Delete ${r.name}`} title="Delete">✕</button>
+                  </div>
+                ) : null}
+              </div>
+            )
+          })
         )}
       </div>
+
+      {info.usage ? (
+        <div className="panel-section">
+          <div className="panel-section-title">Model use today</div>
+          <div className="panel-usage">
+            {formatCount(info.usage.today.total)} tokens
+            {info.usage.budget ? ` of ${formatCount(info.usage.budget)} budget` : ''}
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel-foot">
         Signing in here happens in this teammate&apos;s own browser. The session stays on its computer — you

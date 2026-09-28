@@ -7,3 +7,5 @@ docker/data/
 node_modules/
 dist/
 gateway/data/
+gateway/data-stub/
+*.tsbuildinfo

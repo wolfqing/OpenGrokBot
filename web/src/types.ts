@@ -12,6 +12,8 @@ export type MemoryPayload = { rule: string; diff: string; total: number }
 export type RoutinePayload = { routineId: number; name: string; cron: string; human: string }
 export type BotRefPayload = { from: string; fromName: string; content: string }
 export type LoginPayload = { site: string; why?: string }
+export type ActivityStep = { tool: string; summary: string; ok?: boolean; ms?: number }
+export type ActivityPayload = { steps: ActivityStep[]; done: boolean }
 
 export type ComputerRoutine = {
   id: number
@@ -19,15 +21,22 @@ export type ComputerRoutine = {
   cron: string
   human: string
   last_run_at: number | null
+  enabled: number
 }
+
+export type UsageTotals = { prompt: number; completion: number; cached: number; total: number }
 
 export type ComputerInfo = {
   botId: string
   running: boolean
+  /** 网关给的 noVNC 页面地址，连接参数（含口令）都已带好 */
   vncUrl: string | null
   error?: string
   routines: ComputerRoutine[]
+  usage?: { today: UsageTotals; budget: number }
 }
+
+export type RoutineAction = 'run' | 'pause' | 'resume' | 'delete'
 
 export type MessageKind =
   | 'text'
@@ -39,6 +48,7 @@ export type MessageKind =
   | 'routine_created'
   | 'bot_ref'
   | 'login_request'
+  | 'activity'
 
 export type Message = {
   id: number
@@ -55,6 +65,7 @@ export type Message = {
     | RoutinePayload
     | BotRefPayload
     | LoginPayload
+    | ActivityPayload
     | null
   created_at: number
 }
@@ -67,6 +78,8 @@ export type Conversation = {
   subtitle: string
   members: string[]
   last_message: Message | null
+  /** 还等着你拍板的审批数 */
+  pending: number
 }
 
 export type Bot = {
@@ -83,3 +96,4 @@ export type BotStatus = 'thinking' | 'idle'
 export type GatewayEvent =
   | { type: 'message'; threadId: string; message: Message }
   | { type: 'status'; botId: string; state: BotStatus }
+  | { type: 'hello'; statuses: Record<string, BotStatus> }
