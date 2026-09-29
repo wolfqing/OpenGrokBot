@@ -164,8 +164,9 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 - [ ] **teach-mode**——录一遍浏览器操作，编译成可复用的 routine。这是 Grok Bot 唯一没有开源等价物的能力，设计
       讨论在 [#1](../../issues/1)
 - [ ] Telegram 作为离开电脑时的通知 / 审批补位渠道
+- [ ] **不用 Docker 的电脑**——本机模式（每位同事独立的浏览器配置、命令行在系统沙箱里）加上带首次启动向导的
+      桌面 App，试用时不需要 Docker、Node 和终端。计划见 [docs/local-computers.md](docs/local-computers.md)
 - [ ] 一条命令起 VPS 镜像（cloud-init）
-- [ ] 原生 app 外壳
 
 ## 常见问题
 
@@ -176,8 +177,9 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 自己的电脑」和 OpenClaw 的共享主机模型是拧着的。旧配方保留在
 [docs/openclaw-recipe/](docs/openclaw-recipe/README.md)。本项目不是 OpenClaw 官方项目。
 
-**必须用 Docker 吗？** 电脑那部分必须。其余能力——线程、审批、记忆、routine、群分派——没有 Docker 也照常运转，
-bot 只会如实说自己现在没有电脑。
+**必须用 Docker 吗？** 电脑那部分目前必须，不用 Docker 的本机模式在计划中（见
+[docs/local-computers.md](docs/local-computers.md)）。其余能力——线程、审批、记忆、routine、群分派——没有 Docker
+也照常运转，bot 只会如实说自己现在没有电脑。
 
 更多见 [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
 [docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md)

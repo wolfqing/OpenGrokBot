@@ -179,8 +179,10 @@ official xAI product. [Download the latest release](https://github.com/wolfqing/
 - [ ] **teach-mode** — record a browser demonstration, compile it into a reusable routine. The one Grok Bot
       feature with no open equivalent; design discussion in [#1](../../issues/1)
 - [ ] Telegram as a notification / approval surface for when you are away from the desk
+- [ ] **Computers without Docker** — a local mode (separate browser profile per teammate, sandboxed commands)
+      plus a desktop app with a first-run wizard, so trying it needs no Docker, Node or terminal. Plan in
+      [docs/local-computers.md](docs/local-computers.md)
 - [ ] One-command VPS image (cloud-init)
-- [ ] Native app shell
 
 ## FAQ
 
@@ -192,7 +194,8 @@ even run on the same brain: point it at the Grok API.
 a private computer per teammate pulls against OpenClaw's shared-host model. The old recipe is kept in
 [docs/openclaw-recipe/](docs/openclaw-recipe/README.md). Not an official OpenClaw project.
 
-**Do I have to use Docker?** For the computers, yes. Everything else — threads, approvals, memory, routines,
+**Do I have to use Docker?** For the computers, today yes — a Docker-free local mode is planned
+([docs/local-computers.md](docs/local-computers.md)). Everything else — threads, approvals, memory, routines,
 group dispatch — runs without it; bots simply report that they have no computer attached.
 
 More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
