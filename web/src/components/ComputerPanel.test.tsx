@@ -85,4 +85,40 @@ describe('ComputerPanel', () => {
     expect(screen.getByText(/12,345/)).toBeInTheDocument()
     expect(screen.getByText(/200,000/)).toBeInTheDocument()
   })
+
+  it('lists what goes out without asking, and revokes it', async () => {
+    const onRevokeRule = vi.fn()
+    render(<ComputerPanel
+      info={{ ...running, rules: [{ id: 4, kind: 'email', target: 'bob@acme.com', expiresAt: null, createdAt: 1 }] }}
+      botName="Scout"
+      onClose={() => {}}
+      onRevokeRule={onRevokeRule}
+    />)
+    expect(screen.getByText('email → bob@acme.com')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Stop allowing email to bob@acme.com' }))
+    expect(onRevokeRule).toHaveBeenCalledWith(4)
+  })
+
+  it('says nothing goes out unasked when there are no rules', () => {
+    render(<ComputerPanel info={running} botName="Scout" onClose={() => {}} />)
+    expect(screen.getByText('Nothing goes out without your approval.')).toBeInTheDocument()
+  })
+
+  it('lists standing rules and forgets one by its exact text', async () => {
+    const onForgetRule = vi.fn()
+    render(<ComputerPanel info={{ ...running, memory: ['Never email Globex on Fridays.'] }} botName="Scout" onClose={() => {}} onForgetRule={onForgetRule} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Forget: Never email Globex on Fridays.' }))
+    expect(onForgetRule).toHaveBeenCalledWith('Never email Globex on Fridays.')
+  })
+
+  it('copies the full webhook address only for routines that have one', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const hooked = { id: 2, name: 'Triage', cron: '', human: 'when its webhook is called', last_run_at: null, enabled: 1, webhook_path: '/hooks/routines/2?key=k3y' }
+    render(<ComputerPanel info={{ ...running, routines: [...running.routines, hooked] }} botName="Scout" onClose={() => {}} />)
+    expect(screen.getAllByRole('button', { name: /Copy the webhook address/ })).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Copy the webhook address of Triage' }))
+    expect(writeText).toHaveBeenCalledWith(`${location.origin}/hooks/routines/2?key=k3y`)
+    expect(screen.getByText('Copied')).toBeInTheDocument()
+  })
 })

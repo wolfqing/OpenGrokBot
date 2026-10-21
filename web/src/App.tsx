@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  SignedOut, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations, fetchMessages,
-  resolveApproval, sendMessage, stopThread, updateRoutine,
+  SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
+  fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, stopThread, updateRoutine,
 } from './api'
 import { ComputerPanel } from './components/ComputerPanel'
 import { NewBotForm } from './components/NewBotForm'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
+import { applyHello, applyStatus, clearDone } from './presence'
 import type { BotStatus, ComputerInfo, Conversation, Message, RoutineAction } from './types'
 
 /** 网关锁着：告诉人去哪拿登录链接，而不是一片空白。 */
@@ -44,6 +45,14 @@ export default function App() {
   const threadId = selected?.id ?? null
   const threadIdRef = useRef<string | null>(null)
   useEffect(() => { threadIdRef.current = threadId }, [threadId])
+  // 正看着的线程里有谁：他们干完了你自己看得见，不用再标「done」；点开的那一刻把已有的「done」消掉
+  const watchingRef = useRef<string[]>([])
+  const members = selected?.members.join(',') ?? ''
+  useEffect(() => {
+    const ids = members ? members.split(',') : []
+    watchingRef.current = ids
+    setStatuses((s) => clearDone(s, ids))
+  }, [members])
   // 面板此刻属于谁，同步记在 ref 里：拉起电脑要十几秒，结果回来时人可能早换了线程或关了面板
   const panelFor = useRef<string | null>(null)
   const showPanel = useCallback((next: { botId: string; info: ComputerInfo | null } | null) => {
@@ -117,20 +126,20 @@ export default function App() {
     if (signedOut !== false) return
     return connectEvents((e) => {
       if (e.type === 'hello') {
-        setStatuses(e.statuses)
+        setStatuses((s) => applyHello(s, e.statuses))
         void resync()
         return
       }
       if (e.type === 'status') {
-        setStatuses((s) => ({ ...s, [e.botId]: e.state }))
+        setStatuses((s) => applyStatus(s, e.botId, e.state, watchingRef.current.includes(e.botId)))
         return
       }
       // 就地更新的旧消息（activity 卡片收尾、审批 chip 翻转）不该顶掉更新的那条预览
       setConversations((cs) => cs.map((c) => (
         c.id === e.threadId && e.message.id >= (c.last_message?.id ?? 0) ? { ...c, last_message: e.message } : c
       )))
-      // 审批来了或定了，侧栏的「等你」计数要跟着变
-      if (e.message.kind === 'approval_request' || e.message.kind === 'approval_resolved') {
+      // 审批、问题来了或定了，侧栏的「等你」计数要跟着变
+      if (['approval_request', 'approval_resolved', 'question'].includes(e.message.kind)) {
         void refreshConversations().catch(guard)
       }
       if (e.threadId === threadIdRef.current) {
@@ -183,6 +192,25 @@ export default function App() {
     }
   }
 
+  const onRevokeRule = async (id: number) => {
+    try {
+      await revokeRule(id)
+      if (panel) await loadPanel(panel.botId)
+    } catch (err) {
+      guard(err)
+    }
+  }
+
+  const onForgetRule = async (rule: string) => {
+    if (!panel || !window.confirm(`Forget this rule?\n\n${rule}`)) return
+    try {
+      await forgetMemoryRule(panel.botId, rule)
+      await loadPanel(panel.botId)
+    } catch (err) {
+      guard(err)
+    }
+  }
+
   const hire = async (name: string, role: string) => {
     try {
       const bot = await createBot(name, role)
@@ -217,7 +245,8 @@ export default function App() {
           thinking={thinking}
           roster={roster}
           onSend={(text) => { if (threadId) sendMessage(threadId, text).catch(guard) }}
-          onDecide={(approvalId, decision) => { resolveApproval(approvalId, decision).catch(guard) }}
+          onDecide={(approvalId, decision, remember) => { resolveApproval(approvalId, decision, remember).catch(guard) }}
+          onAnswer={(messageId, choices) => { answerQuestion(messageId, choices).catch(guard) }}
           onOpenScreen={openScreen}
           onStop={() => { if (threadId) stopThread(threadId).catch(guard) }}
         />
@@ -230,6 +259,8 @@ export default function App() {
           botName={selected?.title ?? ''}
           onClose={() => showPanel(null)}
           onRoutine={(id, action) => { void onRoutine(id, action) }}
+          onRevokeRule={(id) => { void onRevokeRule(id) }}
+          onForgetRule={(rule) => { void onForgetRule(rule) }}
         />
       ) : null}
       {hiring ? (
