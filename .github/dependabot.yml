@@ -1,0 +1,18 @@
+# 每周一批：小版本和补丁合成一个 PR，大版本单独来；镜像基底和 Actions 也一起盯着。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /docker/bot
+    schedule:
+      interval: weekly
