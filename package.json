@@ -10,7 +10,7 @@
     "build": "pnpm --filter @opengrokbot/web build && pnpm --filter @opengrokbot/gateway build",
     "start": "pnpm --filter @opengrokbot/gateway start",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r --workspace-concurrency=1 test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
