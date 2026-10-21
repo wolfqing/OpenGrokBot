@@ -55,9 +55,55 @@ export function isRuleDuration(value: unknown): value is RuleDuration {
   return typeof value === 'string' && Object.hasOwn(RULE_DURATIONS, value)
 }
 
-/** 能不能把这次放行记成规则：类别允许，而且有一个具体的去向（没有去向的规则等于「这一类全放」） */
+/** 群发对象、泛称：说的是「所有人」，不是一个去向 */
+const EVERYONE = new Set([
+  'all', 'everyone', 'everybody', 'anyone', 'anybody', 'any', 'people', 'public', 'here', 'channel', 'team', 'the team',
+  'customers', 'all customers', 'users', 'all users', 'subscribers', 'all subscribers', 'list', 'the list',
+  'mailing list', 'contacts', 'all contacts', 'internet', 'the internet', 'world',
+])
+
+/** 整个平台或服务：「发到 Twitter」不是一个去向，「发到 @acme」才是 */
+const SERVICES = new Set([
+  'email', 'mail', 'gmail', 'outlook', 'slack', 'discord', 'telegram', 'whatsapp', 'signal', 'teams', 'microsoft teams',
+  'imessage', 'sms', 'wechat', 'messenger', 'x', 'twitter', 'linkedin', 'reddit', 'facebook', 'instagram', 'mastodon',
+  'bluesky', 'bsky', 'threads', 'hacker news', 'hn', 'youtube', 'tiktok', 'github', 'medium', 'substack', 'blog',
+  'web', 'website',
+])
+
+const EMAIL_ADDRESS = /^[^\s@,;<>()"'*]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/
+/** 只有域名、没有路径：说的是整个网站 */
+const WHOLE_SITE = /^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/?$/
+
+/**
+ * 去向是不是「一个确定的地方」，按类别看形状。不是的话返回一句给人看的原因。
+ * 只有一个确定去向的放行才能记成规则：通配、名单、泛称和整个平台记下来，就等于这一类全放。
+ * 传进来的应当是 normalizeTarget 之后的值。
+ */
+export function destinationProblem(kind: ApprovalKind, target: string): string | null {
+  if (!target) return 'there is no destination'
+  if (target.includes('*')) return `"${target}" is a wildcard, not one destination`
+  if (/[,;|\n]/.test(target) || /\s(and|or|&|\+)\s/.test(target)) return `"${target}" names more than one destination`
+  if (EVERYONE.has(target) || /^(all|every|any)\b/.test(target) || /(^|\s)@(everyone|here|channel|all)\b/.test(target)) {
+    return `"${target}" means everyone, not one destination`
+  }
+  if (SERVICES.has(target)) return `"${target}" is a whole service, not one destination`
+  if (kind === 'email') return EMAIL_ADDRESS.test(target) ? null : `"${target}" is not a single email address`
+  if (WHOLE_SITE.test(target) && !target.includes('@')) return `"${target}" is a whole site, not one destination`
+  if (kind === 'post' && !/[/@#]/.test(target)) {
+    return `"${target}" does not name one account, page, channel or thread`
+  }
+  return null
+}
+
+/** 能不能把这次放行记成规则：类别允许，而且去向是一个确定的地方 */
 export function canRemember(approval: { kind: ApprovalKind; target: string }): boolean {
-  return RULEABLE_KINDS.has(approval.kind) && approval.target !== ''
+  return RULEABLE_KINDS.has(approval.kind) && destinationProblem(approval.kind, approval.target) === null
+}
+
+/** 为什么不能记成规则（给人看）；能记的话返回 null */
+export function rememberBlock(approval: { kind: ApprovalKind; target: string }): string | null {
+  if (!RULEABLE_KINDS.has(approval.kind)) return 'purchases, bookings and "other" actions always ask'
+  return destinationProblem(approval.kind, approval.target)
 }
 
 export function createApproval(
@@ -120,9 +166,8 @@ export function createRule(
   input: { botId: string; kind: ApprovalKind; target: string; duration: RuleDuration; now: number; sourceApprovalId?: number },
 ): ApprovalRuleRow {
   const target = normalizeTarget(input.target)
-  if (!canRemember({ kind: input.kind, target })) {
-    throw new Error(`a ${input.kind} without a single destination always asks`)
-  }
+  const blocked = rememberBlock({ kind: input.kind, target })
+  if (blocked) throw new Error(`cannot remember this: ${blocked}`)
   const span = RULE_DURATIONS[input.duration]
   const info = db.prepare(
     `INSERT INTO approval_rules (bot_id, kind, target, expires_at, created_at, source_approval_id)
@@ -137,7 +182,7 @@ export function getRule(db: Db, id: number): ApprovalRuleRow | null {
 
 const ACTIVE = 'revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)'
 
-/** 精确匹配：同一位同事、同一类、同一个去向，规则还没撤也没过期；类别本身也得仍然允许记成规则 */
+/** 精确匹配：同一位同事、同一类、同一个去向，规则还没撤也没过期；类别和去向也得仍然允许记成规则（老的模糊规则就此失效） */
 export function findMatchingRule(
   db: Db,
   input: { botId: string; kind: ApprovalKind; target: string; now: number },
