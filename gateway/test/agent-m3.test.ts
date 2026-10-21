@@ -39,13 +39,14 @@ const toolResult = (llm: { calls: { messages: ChatMsg[] }[] }, at: number) =>
 describe('buildTools', () => {
   it('always offers approval, memory and routine tools', () => {
     expect(buildTools({ hasComputer: false }).map((t) => t.function.name)).toEqual([
-      'message_user', 'hold_for_approval', 'save_memory', 'create_routine', 'stop_routine',
+      'message_user', 'hold_for_approval', 'ask_operator', 'save_memory', 'forget_memory', 'create_routine',
+      'stop_routine',
     ])
   })
 
   it('adds the computer surface on top when one is attached', () => {
     const names = buildTools({ hasComputer: true }).map((t) => t.function.name)
-    expect(names).toHaveLength(17)
+    expect(names).toHaveLength(19)
     expect(names).toContain('browser_screenshot')
     expect(names).toContain('hold_for_approval')
   })
@@ -58,7 +59,11 @@ describe('hold_for_approval', () => {
     await runTurn({ db, llm, bot, soul: '', threadId, onApproval: async () => ({ approvalId: 7 }) }, 'clear my inbox', events)
 
     const chip = messages.find((m) => m.kind === 'approval_request')!
-    expect(chip.payload).toEqual({ approvalId: 7, action: 'send 4 drafts', detail: 'to the Globex thread', status: 'pending' })
+    // 没申报类别的审批按「其他」处理：永远要人拍板，也不能记成规则
+    expect(chip.payload).toEqual({
+      approvalId: 7, action: 'send 4 drafts', detail: 'to the Globex thread', status: 'pending',
+      kind: 'other', target: '', canRemember: false,
+    })
     expect(toolResult(llm, 1)).toMatch(/do not perform it/i)
   })
 
@@ -108,11 +113,11 @@ describe('create_routine', () => {
     ])
     await runTurn({
       db, llm, bot, soul: '', threadId,
-      onCreateRoutine: async (input) => ({ id: 3, name: input.name, cron: input.cron, human: 'every day at 09:00' }),
+      onCreateRoutine: async (input) => ({ id: 3, name: input.name, cron: input.cron, human: 'every day at 09:00', webhook: false }),
     }, 'run this every day', events)
 
     expect(messages.find((m) => m.kind === 'routine_created')!.payload).toEqual({
-      routineId: 3, name: 'Overnight outbound', cron: '0 9 * * *', human: 'every day at 09:00',
+      routineId: 3, name: 'Overnight outbound', cron: '0 9 * * *', human: 'every day at 09:00', webhook: false,
     })
     expect(toolResult(llm, 1)).toMatch(/scheduled/i)
   })

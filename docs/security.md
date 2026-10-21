@@ -12,10 +12,12 @@ injection — that follows an agent wherever it runs. This page is precise about
 | Other websites cannot act as you | Anything that changes state, and the WebSocket, must come from the gateway's own origin (or the UI's, `OPENGROKBOT_WEB_URL`), and requests with a body must be JSON — which no other page can send without a preflight the gateway never answers. A page you happen to visit cannot approve a hold, post into a thread or read the stream. |
 | Your network cannot reach it | The gateway listens on `127.0.0.1` unless you set `OPENGROKBOT_HOST`. |
 | A bot cannot approve its own holds | The token never enters a bot's workspace. A bot's shell or browser can reach the host, but cannot authenticate. |
+| Only you can grant a standing approval | A rule is created only when you approve a hold with *Always allow…* from your signed-in browser. Its scope is fixed by the gateway: one teammate, one kind, one exact destination, with an expiry you pick. Purchases, bookings, "other" and holds without a single destination can never become rules. Bots have no tool to create, widen or extend one; you revoke them from the computer panel. |
+| A webhook opens one routine and nothing else | `POST /hooks/routines/:id` is the only path outside the token. Each routine has its own random key, compared in constant time; a wrong key and an unknown id both get `404`. Bodies over 1 MB are refused and at most 16,000 characters reach the model. The key never enters the thread or the model's context — only the computer panel shows the address. |
 | Bots cannot reach each other | All bot computers share one Docker network with container-to-container traffic switched off. And because on Docker Desktop a container can still reach ports published on the host, everything a computer publishes wants that computer's own secret: its shell/file shim and its browser control port (CDP) a per-container token, its screen a per-container VNC password. |
 | Each computer is a cage | Its own container with memory, CPU and process limits, `no-new-privileges`, and only its own workspace mounted. Every port is published to `127.0.0.1` only. |
 | A bot cannot put code in front of you | The screen page and its noVNC code are served by the gateway from its own copy; only the raw VNC stream comes from the bot's computer. Nothing a bot changes inside its container reaches your browser as a page. |
-| Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only way in is `save_memory`, which always posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
+| Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only ways to change it are `save_memory`, `forget_memory` and the remove button in the computer panel, and each of them posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
 | Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENGROKBOT_A2A_ALLOW`, and relays stop after two hops. |
 | Spend has a ceiling if you want one | `OPENGROKBOT_DAILY_TOKENS` stops a bot for the rest of the day once it has used that many tokens. |
 | You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes, and a turn pauses after 40 model steps or 20 minutes (`OPENGROKBOT_MAX_STEPS`, `OPENGROKBOT_TURN_MINUTES`). Routines can be paused or deleted from the computer panel. |
@@ -28,8 +30,19 @@ workspace, and to stop there. That is a strong discipline, not an enforcement po
 and nothing in the sandbox stops it from clicking *Send* on a site where it is signed in. Build your setup so a
 mistake is cheap (rule 1 below).
 
-**Treating what it reads as data.** Bots are told that pages, files and emails are data, never orders. Prompt
-injection against tool-using agents is still an unsolved problem industry-wide.
+**What a standing approval trusts.** A rule matches the kind and destination the bot itself declares when it
+holds an action, and then the bot performs the action on its own computer. The gateway decides whether to ask
+you again; it does not inspect what the bot then does. A bot that mislabels an action — by mistake, or because
+something it read told it to — could slip one past a rule. So rules save you waiting on a teammate you already
+trust with that destination; they do not make the approval gate stronger. Keep them narrow and short-lived.
+
+**Treating what it reads as data.** Bots are told that pages, files and emails are data, never orders, and a
+webhook's body arrives explicitly labelled as data from another system. Prompt injection against tool-using
+agents is still an unsolved problem industry-wide.
+
+**Forgetting is visible, not gated.** A bot can drop a standing rule with `forget_memory` without asking you
+first, the same way it can save one. Every removal posts a red diff chip in its thread, so a rule that vanished
+because of something the bot read shows up there.
 
 ## Rules for you
 
@@ -41,6 +54,8 @@ injection against tool-using agents is still an unsolved problem industry-wide.
    must bind `0.0.0.0`, the token still guards it, but put TLS in front.
 4. **Cap spend twice**: a limit on the API key at your provider, and `OPENGROKBOT_DAILY_TOKENS` here.
 5. **Rotate the token if it leaked**: delete `gateway/data/auth-token` and restart. Every browser signs in again.
+6. **Treat a webhook address like a password.** Anyone holding it can wake that routine with any body. If one
+   leaked, delete the routine and ask for a new one.
 
 ## Where secrets live
 
@@ -50,6 +65,7 @@ injection against tool-using agents is still an unsolved problem industry-wide.
 | Gateway token | `gateway/data/auth-token` (`0600`), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
 | Bot logins | Each bot's browser profile, inside its own workspace. The gateway never sees a password. |
 | Shim token, VNC password | Generated per container at creation, kept in that container's environment. |
+| Webhook keys | One per webhook routine, in the gateway's SQLite database. Shown only inside the address in the computer panel. |
 
 ## What self-hosting buys you
 

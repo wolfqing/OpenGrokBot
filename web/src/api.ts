@@ -1,4 +1,4 @@
-import type { Bot, ComputerInfo, Conversation, GatewayEvent, Message, RoutineAction } from './types'
+import type { Bot, ComputerInfo, Conversation, GatewayEvent, Message, RoutineAction, RuleDuration } from './types'
 
 /** 网关说「先登录」：界面换成锁屏说明，而不是一片空白。 */
 export class SignedOut extends Error {
@@ -54,8 +54,24 @@ export async function createBot(name: string, role: string): Promise<Bot> {
   return res.json() as Promise<Bot>
 }
 
-export async function resolveApproval(approvalId: number, decision: 'approve' | 'discard'): Promise<void> {
-  await send('POST', `/api/approvals/${approvalId}`, { decision })
+export async function resolveApproval(
+  approvalId: number,
+  decision: 'approve' | 'discard',
+  remember?: RuleDuration,
+): Promise<void> {
+  await send('POST', `/api/approvals/${approvalId}`, remember ? { decision, remember } : { decision })
+}
+
+export async function answerQuestion(messageId: number, choices: string[]): Promise<void> {
+  await send('POST', `/api/questions/${messageId}`, { choices })
+}
+
+export async function revokeRule(id: number): Promise<void> {
+  await send('DELETE', `/api/rules/${id}`)
+}
+
+export async function forgetMemoryRule(botId: string, rule: string): Promise<void> {
+  await send('POST', `/api/bots/${encodeURIComponent(botId)}/memory/forget`, { rule })
 }
 
 export async function updateRoutine(id: number, action: RoutineAction): Promise<void> {

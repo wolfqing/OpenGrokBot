@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { ComputerInfo, RoutineAction } from '../types'
+import type { ComputerInfo, ComputerRoutine, RoutineAction } from '../types'
+import { untilLabel } from './ApprovalChip'
 
 const formatCount = (n: number) => n.toLocaleString('en-US')
 
@@ -22,13 +23,40 @@ function Waking({ botName }: { botName: string }) {
   )
 }
 
-export function ComputerPanel({ info, botName, onClose, onRoutine }: {
+type PanelActions = {
+  onRoutine?: (id: number, action: RoutineAction) => void
+  /** 撤销一条「以后都放行」 */
+  onRevokeRule?: (id: number) => void
+  /** 从 MEMORY.md 删掉一条规矩（原句） */
+  onForgetRule?: (rule: string) => void
+}
+
+/** webhook 地址带着密钥：给一个「复制」，不把它整串摊在面板上 */
+function CopyWebhook({ routine }: { routine: ComputerRoutine }) {
+  const [copied, setCopied] = useState(false)
+  if (!routine.webhook_path) return null
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(`${location.origin}${routine.webhook_path}`)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      window.prompt('Copy the webhook address:', `${location.origin}${routine.webhook_path}`)
+    }
+  }
+  return (
+    <button className="panel-copy" onClick={() => void copy()} aria-label={`Copy the webhook address of ${routine.name}`}>
+      {copied ? 'Copied' : 'Copy webhook'}
+    </button>
+  )
+}
+
+export function ComputerPanel({ info, botName, onClose, ...actions }: {
   /** null = 还在拉起这台电脑 */
   info: ComputerInfo | null
   botName: string
   onClose: () => void
-  onRoutine?: (id: number, action: RoutineAction) => void
-}) {
+} & PanelActions) {
   return (
     <aside className="computer-panel">
       <header className="panel-header">
@@ -36,7 +64,7 @@ export function ComputerPanel({ info, botName, onClose, onRoutine }: {
         <button className="panel-close" onClick={onClose} aria-label="Close">✕</button>
       </header>
 
-      {!info ? <Waking botName={botName} /> : <PanelBody info={info} botName={botName} onRoutine={onRoutine} />}
+      {!info ? <Waking botName={botName} /> : <PanelBody info={info} botName={botName} {...actions} />}
 
       <div className="panel-foot">
         Signing in here happens in this teammate&apos;s own browser. The session stays on its computer — you
@@ -46,11 +74,12 @@ export function ComputerPanel({ info, botName, onClose, onRoutine }: {
   )
 }
 
-function PanelBody({ info, botName, onRoutine }: {
+function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
   info: ComputerInfo
   botName: string
-  onRoutine?: (id: number, action: RoutineAction) => void
-}) {
+} & PanelActions) {
+  const rules = info.rules ?? []
+  const memory = info.memory ?? []
   return (
     <>
       {info.vncUrl ? (
@@ -77,6 +106,7 @@ function PanelBody({ info, botName, onRoutine }: {
                     {r.human}
                     {paused ? <span className="panel-routine-paused">paused</span> : null}
                   </span>
+                  <CopyWebhook routine={r} />
                 </div>
                 {onRoutine ? (
                   <div className="panel-routine-actions">
@@ -94,6 +124,51 @@ function PanelBody({ info, botName, onRoutine }: {
               </div>
             )
           })
+        )}
+      </div>
+
+      <div className="panel-section">
+        <div className="panel-section-title">Allowed without asking</div>
+        {rules.length === 0 ? (
+          <div className="panel-empty">Nothing goes out without your approval.</div>
+        ) : (
+          rules.map((rule) => (
+            <div className="panel-rule" key={rule.id}>
+              <div className="panel-routine-text">
+                <span className="panel-rule-scope">{rule.kind} → {rule.target}</span>
+                <span className="panel-routine-when">{untilLabel(rule.expiresAt)}</span>
+              </div>
+              {onRevokeRule ? (
+                <div className="panel-routine-actions">
+                  <button
+                    onClick={() => onRevokeRule(rule.id)}
+                    aria-label={`Stop allowing ${rule.kind} to ${rule.target}`}
+                    title="Revoke: ask me again next time"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="panel-section">
+        <div className="panel-section-title">Standing rules</div>
+        {memory.length === 0 ? (
+          <div className="panel-empty">No standing rules yet. Tell it &quot;from now on…&quot; in the thread.</div>
+        ) : (
+          memory.map((rule) => (
+            <div className="panel-rule" key={rule}>
+              <span className="panel-memory-rule">{rule}</span>
+              {onForgetRule ? (
+                <div className="panel-routine-actions">
+                  <button onClick={() => onForgetRule(rule)} aria-label={`Forget: ${rule}`} title="Forget this rule">✕</button>
+                </div>
+              ) : null}
+            </div>
+          ))
         )}
       </div>
 

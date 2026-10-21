@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type {
   ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, LoginPayload, MemoryPayload,
-  Message, ReportPayload, RoutinePayload, ScreenshotPayload,
+  Message, QuestionPayload, ReportPayload, RoutinePayload, RuleDuration, ScreenshotPayload,
 } from '../types'
 import { ActivityChip } from './ActivityChip'
 import { ApprovalChip } from './ApprovalChip'
@@ -9,6 +9,7 @@ import { BotRefChip } from './BotRefChip'
 import { LoginChip } from './LoginChip'
 import { Markdown } from './Markdown'
 import { MemoryChip } from './MemoryChip'
+import { QuestionChip } from './QuestionChip'
 import { ReportChip } from './ReportChip'
 import { RoutineChip } from './RoutineChip'
 import { ScreenshotChip } from './ScreenshotChip'
@@ -32,12 +33,14 @@ function dayLabel(ts: number, now: Date): string {
 
 const timeLabel = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
-export function Thread({ conversation, messages, thinking, onSend, onDecide, roster, onOpenScreen, onStop }: {
+export function Thread({ conversation, messages, thinking, onSend, onDecide, onAnswer, roster, onOpenScreen, onStop }: {
   conversation: Conversation
   messages: Message[]
   thinking: boolean
   onSend: (text: string) => void
-  onDecide: (approvalId: number, decision: 'approve' | 'discard') => void
+  onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration) => void
+  /** 问题卡片上点了选项 */
+  onAnswer?: (messageId: number, choices: string[]) => void
   roster: Record<string, { name: string; emoji: string }>
   onOpenScreen?: () => void
   onStop?: () => void
@@ -98,9 +101,16 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, ros
       case 'login_request':
         return <LoginChip payload={m.payload as LoginPayload} onOpenScreen={() => onOpenScreen?.()} />
       case 'activity': return <ActivityChip payload={m.payload as ActivityPayload} />
+      case 'question':
+        return <QuestionChip payload={m.payload as QuestionPayload} onAnswer={(choices) => onAnswer?.(m.id, choices)} />
       case 'approval_resolved': {
         const p = m.payload as ApprovalResolvedPayload
-        return <div className="decision">{p.decision === 'approve' ? '✓ Approved' : '✕ Discarded'} · {p.action}</div>
+        return (
+          <div className="decision">
+            {p.decision === 'approve' ? '✓ Approved' : '✕ Discarded'} · {p.action}
+            {p.remembered ? ` · rule saved: ${p.remembered.kind} → ${p.remembered.target}` : ''}
+          </div>
+        )
       }
       default: return <div className="bubble">{m.content}</div>
     }

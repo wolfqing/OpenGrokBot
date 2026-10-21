@@ -12,6 +12,7 @@ export type MessageKind =
   | 'bot_ref'
   | 'login_request'
   | 'activity'
+  | 'question'
 
 export type BotRow = {
   id: string
@@ -109,6 +110,26 @@ export type Migration = (db: Db) => void
 const MIGRATIONS: Migration[] = [
   // v1：v0.2 的基线。v0.2.x 的老库表都在、版本号却是 0——这一步对它是空操作，只把版本号补上。
   (db) => db.exec(SCHEMA),
+  // v2：审批带上类别和去向，好让操作者的「以后都放行」落成规则；规则表；routine 的 webhook 密钥；
+  // 按 kind 找消息（还没回答的问题卡片要算进「等你」）
+  (db) => db.exec(`
+    ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'other';
+    ALTER TABLE approvals ADD COLUMN target TEXT NOT NULL DEFAULT '';
+    ALTER TABLE approvals ADD COLUMN rule_id INTEGER;
+    CREATE TABLE IF NOT EXISTS approval_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      target TEXT NOT NULL,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      source_approval_id INTEGER,
+      revoked_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_rules_bot ON approval_rules(bot_id, kind);
+    ALTER TABLE routines ADD COLUMN webhook_key TEXT;
+    CREATE INDEX IF NOT EXISTS idx_messages_kind ON messages(kind);
+  `),
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length
@@ -245,7 +266,7 @@ export type Conversation = {
   subtitle: string
   members: string[]
   last_message: MessageRow | null
-  /** 这个线程里还等着人拍板的审批数 */
+  /** 这个线程里还等着人的事：没拍板的审批 + 没回答的问题 */
   pending: number
 }
 
@@ -269,12 +290,34 @@ function lastMessageOf(db: Db, threadId: string): MessageRow | null {
   return row ? parseRow(row) : null
 }
 
+/** 每个线程里等着人的东西：没拍板的审批 + 没回答的问题卡片 */
+function pendingByThread(db: Db): Map<string, number> {
+  const rows = db.prepare(
+    `SELECT thread_id, COUNT(*) AS n FROM (
+       SELECT thread_id FROM approvals WHERE status = 'pending'
+       UNION ALL
+       SELECT thread_id FROM messages WHERE kind = 'question' AND json_extract(payload, '$.status') = 'open'
+     ) GROUP BY thread_id`,
+  ).all() as { thread_id: string; n: number }[]
+  return new Map(rows.map((r) => [r.thread_id, r.n]))
+}
+
+/** 某位同事手上有没有等着操作者的事：待批的审批、没回答的问题，或者它最后一句话是在请人登录 */
+export function waitsOnOperator(db: Db, botId: string): boolean {
+  const held = db.prepare(`SELECT 1 FROM approvals WHERE bot_id = ? AND status = 'pending' LIMIT 1`).get(botId)
+  if (held) return true
+  const asked = db.prepare(
+    `SELECT 1 FROM messages WHERE kind = 'question' AND sender = ? AND json_extract(payload, '$.status') = 'open' LIMIT 1`,
+  ).get(botId)
+  if (asked) return true
+  const last = lastMessageOf(db, `dm:${botId}`)
+  return last?.kind === 'login_request' && last.sender === botId
+}
+
 export function listConversations(db: Db): Conversation[] {
   const bots = db.prepare('SELECT * FROM bots ORDER BY name').all() as BotRow[]
   const byId = new Map(bots.map((b) => [b.id, b]))
-  const pending = new Map((db.prepare(
-    `SELECT thread_id, COUNT(*) AS n FROM approvals WHERE status = 'pending' GROUP BY thread_id`,
-  ).all() as { thread_id: string; n: number }[]).map((r) => [r.thread_id, r.n]))
+  const pending = pendingByThread(db)
   const dms: Conversation[] = bots.map((b) => ({
     id: `dm:${b.id}`,
     kind: 'dm',

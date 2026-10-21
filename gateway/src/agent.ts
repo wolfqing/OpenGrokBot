@@ -1,4 +1,5 @@
 import { MAX_HOPS } from './a2a.js'
+import { canRemember, normalizeKind, normalizeTarget, type ApprovalKind } from './approvals.js'
 import type { BotComputer, Shot } from './computer.js'
 import { insertMessage, listMessages, updateMessagePayload, type BotRow, type Db, type MessageRow } from './db.js'
 import type { ChatMsg, LLM, ToolCall, Usage } from './llm.js'
@@ -10,6 +11,15 @@ export type AgentEvents = {
   onMessage: (m: MessageRow) => void
   onStatus: (botId: string, state: 'thinking' | 'idle') => void
 }
+
+/**
+ * 一个回合怎么收场的。网关据此判断这位同事是「卡住了」（出错、超额、步数用完）还是正常停下；
+ * 「在等你」不看这里，看库里有没有它没拍板的审批、没回答的问题。
+ */
+export type TurnOutcome = 'replied' | 'stopped' | 'error' | 'budget' | 'limit'
+
+/** 规则放行时告诉 bot 的：哪条规则、什么时候过期 */
+export type RuleGrant = { id: number; kind: ApprovalKind; target: string; expiresAt: number | null }
 
 export type AgentDeps = {
   db: Db
@@ -23,10 +33,16 @@ export type AgentDeps = {
   /** AGENTS.md：操作手册（硬边界在这里） */
   manual?: string
   routines?: PromptRoutine[]
-  onApproval?: (input: { action: string; detail: string }) => Promise<{ approvalId: number }>
+  /** 命中操作者的规则时带回 rule：这次直接放行，bot 当场接着干 */
+  onApproval?: (input: { action: string; detail: string; kind: ApprovalKind; target: string }) =>
+    Promise<{ approvalId: number; rule?: RuleGrant }>
   onSaveMemory?: (rule: string) => Promise<{ rule: string; diff: string; total: number }>
-  onCreateRoutine?: (input: { name: string; cron: string; instructions: string }) =>
-    Promise<{ id: number; name: string; cron: string; human: string }>
+  onForgetMemory?: (rule: string) => Promise<
+    | { removed: string; diff: string; total: number }
+    | { removed: null; reason: 'none' | 'ambiguous'; candidates: string[] }
+  >
+  onCreateRoutine?: (input: { name: string; cron: string; instructions: string; webhook: boolean }) =>
+    Promise<{ id: number; name: string; cron: string; human: string; webhook: boolean }>
   onStopRoutine?: (id: number) => Promise<{ ok: boolean; name?: string; reason?: string }>
   hop?: number
   group?: { title: string; members: string[] }
@@ -74,7 +90,7 @@ export async function runTurn(
     /** 还在排队等自己那一轮的用户消息：别的回合（routine、放行、转交）看不到，免得被顺手答掉 */
     hiddenIds?: number[]
   } = {},
-): Promise<void> {
+): Promise<TurnOutcome> {
   const { db, llm, bot, soul, threadId, signal } = deps
   const hasComputer = Boolean(deps.getComputer)
   const alreadyStored = opts.alreadyStored === true
@@ -114,7 +130,7 @@ export async function runTurn(
       const overBudget = deps.checkBudget?.()
       if (overBudget) {
         say(overBudget)
-        return
+        return 'budget'
       }
       const turn = await llm.chat(messages, tools, { signal })
       if (turn.usage) deps.onUsage?.(turn.usage)
@@ -132,11 +148,12 @@ export async function runTurn(
       }
       const text = turn.content?.trim()
       if (text) say(text)
-      return
+      return 'replied'
     }
   } catch (err) {
     if (signal?.aborted) return stopped(say)
     say(`⚠️ ${bot.name} hit an error: ${err instanceof Error ? err.message : String(err)}`)
+    return 'error'
   } finally {
     activity.close()
     events.onStatus(bot.id, 'idle')
@@ -150,8 +167,9 @@ function orderHistory(rows: MessageRow[], pendingIds: number[] = [], hiddenIds: 
   return [...rest, ...rows.filter((m) => pending.has(m.id))]
 }
 
-function stopped(say: (content: string) => void): void {
+function stopped(say: (content: string) => void): 'stopped' {
   say('⏹ Stopped. Tell me when to pick it back up.')
+  return 'stopped'
 }
 
 const stepLimit = (n: number) => `the ${n}-step limit for one turn`
@@ -168,10 +186,13 @@ async function closeOut(
   tools: ReturnType<typeof buildTools>,
   limit: string,
   say: (content: string) => void,
-): Promise<void> {
+): Promise<TurnOutcome> {
   const notice = `⏸ Paused at ${limit}. Say "continue" to pick it up.`
   const overBudget = deps.checkBudget?.()
-  if (overBudget) return say(overBudget)
+  if (overBudget) {
+    say(overBudget)
+    return 'budget'
+  }
   try {
     messages.push({
       role: 'user',
@@ -186,6 +207,7 @@ async function closeOut(
     if (deps.signal?.aborted) return stopped(say)
     say(notice)
   }
+  return 'limit'
 }
 
 /** 模型只看最新一张截图：旧图换成一句占位，免得每一步都重复付图片的 token。 */
@@ -253,7 +275,12 @@ const COMPUTER_TOOL_NAMES = new Set([
 /** 请人接管不是「电脑上的一步」，它有自己的卡片 */
 const ACTIVITY_TOOL_NAMES = new Set([...COMPUTER_TOOL_NAMES].filter((name) => name !== 'ask_for_login'))
 
-const WORKFLOW_TOOL_NAMES = new Set(['hold_for_approval', 'save_memory', 'create_routine', 'stop_routine', 'message_bot'])
+const WORKFLOW_TOOL_NAMES = new Set([
+  'hold_for_approval', 'ask_operator', 'save_memory', 'forget_memory', 'create_routine', 'stop_routine', 'message_bot',
+])
+
+const MAX_OPTIONS = 6
+const MAX_OPTION_CHARS = 80
 
 async function execToolCall(deps: AgentDeps, call: ToolCall, events: AgentEvents, activity: Activity): Promise<ToolOutcome> {
   const args = (call.args ?? {}) as Record<string, unknown>
@@ -318,12 +345,36 @@ async function execWorkflowTool(
       const action = String(args.action ?? '').trim()
       if (!action) return 'hold_for_approval needs a one-line "action".'
       const detail = String(args.detail ?? '').trim()
-      const { approvalId } = await deps.onApproval({ action, detail })
+      const kind = normalizeKind(args.kind)
+      const target = normalizeTarget(args.target)
+      const { approvalId, rule } = await deps.onApproval({ action, detail, kind, target })
       events.onMessage(insertMessage(deps.db, {
         threadId: deps.threadId, sender: deps.bot.id, kind: 'approval_request',
-        payload: { approvalId, action, detail, status: 'pending' },
+        payload: {
+          approvalId, action, detail, kind, target,
+          status: rule ? 'approved' : 'pending',
+          ...(rule ? { rule } : { canRemember: canRemember({ kind, target }) }),
+        },
       }))
+      if (rule) {
+        return `Pre-approved by your operator's standing rule #${rule.id} (${kind} → ${target}). `
+          + 'Go ahead now, exactly as held, then report what actually happened.'
+      }
       return "Held for your operator's approval. Stop here — do not perform it."
+    }
+    case 'ask_operator': {
+      const question = String(args.question ?? '').trim()
+      const raw = Array.isArray(args.options) ? args.options : []
+      const options = [...new Set(raw.map((o) => String(o ?? '').trim().slice(0, MAX_OPTION_CHARS)).filter(Boolean))]
+      if (!question) return 'ask_operator needs a one-line "question".'
+      if (options.length < 2 || options.length > MAX_OPTIONS) {
+        return `ask_operator needs 2 to ${MAX_OPTIONS} distinct options; for an open question, just ask in plain text.`
+      }
+      events.onMessage(insertMessage(deps.db, {
+        threadId: deps.threadId, sender: deps.bot.id, kind: 'question',
+        payload: { question, options, multi: args.multi === true, status: 'open' },
+      }))
+      return 'Question posted as a card. Stop here and wait for the answer — do not guess it.'
     }
     case 'save_memory': {
       if (!deps.onSaveMemory) return 'Memory is not available on this gateway.'
@@ -337,18 +388,38 @@ async function execWorkflowTool(
       }))
       return 'Rule saved to MEMORY.md.'
     }
+    case 'forget_memory': {
+      if (!deps.onForgetMemory) return 'Memory is not available on this gateway.'
+      const rule = String(args.rule ?? '').trim()
+      if (!rule) return 'forget_memory needs the "rule" to remove.'
+      const result = await deps.onForgetMemory(rule)
+      if (result.removed === null) {
+        const list = result.candidates.map((c) => `- ${c}`).join('\n')
+        if (result.reason === 'ambiguous') return `Several rules match; nothing was removed. Ask which one:\n${list}`
+        return list ? `No rule like that is on file. Your standing rules:\n${list}` : 'You have no standing rules on file.'
+      }
+      events.onMessage(insertMessage(deps.db, {
+        threadId: deps.threadId, sender: deps.bot.id, kind: 'memory_updated',
+        payload: { rule: result.removed, diff: result.diff, total: result.total, removed: true },
+      }))
+      return `Removed from MEMORY.md: "${result.removed}".`
+    }
     case 'create_routine': {
       if (!deps.onCreateRoutine) return 'Routines are not available on this gateway.'
       const routineName = String(args.name ?? '').trim()
       const cron = String(args.cron ?? '').trim()
+      const webhook = args.webhook === true
       const instructions = String(args.instructions ?? '').trim()
-      if (!routineName || !cron || !instructions) return 'create_routine needs "name", "cron" and "instructions".'
-      const routine = await deps.onCreateRoutine({ name: routineName, cron, instructions })
+      if (!routineName || !instructions) return 'create_routine needs "name" and "instructions".'
+      if (!cron && !webhook) return 'create_routine needs a "cron" schedule, "webhook": true, or both.'
+      const routine = await deps.onCreateRoutine({ name: routineName, cron, instructions, webhook })
+      // webhook 的密钥只在操作者的电脑面板里出现，不进线程、也就不进模型的上下文
       events.onMessage(insertMessage(deps.db, {
         threadId: deps.threadId, sender: deps.bot.id, kind: 'routine_created',
-        payload: { routineId: routine.id, name: routine.name, cron: routine.cron, human: routine.human },
+        payload: { routineId: routine.id, name: routine.name, cron: routine.cron, human: routine.human, webhook: routine.webhook },
       }))
-      return `Routine "${routine.name}" scheduled (${routine.human}).`
+      return `Routine "${routine.name}" ${routine.cron ? 'scheduled' : 'set up'} (${routine.human}).`
+        + (routine.webhook ? ' Your operator copies its webhook address from your computer panel.' : '')
     }
     case 'stop_routine': {
       if (!deps.onStopRoutine) return 'Routines are not available on this gateway.'
@@ -534,5 +605,6 @@ function toChatMsg(m: MessageRow, selfId: string): ChatMsg {
   if (m.kind === 'routine_created') return { role: 'assistant', content: `[routine created] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'bot_ref') return { role: 'user', content: `[message from teammate] ${JSON.stringify(m.payload)}` }
   if (m.kind === 'login_request') return { role: 'assistant', content: `[asked for a sign-in] ${JSON.stringify(m.payload)}` }
+  if (m.kind === 'question') return { role: 'assistant', content: `[asked your operator] ${JSON.stringify(m.payload)}` }
   return { role: 'assistant', content: m.content }
 }

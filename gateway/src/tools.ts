@@ -1,3 +1,4 @@
+import { APPROVAL_KINDS } from './approvals.js'
 import type { ToolDef } from './llm.js'
 
 export const MESSAGE_USER_TOOL: ToolDef = {
@@ -195,8 +196,40 @@ const WORKFLOW_TOOLS: ToolDef[] = [
         properties: {
           action: { type: 'string', description: 'The action in one short line, e.g. "send the 4 queued drafts".' },
           detail: { type: 'string', description: 'What exactly would go out — recipients, amounts, the draft itself.' },
+          kind: {
+            type: 'string',
+            enum: [...APPROVAL_KINDS],
+            description: 'What sort of action this is. Be honest: it decides whether a standing rule from your operator can cover it. Purchases, bookings and "other" always wait for a person.',
+          },
+          target: {
+            type: 'string',
+            description: 'Where it goes, as one exact destination: an email address, a channel like "#ops", a site or account. Leave it empty when there is no single destination.',
+          },
         },
-        required: ['action'],
+        required: ['action', 'kind'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'ask_operator',
+      description:
+        'Ask your operator to choose between a few options — it shows as a card with buttons. Use it when the answer decides what you do next and the choices are clear. Then stop and wait; never guess the answer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The question in one line.' },
+          options: {
+            type: 'array',
+            minItems: 2,
+            maxItems: 6,
+            items: { type: 'string' },
+            description: 'Two to six short, distinct choices.',
+          },
+          multi: { type: 'boolean', description: 'Allow picking several (default false).' },
+        },
+        required: ['question', 'options'],
       },
     },
   },
@@ -216,17 +249,31 @@ const WORKFLOW_TOOLS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'forget_memory',
+      description:
+        'Remove one standing rule from your MEMORY.md when your operator says to drop it ("forget...", "you can stop...", "that rule no longer applies"). Quote the rule as it appears under your standing rules.',
+      parameters: {
+        type: 'object',
+        properties: { rule: { type: 'string', description: 'The rule to remove, as written in your standing rules.' } },
+        required: ['rule'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_routine',
       description:
-        'Schedule recurring work for yourself. Use it when your operator says "every day", "each Monday", "from now on at 9". You may also propose one yourself when a task clearly repeats.',
+        'Set up recurring work for yourself. Use cron when your operator says "every day", "each Monday", "from now on at 9". Use webhook when the work should start whenever another system calls in ("when a GitHub issue opens", "whenever the form is submitted"); your operator copies the webhook address from your computer panel. You may also propose one yourself when a task clearly repeats.',
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Short name, e.g. "Morning digest".' },
-          cron: { type: 'string', description: 'Five-field cron expression in the gateway timezone, e.g. "0 9 * * 1".' },
+          cron: { type: 'string', description: 'Five-field cron expression in the gateway timezone, e.g. "0 9 * * 1". Omit for a webhook-only routine.' },
+          webhook: { type: 'boolean', description: 'Also start this routine whenever its webhook is called (default false).' },
           instructions: { type: 'string', description: 'What to do each time it fires, written to yourself.' },
         },
-        required: ['name', 'cron', 'instructions'],
+        required: ['name', 'instructions'],
       },
     },
   },

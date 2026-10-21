@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { appendMemoryRule, memoryPath, migrateLegacyMemories, readMemory } from '../src/memory.js'
+import {
+  appendMemoryRule, listMemoryRules, memoryPath, migrateLegacyMemories, readMemory, removeMemoryRule,
+} from '../src/memory.js'
 
 const newDir = () => mkdtempSync(join(tmpdir(), 'ogb-mem-'))
 
@@ -80,5 +82,54 @@ describe('appendMemoryRule', () => {
 describe('readMemory', () => {
   it('returns empty string when the bot has no memory yet', async () => {
     expect(await readMemory(newDir(), 'nobody')).toBe('')
+  })
+})
+
+describe('removeMemoryRule', () => {
+  async function withRules(...rules: string[]) {
+    const dir = newDir()
+    for (const rule of rules) await appendMemoryRule(dir, 'researcher', rule)
+    return dir
+  }
+
+  it('removes the rule it is quoted, keeping the heading and the rest', async () => {
+    const dir = await withRules('Quiet accounts wait for my read.', 'Never email Globex on Fridays.')
+    const result = await removeMemoryRule(dir, 'researcher', 'quiet accounts wait for my read')
+    expect(result).toEqual({ removed: 'Quiet accounts wait for my read.', diff: '- - Quiet accounts wait for my read.', total: 1 })
+    expect(await readMemory(dir, 'researcher')).toBe('# MEMORY\n\n- Never email Globex on Fridays.\n')
+  })
+
+  it('finds a rule from a fragment when only one rule fits', async () => {
+    const dir = await withRules('Quiet accounts wait for my read.', 'Never email Globex on Fridays.')
+    const result = await removeMemoryRule(dir, 'researcher', 'Globex on Fridays')
+    expect(result.removed).toBe('Never email Globex on Fridays.')
+    expect(await listMemoryRules(dir, 'researcher')).toEqual(['Quiet accounts wait for my read.'])
+  })
+
+  it('looks past filler words in how the rule was described', async () => {
+    const dir = await withRules('Quiet accounts wait for my read.', 'Never email Globex on Fridays.')
+    expect((await removeMemoryRule(dir, 'researcher', 'the quiet accounts rule')).removed).toBe('Quiet accounts wait for my read.')
+    expect((await removeMemoryRule(dir, 'researcher', 'the rule')).removed).toBeNull()
+  })
+
+  it('removes nothing when a fragment fits more than one rule', async () => {
+    const dir = await withRules('Never email Globex on Fridays.', 'Never email Initech before 9.')
+    expect(await removeMemoryRule(dir, 'researcher', 'never email')).toEqual({
+      removed: null, reason: 'ambiguous', candidates: ['Never email Globex on Fridays.', 'Never email Initech before 9.'],
+    })
+    expect(await listMemoryRules(dir, 'researcher')).toHaveLength(2)
+  })
+
+  it('hands back the list when nothing fits', async () => {
+    const dir = await withRules('Quiet accounts wait for my read.')
+    expect(await removeMemoryRule(dir, 'researcher', 'something else entirely'))
+      .toEqual({ removed: null, reason: 'none', candidates: ['Quiet accounts wait for my read.'] })
+  })
+
+  it('takes only the exact rule when the operator removes it from the panel', async () => {
+    const dir = await withRules('Never email Globex on Fridays.')
+    expect((await removeMemoryRule(dir, 'researcher', 'Globex on Fridays', { exact: true })).removed).toBeNull()
+    expect((await removeMemoryRule(dir, 'researcher', 'Never email Globex on Fridays.', { exact: true })).removed)
+      .toBe('Never email Globex on Fridays.')
   })
 })

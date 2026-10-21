@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { openDb, upsertBot } from '../src/db.js'
-import { createRoutine, describeCron, isValidCron, listRoutines, markRoutineRun } from '../src/routines.js'
+import {
+  createRoutine, describeCron, describeRoutine, isValidCron, listRoutines, markRoutineRun, routineForWebhook,
+} from '../src/routines.js'
 
 const bot = { id: 'market-watch', name: 'Ticker', role: 'markets', emoji: '📈', soul_path: '' }
 
@@ -53,5 +55,34 @@ describe('routines store', () => {
     expect(listRoutines(db)).toHaveLength(2)
     markRoutineRun(db, a.id, 1786600000000)
     expect(listRoutines(db, 'market-watch')[0]!.last_run_at).toBe(1786600000000)
+  })
+})
+
+describe('webhook routines', () => {
+  it('gets a long random key only when asked for one', () => {
+    const db = setup()
+    const timed = createRoutine(db, { botId: bot.id, name: 'Digest', cron: '0 9 * * *', instructions: 'x' })
+    const hooked = createRoutine(db, { botId: bot.id, name: 'Triage', cron: '', instructions: 'x', webhook: true })
+    expect(timed.webhook_key).toBeNull()
+    expect(hooked.webhook_key).toMatch(/^[\w-]{24}$/)
+    expect(createRoutine(db, { botId: bot.id, name: 'Other', cron: '', instructions: 'x', webhook: true }).webhook_key)
+      .not.toBe(hooked.webhook_key)
+  })
+
+  it('opens only for its own id and exact key', () => {
+    const db = setup()
+    const r = createRoutine(db, { botId: bot.id, name: 'Triage', cron: '', instructions: 'x', webhook: true })
+    expect(routineForWebhook(db, r.id, r.webhook_key!)!.id).toBe(r.id)
+    expect(routineForWebhook(db, r.id, `${r.webhook_key!}x`)).toBeNull()
+    expect(routineForWebhook(db, r.id, '')).toBeNull()
+    expect(routineForWebhook(db, r.id + 1, r.webhook_key!)).toBeNull()
+    const timed = createRoutine(db, { botId: bot.id, name: 'Digest', cron: '0 9 * * *', instructions: 'x' })
+    expect(routineForWebhook(db, timed.id, '')).toBeNull()
+  })
+
+  it('says in plain words what starts it', () => {
+    expect(describeRoutine({ cron: '0 9 * * *', webhook_key: null })).toBe('every day at 09:00')
+    expect(describeRoutine({ cron: '', webhook_key: 'k' })).toBe('when its webhook is called')
+    expect(describeRoutine({ cron: '0 9 * * *', webhook_key: 'k' })).toBe('every day at 09:00, and when its webhook is called')
   })
 })

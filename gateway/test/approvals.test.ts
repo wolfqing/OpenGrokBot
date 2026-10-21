@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  attachApprovalMessage, createApproval, getApproval, isThumbsUp, latestPendingApproval, resolveApproval,
+  attachApprovalMessage, canRemember, createApproval, createRule, findMatchingRule, getApproval, isThumbsUp,
+  latestPendingApproval, listActiveRules, normalizeKind, normalizeTarget, resolveApproval, revokeRule,
 } from '../src/approvals.js'
 import { ensureDmThread, openDb, upsertBot } from '../src/db.js'
 
@@ -66,5 +67,79 @@ describe('isThumbsUp', () => {
 
   it('rejects anything with words or other emoji', () => {
     for (const text of ['👍 send it', 'ok', '👎', '', '👍👍']) expect(isThumbsUp(text)).toBe(false)
+  })
+})
+
+describe('approval kinds and targets', () => {
+  it('treats anything it does not recognise as "other"', () => {
+    expect(normalizeKind('EMAIL')).toBe('email')
+    expect(normalizeKind('wire transfer')).toBe('other')
+    expect(normalizeKind(undefined)).toBe('other')
+  })
+
+  it('compares destinations without case or stray spaces', () => {
+    expect(normalizeTarget('  Bob@Acme.COM ')).toBe('bob@acme.com')
+    expect(normalizeTarget('#ops   alerts')).toBe('#ops alerts')
+  })
+
+  it('only lets messages to one destination become standing rules', () => {
+    expect(canRemember({ kind: 'email', target: 'bob@acme.com' })).toBe(true)
+    expect(canRemember({ kind: 'email', target: '' })).toBe(false) // 没有去向 = 这一类全放，不行
+    expect(canRemember({ kind: 'purchase', target: 'amazon.com' })).toBe(false)
+    expect(canRemember({ kind: 'booking', target: 'opentable.com' })).toBe(false)
+    expect(canRemember({ kind: 'other', target: 'x' })).toBe(false)
+  })
+
+  it('records an approval a rule already covered as approved, with the rule it came from', () => {
+    const { db, threadId } = setup()
+    const a = createApproval(db, {
+      threadId, botId: bot.id, action: 'send', kind: 'email', target: 'bob@acme.com', ruleId: 4, now: 1000,
+    })
+    expect(a).toMatchObject({ status: 'approved', rule_id: 4, resolved_at: 1000, kind: 'email', target: 'bob@acme.com' })
+    expect(latestPendingApproval(db, threadId)).toBeNull()
+  })
+})
+
+describe('approval rules', () => {
+  const HOUR = 60 * 60_000
+
+  it('matches the same bot, kind and destination, ignoring case', () => {
+    const { db } = setup()
+    const rule = createRule(db, { botId: bot.id, kind: 'email', target: 'Bob@Acme.com', duration: 'always', now: 0 })
+    expect(rule).toMatchObject({ target: 'bob@acme.com', expires_at: null })
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'email', target: 'BOB@acme.com', now: 5 })!.id).toBe(rule.id)
+  })
+
+  it('does not stretch to another destination, another kind or another teammate', () => {
+    const { db } = setup()
+    createRule(db, { botId: bot.id, kind: 'email', target: 'bob@acme.com', duration: 'always', now: 0 })
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'email', target: 'eve@acme.com', now: 1 })).toBeNull()
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'message', target: 'bob@acme.com', now: 1 })).toBeNull()
+    expect(findMatchingRule(db, { botId: 'researcher', kind: 'email', target: 'bob@acme.com', now: 1 })).toBeNull()
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'email', target: '', now: 1 })).toBeNull()
+  })
+
+  it('stops matching when it expires', () => {
+    const { db } = setup()
+    createRule(db, { botId: bot.id, kind: 'post', target: '#ops', duration: '1h', now: 0 })
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'post', target: '#ops', now: HOUR - 1 })).not.toBeNull()
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'post', target: '#ops', now: HOUR })).toBeNull()
+    expect(listActiveRules(db, bot.id, HOUR)).toEqual([])
+  })
+
+  it('stops matching once revoked, and revoking twice is a no-op', () => {
+    const { db } = setup()
+    const rule = createRule(db, { botId: bot.id, kind: 'message', target: '#ops', duration: '24h', now: 0 })
+    expect(revokeRule(db, rule.id, 10)).toMatchObject({ revoked_at: 10 })
+    expect(revokeRule(db, rule.id, 11)).toBeNull()
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'message', target: '#ops', now: 12 })).toBeNull()
+  })
+
+  it('refuses to write a rule for money or for an action with no destination', () => {
+    const { db } = setup()
+    expect(() => createRule(db, { botId: bot.id, kind: 'purchase', target: 'amazon.com', duration: 'always', now: 0 }))
+      .toThrow(/always asks/)
+    expect(() => createRule(db, { botId: bot.id, kind: 'email', target: '  ', duration: 'always', now: 0 }))
+      .toThrow(/always asks/)
   })
 })

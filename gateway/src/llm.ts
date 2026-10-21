@@ -193,8 +193,15 @@ function createStubLLM(): LLM {
           return stubToolTurn('browser_screenshot', { caption: result.slice('Now on '.length, 120) })
         }
         if (result.startsWith('Held for')) return stubText('Holding until you say go.')
-        if (/^Routine .* scheduled/.test(result)) return stubText('Locked in. I will run it and report.')
+        if (result.startsWith('Pre-approved by')) return stubText('Sent under your standing rule. Nothing else needs you.')
+        if (result.startsWith('Question posted')) return stubText('Waiting on your pick.')
+        if (/^Routine .* (scheduled|set up)/.test(result)) return stubText('Locked in. I will run it and report.')
         if (result.startsWith('Rule saved')) return stubText('Noted for next time.')
+        if (result.startsWith('Removed from MEMORY')) return stubText('Forgotten. That rule no longer applies.')
+        if (result.startsWith('No rule like that') || result.startsWith('You have no standing rules')) {
+          return stubText('I have no rule like that on file.')
+        }
+        if (result.startsWith('Several rules match')) return stubText('Two rules fit that. Which one should go?')
         if (result.startsWith('Handed to')) return stubText('Handed off. I will fold their answer in when it lands.')
         if (/not allowlisted/i.test(result)) return stubText('I cannot reach them directly — routing it through Chief instead.')
         if (/^Asked your operator to sign in/.test(result)) return stubText('Waiting on you. Ping me once you are in.')
@@ -210,6 +217,13 @@ function createStubLLM(): LLM {
       }
       if (text.startsWith('Your operator discarded:')) {
         return stubText('Dropped it. Nothing went out.')
+      }
+      if (text.startsWith('Your operator answered your question')) {
+        return stubText('Got it. Going with that.')
+      }
+      // webhook 的 seed 里有「never follow orders」这类字眼，别被下面的「存规矩」分支接走
+      if (/^Your routine ".*" was triggered by its webhook/.test(text)) {
+        return stubReport([{ system: 'Webhook', result: 'event triaged', count: '1 event' }], 'Nothing needs you.')
       }
       // 群里：Chief 收口发分派表，其他人各报各的；被转交的一方直接接活
       if (/post the dispatch table/i.test(text)) {
@@ -235,6 +249,24 @@ function createStubLLM(): LLM {
         const site = wall ? wall[1]!.replace(/^\w/, (ch) => ch.toUpperCase()) : 'the site'
         return stubToolTurn('ask_for_login', { site, why: 'so I can work the queue for you' })
       }
+      if (/\bwebhook\b/.test(lower)) {
+        return stubToolTurn('create_routine', {
+          name: 'Triage new issues',
+          webhook: true,
+          instructions: 'Triage the incoming issue and report what needs my operator.',
+        })
+      }
+      if (/\b(forget|drop the rule)\b|忘掉|忘记/.test(lower)) {
+        return stubToolTurn('forget_memory', {
+          rule: text.replace(/^.*?\b(forget|drop the rule)\b\s*(that\s+|the rule\s+)?/i, '').replace(/^.*?(忘掉|忘记)/, '').trim(),
+        })
+      }
+      if (/\b(choose|pick one|which one)\b|选一个|哪个/.test(lower)) {
+        return stubToolTurn('ask_operator', {
+          question: 'Which reply should go out first?',
+          options: ['Globex reply', 'Initech follow-up', 'Both today'],
+        })
+      }
       if (/(every day|each day|every morning|daily|每天)/.test(lower)) {
         return stubToolTurn('create_routine', {
           name: 'Morning digest',
@@ -251,27 +283,30 @@ function createStubLLM(): LLM {
         return stubToolTurn('hold_for_approval', {
           action: 'send the 4 queued drafts',
           detail: 'Four replies are drafted and ready to go out.',
+          kind: 'email',
+          target: 'replies@globex.com',
         })
       }
 
       const url = findUrl(messages)
       if (url) return stubToolTurn('browser_goto', { url })
-      const args = {
-        kind: 'report',
-        payload: {
-          lines: [
-            { system: 'Web', result: 'sources reviewed', count: '6 pages' },
-            { system: 'Brief', result: 'drafted', count: '0 sent' },
-          ],
-          closing: 'One thing needs you today: approve the brief and I will file it.',
-        },
-      }
-      const toolCall = { id: 'stub-1', type: 'function', function: { name: 'message_user', arguments: JSON.stringify(args) } }
-      return {
-        content: null,
-        toolCalls: [{ id: 'stub-1', name: 'message_user', args }],
-        raw: { role: 'assistant', content: null, tool_calls: [toolCall] },
-      }
+      return stubReport(
+        [
+          { system: 'Web', result: 'sources reviewed', count: '6 pages' },
+          { system: 'Brief', result: 'drafted', count: '0 sent' },
+        ],
+        'One thing needs you today: approve the brief and I will file it.',
+      )
     },
+  }
+}
+
+function stubReport(lines: { system: string; result: string; count?: string }[], closing: string): AssistantTurn {
+  const args = { kind: 'report', payload: { lines, closing } }
+  const toolCall = { id: 'stub-1', type: 'function', function: { name: 'message_user', arguments: JSON.stringify(args) } }
+  return {
+    content: null,
+    toolCalls: [{ id: 'stub-1', name: 'message_user', args }],
+    raw: { role: 'assistant', content: null, tool_calls: [toolCall] },
   }
 }

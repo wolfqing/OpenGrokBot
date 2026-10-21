@@ -51,6 +51,25 @@ Everything travels through that one port — including each bot's screen, so tak
 laptop too. With Tailscale, `tailscale serve --bg 4747` gives you HTTPS on your tailnet; if the gateway refuses
 the requests as cross-origin, add the tailnet address to `OPENGROKBOT_ALLOWED_ORIGINS`.
 
+## Webhooks from other systems
+
+Ask a teammate for a routine that runs "whenever X happens" and it sets up a webhook routine. Copy its address
+from the computer panel; it looks like `http://localhost:4747/hooks/routines/3?key=…`. Any `POST` to it wakes the
+teammate with the request body attached as outside data:
+
+```bash
+curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
+  -d '{"issue": "Checkout returns 500 for EU cards"}' http://localhost:4747/hooks/routines/3
+```
+
+- The key can travel in the `X-OpenGrokBot-Key` header or as `?key=`. Prefer the header where the sender allows
+  it: query strings tend to end up in proxy logs.
+- A call gets `202` once the routine is started, `404` for a wrong key or id, `409` while the routine is paused
+  or still busy with the last call (retry later), and `413` for a body over 1 MB.
+- The gateway still listens on loopback only. For a service on the internet (GitHub, a form provider) to reach
+  it, put a tunnel in front — Tailscale Funnel, Cloudflare Tunnel, ngrok — and, where the tunnel can, forward
+  only paths under `/hooks/`. The rest of the gateway stays behind its token either way.
+
 ## How much machine
 
 - Each **awake** bot runs a real Chromium: budget 300–500 MB of RAM. Containers are capped at
