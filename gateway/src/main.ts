@@ -61,6 +61,8 @@ const gateway = createApp({
   dailyTokens: config.dailyTokens,
   vision: config.vision,
   timeZone: config.timeZone,
+  maxSteps: config.maxSteps,
+  turnMinutes: config.turnMinutes,
 })
 const { app, hub } = gateway
 

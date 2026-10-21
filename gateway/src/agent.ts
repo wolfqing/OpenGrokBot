@@ -42,9 +42,15 @@ export type AgentDeps = {
   vision?: boolean
   now?: () => Date
   timeZone?: string
+  /** 一个回合最多调几次模型；不传或 ≤0 用默认值 */
+  maxSteps?: number
+  /** 一个回合最长跑多久（毫秒），在两步之间检查；0 = 不限，不传用默认值 */
+  turnTimeoutMs?: number
 }
 
-const MAX_STEPS = 12
+/** 真实的浏览器活（开页、读、点、再读、填）十几步就用完了；40 步够干完一件事，又挡得住死循环 */
+export const DEFAULT_MAX_STEPS = 40
+export const DEFAULT_TURN_MS = 20 * 60_000
 const HISTORY_LIMIT = 40
 const MAX_TOOL_CHARS = 4000
 const MAX_SLICE_CHARS = 12000
@@ -97,8 +103,14 @@ export async function runTurn(
     const timeZone = deps.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
     const messages = withTimeNote(history, timeNote(now, timeZone))
     const tools = buildTools({ hasComputer, canRelay })
-    for (let step = 0; step < MAX_STEPS; step++) {
+    const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : DEFAULT_MAX_STEPS
+    const turnMs = deps.turnTimeoutMs ?? DEFAULT_TURN_MS
+    const startedAt = Date.now()
+    for (let step = 0; ; step++) {
       if (signal?.aborted) return stopped(say)
+      const limit = step >= maxSteps ? stepLimit(maxSteps)
+        : turnMs > 0 && Date.now() - startedAt >= turnMs ? timeLimit(turnMs) : null
+      if (limit) return await closeOut(deps, messages, tools, limit, say)
       const overBudget = deps.checkBudget?.()
       if (overBudget) {
         say(overBudget)
@@ -122,7 +134,6 @@ export async function runTurn(
       if (text) say(text)
       return
     }
-    say(`⚠️ ${bot.name} stopped after ${MAX_STEPS} steps without a final reply.`)
   } catch (err) {
     if (signal?.aborted) return stopped(say)
     say(`⚠️ ${bot.name} hit an error: ${err instanceof Error ? err.message : String(err)}`)
@@ -141,6 +152,40 @@ function orderHistory(rows: MessageRow[], pendingIds: number[] = [], hiddenIds: 
 
 function stopped(say: (content: string) => void): void {
   say('⏹ Stopped. Tell me when to pick it back up.')
+}
+
+const stepLimit = (n: number) => `the ${n}-step limit for one turn`
+const timeLimit = (ms: number) =>
+  `the ${ms >= 60_000 ? `${Math.round(ms / 60_000)}-minute` : `${Math.max(1, Math.round(ms / 1000))}-second`} limit for one turn`
+
+/**
+ * 撞到步数或时长上限：不是甩一句「停了」，而是再问模型一次（只许回文字），让它交代做完了什么、还剩什么。
+ * 这一次也算预算；它失败了就只留那句说明。
+ */
+async function closeOut(
+  deps: AgentDeps,
+  messages: ChatMsg[],
+  tools: ReturnType<typeof buildTools>,
+  limit: string,
+  say: (content: string) => void,
+): Promise<void> {
+  const notice = `⏸ Paused at ${limit}. Say "continue" to pick it up.`
+  const overBudget = deps.checkBudget?.()
+  if (overBudget) return say(overBudget)
+  try {
+    messages.push({
+      role: 'user',
+      content: `[gateway] You have reached ${limit}. Do not call any tools. In a few plain lines: what you finished, `
+        + 'what is left, and anything you need from your operator.',
+    })
+    const turn = await deps.llm.chat(messages, tools, { signal: deps.signal, toolChoice: 'none' })
+    if (turn.usage) deps.onUsage?.(turn.usage)
+    const text = turn.content?.trim()
+    say(text ? `${text}\n\n${notice}` : notice)
+  } catch {
+    if (deps.signal?.aborted) return stopped(say)
+    say(notice)
+  }
 }
 
 /** 模型只看最新一张截图：旧图换成一句占位，免得每一步都重复付图片的 token。 */

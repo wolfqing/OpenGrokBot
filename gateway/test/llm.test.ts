@@ -123,6 +123,30 @@ describe('createLLM resilience', () => {
   })
 })
 
+describe('tool choice', () => {
+  const capture = () => {
+    const bodies: Record<string, unknown>[] = []
+    const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init!.body)))
+      return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }))
+    }) as typeof fetch
+    return { bodies, llm: createLLM(loadConfig({}), fakeFetch) }
+  }
+
+  it('sends tool_choice "none" alongside the tools when asked for a text-only reply', async () => {
+    const { bodies, llm } = capture()
+    await llm.chat([{ role: 'user', content: 'wrap up' }], toolDefs, { toolChoice: 'none' })
+    expect(bodies[0]).toMatchObject({ tools: toolDefs, tool_choice: 'none' })
+  })
+
+  it('leaves tool_choice out otherwise', async () => {
+    const { bodies, llm } = capture()
+    await llm.chat([{ role: 'user', content: 'hi' }], toolDefs)
+    await llm.chat([{ role: 'user', content: 'hi' }], [], { toolChoice: 'none' })
+    expect(bodies.map((b) => 'tool_choice' in b)).toEqual([false, false])
+  })
+})
+
 describe('stub model', () => {
   it('ignores the time note the gateway appends to the last message', async () => {
     const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))

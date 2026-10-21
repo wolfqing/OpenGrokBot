@@ -75,6 +75,8 @@ the requests as cross-origin, add the tailnet address to `OPENGROKBOT_ALLOWED_OR
 | `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
 | `OPENGROKBOT_DAILY_TOKENS` | `0` (off) | Per-bot daily token budget |
 | `OPENGROKBOT_LLM_TIMEOUT_MS` / `OPENGROKBOT_LLM_RETRIES` | `120000` / `2` | Give up on a hung call; retry 429/5xx |
+| `OPENGROKBOT_MAX_STEPS` | `40` | Model steps one turn may take before the teammate pauses and says where it got to |
+| `OPENGROKBOT_TURN_MINUTES` | `20` | Pause a turn that has run this long (checked between steps); `0` never |
 | `OPENGROKBOT_VISION` | *(off)* | Show the model its own screenshots (vision models only) |
 | `OPENGROKBOT_IDLE_STOP_MINUTES` | `60` | Stop idle computers; `0` never |
 | `OPENGROKBOT_BOT_MEMORY_MB` / `OPENGROKBOT_BOT_CPUS` | `2048` / `2` | Per-computer limits |
