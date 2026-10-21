@@ -14,6 +14,14 @@ export type RoutineRow = {
   last_run_at: number | null
   /** 有值 = 外部系统带着这个密钥 POST /hooks/routines/:id 就能叫醒它；从不进模型的上下文 */
   webhook_key: string | null
+  /** act = 平常的回合；watch = 只看不动：只给只读工具，没事就不出声 */
+  mode: RoutineMode
+}
+
+export type RoutineMode = 'act' | 'watch'
+
+export function normalizeMode(value: unknown): RoutineMode {
+  return value === 'watch' ? 'watch' : 'act'
 }
 
 export function isValidCron(expr: string): boolean {
@@ -53,13 +61,13 @@ export function describeRoutine(r: { cron: string; webhook_key?: string | null }
 
 export function createRoutine(
   db: Db,
-  input: { botId: string; name: string; cron: string; instructions: string; webhook?: boolean },
+  input: { botId: string; name: string; cron: string; instructions: string; webhook?: boolean; mode?: RoutineMode },
 ): RoutineRow {
   const key = input.webhook ? randomBytes(18).toString('base64url') : null
   const info = db.prepare(
-    `INSERT INTO routines (bot_id, name, cron, instructions, enabled, created_at, webhook_key)
-     VALUES (?, ?, ?, ?, 1, ?, ?)`,
-  ).run(input.botId, input.name, input.cron, input.instructions, Date.now(), key)
+    `INSERT INTO routines (bot_id, name, cron, instructions, enabled, created_at, webhook_key, mode)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
+  ).run(input.botId, input.name, input.cron, input.instructions, Date.now(), key, input.mode ?? 'act')
   return db.prepare('SELECT * FROM routines WHERE id = ?').get(Number(info.lastInsertRowid)) as RoutineRow
 }
 

@@ -1,13 +1,15 @@
 import { MAX_HOPS } from './a2a.js'
 import {
-  RULEABLE_KINDS, canRemember, destinationProblem, normalizeKind, normalizeTarget, type ApprovalKind,
+  MAX_BATCH_ITEMS, RULEABLE_KINDS, canRemember, destinationProblem, normalizeItems, normalizeKind, normalizeTarget,
+  type ApprovalKind,
 } from './approvals.js'
 import type { BotComputer, Shot } from './computer.js'
 import { insertMessage, listMessages, updateMessagePayload, type BotRow, type Db, type MessageRow } from './db.js'
 import type { ChatMsg, LLM, ToolCall, Usage } from './llm.js'
 import { buildSystemPrompt, timeNote, withTimeNote, type PromptRoutine } from './prompts.js'
 import { validateReportPayload } from './report.js'
-import { buildTools } from './tools.js'
+import { normalizeMode, type RoutineMode } from './routines.js'
+import { buildTools, WATCH_TOOL_NAMES } from './tools.js'
 
 export type AgentEvents = {
   onMessage: (m: MessageRow) => void
@@ -47,16 +49,18 @@ export type AgentDeps = {
   /**
    * 命中操作者的规则、且这一回合认规则时带回 rule：这次直接放行，bot 当场接着干。
    * rulesAllowed=false 时网关不放行；有规则本来能放行的话回 ruleHeld，chip 上告诉人为什么还是问了。
+   * items：一批对象，永远一件一问，不走规则。
    */
-  onApproval?: (input: { action: string; detail: string; kind: ApprovalKind; target: string; rulesAllowed: boolean }) =>
-    Promise<{ approvalId: number; rule?: RuleGrant; ruleHeld?: boolean }>
+  onApproval?: (input: {
+    action: string; detail: string; kind: ApprovalKind; target: string; rulesAllowed: boolean; items?: string[]
+  }) => Promise<{ approvalId: number; rule?: RuleGrant; ruleHeld?: boolean }>
   onSaveMemory?: (rule: string) => Promise<{ rule: string; diff: string; total: number }>
   onForgetMemory?: (rule: string) => Promise<
     | { removed: string; diff: string; total: number }
     | { removed: null; reason: 'none' | 'ambiguous'; candidates: string[] }
   >
-  onCreateRoutine?: (input: { name: string; cron: string; instructions: string; webhook: boolean }) =>
-    Promise<{ id: number; name: string; cron: string; human: string; webhook: boolean }>
+  onCreateRoutine?: (input: { name: string; cron: string; instructions: string; webhook: boolean; mode: RoutineMode }) =>
+    Promise<{ id: number; name: string; cron: string; human: string; webhook: boolean; mode: RoutineMode }>
   onStopRoutine?: (id: number) => Promise<{ ok: boolean; name?: string; reason?: string }>
   hop?: number
   group?: { title: string; members: string[] }
@@ -72,6 +76,13 @@ export type AgentDeps = {
   vision?: boolean
   now?: () => Date
   timeZone?: string
+  /** watch routine 的回合：只有只读工具，不出 activity 卡片，没事就不说话 */
+  watch?: boolean
+  /** 每调一次工具记一笔（动作日志） */
+  onAction?: (action: { tool: string; summary: string; ok: boolean; ms: number }) => void
+  /** 共享技能的名字和一句话说明；正文经 onReadSkill 取 */
+  skills?: { name: string; description: string }[]
+  onReadSkill?: (name: string) => Promise<string | null>
   /** 一个回合最多调几次模型；不传或 ≤0 用默认值 */
   maxSteps?: number
   /** 一个回合最长跑多久（毫秒），在两步之间检查；0 = 不限，不传用默认值 */
@@ -132,6 +143,7 @@ export async function runTurn(
         role: 'system',
         content: buildSystemPrompt(bot, soul, {
           hasComputer, memory: deps.memory, group: deps.group, canRelay, manual: deps.manual, routines: deps.routines,
+          skills: deps.onReadSkill ? deps.skills : undefined,
         }),
       },
       ...rows.map((m) => toChatMsg(m, bot.id)),
@@ -141,7 +153,8 @@ export async function runTurn(
     const now = (deps.now ?? (() => new Date()))()
     const timeZone = deps.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
     const messages = withTimeNote(history, timeNote(now, timeZone))
-    const tools = buildTools({ hasComputer, canRelay })
+    const hasSkills = Boolean(deps.skills?.length && deps.onReadSkill)
+    const tools = buildTools({ hasComputer, canRelay, hasSkills, watch: deps.watch === true })
     const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : DEFAULT_MAX_STEPS
     const turnMs = deps.turnTimeoutMs ?? DEFAULT_TURN_MS
     const startedAt = Date.now()
@@ -170,7 +183,8 @@ export async function runTurn(
         continue
       }
       const text = turn.content?.trim()
-      if (text) say(text)
+      // watch 回合看完没发现什么：一句「Nothing new.」不值得落进线程，每半小时一条只会把真正的消息淹掉
+      if (text && !(deps.watch && QUIET.test(text))) say(text)
       return 'replied'
     }
   } catch (err) {
@@ -256,7 +270,12 @@ type Activity = {
 }
 
 /** 一个回合一张「在干什么」的卡片：第一次动电脑时落库，之后同一个 id 就地更新并广播。 */
+/** watch 回合用来说「没什么事」的那一句 */
+const QUIET = /^nothing new\.?$/i
+
 function createActivity(deps: AgentDeps, events: AgentEvents): Activity {
+  // watch 回合在后台定时跑：每一步都进动作日志，但不在线程里铺 activity 卡片
+  if (deps.watch) return { start: (tool, summary) => ({ tool, summary }), finish: () => {}, close: () => {} }
   let row: MessageRow | null = null
   const steps: ActivityStep[] = []
   let done = false
@@ -307,27 +326,66 @@ const MAX_OPTION_CHARS = 80
 
 async function execToolCall(deps: TurnContext, call: ToolCall, events: AgentEvents, activity: Activity): Promise<ToolOutcome> {
   const args = (call.args ?? {}) as Record<string, unknown>
-  if (call.name === 'message_user') return { text: execMessageUser(deps, args, events) }
+  const started = Date.now()
+  const log = (ok: boolean) =>
+    deps.onAction?.({ tool: call.name, summary: summarize(call.name, args), ok, ms: Date.now() - started })
+  const failed = (err: unknown): ToolOutcome => {
+    log(false)
+    // 工具失败必须回喂模型（让它换招/如实汇报），而不是炸掉整个回合
+    return { text: `Tool ${call.name} failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
+  // 没在清单里给它的工具，模型硬要调也不行：清单是给模型看的，这里才是门
+  if (deps.watch && !WATCH_TOOL_NAMES.has(call.name)) {
+    log(false)
+    return {
+      text: `${call.name} is not available in a watch routine: this run only looks. `
+        + 'If something should be done, hold it for approval and your operator decides.',
+    }
+  }
+  if (call.name === 'message_user') {
+    const text = execMessageUser(deps, args, events)
+    log(text === 'Report delivered.')
+    return { text }
+  }
+  if (call.name === 'read_skill') {
+    try {
+      const text = await execReadSkill(deps, args)
+      log(true)
+      return { text }
+    } catch (err) {
+      return failed(err)
+    }
+  }
   if (WORKFLOW_TOOL_NAMES.has(call.name)) {
     try {
-      return { text: truncate(await execWorkflowTool(deps, call.name, args, events)) }
+      const text = truncate(await execWorkflowTool(deps, call.name, args, events))
+      log(true)
+      return { text }
     } catch (err) {
-      return { text: `Tool ${call.name} failed: ${err instanceof Error ? err.message : String(err)}` }
+      return failed(err)
     }
   }
   if (!COMPUTER_TOOL_NAMES.has(call.name)) return { text: `Unknown tool: ${call.name}` }
   if (!deps.getComputer) return { text: 'You have no computer attached right now — this tool is unavailable.' }
   const step = ACTIVITY_TOOL_NAMES.has(call.name) ? activity.start(call.name, summarize(call.name, args)) : null
-  const started = Date.now()
   try {
     const outcome = await execComputerTool(deps, call.name, args, events)
     if (step) activity.finish(step, true, Date.now() - started)
+    log(true)
     return outcome
   } catch (err) {
     if (step) activity.finish(step, false, Date.now() - started)
-    // 工具失败必须回喂模型（让它换招/如实汇报），而不是炸掉整个回合
-    return { text: `Tool ${call.name} failed: ${err instanceof Error ? err.message : String(err)}` }
+    return failed(err)
   }
+}
+
+async function execReadSkill(deps: AgentDeps, args: Record<string, unknown>): Promise<string> {
+  const names = (deps.skills ?? []).map((s) => s.name)
+  if (!deps.onReadSkill || !names.length) return 'There are no shared skills on this gateway.'
+  const name = String(args.name ?? '').trim()
+  const text = name ? await deps.onReadSkill(name) : null
+  if (text === null) return `No skill called "${name}". The shared skills are: ${names.join(', ')}.`
+  return sliceForModel(text, args, 'read_skill', 'skill')
 }
 
 function summarize(tool: string, args: Record<string, unknown>): string {
@@ -344,6 +402,24 @@ function summarize(tool: string, args: Record<string, unknown>): string {
     case 'browser_scroll': return pick('direction') || 'down'
     case 'browser_back': return 'previous page'
     case 'browser_screenshot': return pick('caption') || 'screen'
+    case 'ask_for_login': return pick('site')
+    case 'hold_for_approval': {
+      const items = Array.isArray(args.items) ? args.items.length : 0
+      const target = pick('target')
+      return `${pick('action')}${target ? ` → ${target}` : ''}${items ? ` (${items} items)` : ''}`
+    }
+    case 'ask_operator': return pick('question')
+    case 'save_memory':
+    case 'forget_memory': return pick('rule')
+    case 'create_routine': return `${pick('name')}${args.mode === 'watch' ? ' (watch)' : ''}`
+    case 'stop_routine': return `#${pick('id')}`
+    case 'message_bot': return `to ${pick('to')}`
+    case 'read_skill': return pick('name')
+    case 'message_user': {
+      const payload = args.payload as { lines?: unknown[]; closing?: unknown } | undefined
+      const closing = typeof payload?.closing === 'string' ? payload.closing : ''
+      return closing.split('\n')[0]!.slice(0, 120) || `${payload?.lines?.length ?? 0} lines`
+    }
     default: return ''
   }
 }
@@ -370,17 +446,24 @@ async function execWorkflowTool(
       const detail = String(args.detail ?? '').trim()
       const kind = normalizeKind(args.kind)
       const target = normalizeTarget(args.target)
-      const rulesAllowed = deps.ruleBlock === null
-      const answer = await deps.onApproval({ action, detail, kind, target, rulesAllowed })
+      const items = normalizeItems(args.items)
+      if (items && items.length > MAX_BATCH_ITEMS) {
+        return `hold_for_approval takes at most ${MAX_BATCH_ITEMS} items; this batch has ${items.length}. Split it.`
+      }
+      // 一批对象永远一件一问：规则管的是「一个去向」，一批里每项都是不同的去向
+      const rulesAllowed = deps.ruleBlock === null && !items
+      const answer = await deps.onApproval({ action, detail, kind, target, rulesAllowed, ...(items ? { items } : {}) })
       // 网关不该在不认规则的回合里放行；万一给了，这里也不认
       const rule = rulesAllowed ? answer.rule : undefined
-      const blocked = RULEABLE_KINDS.has(kind) ? destinationProblem(kind, target) : null
+      const blocked = items ? 'a batch always asks, item by item'
+        : RULEABLE_KINDS.has(kind) ? destinationProblem(kind, target) : null
       events.onMessage(insertMessage(deps.db, {
         threadId: deps.threadId, sender: deps.bot.id, kind: 'approval_request',
         payload: {
           approvalId: answer.approvalId, action, detail, kind, target,
+          ...(items ? { items } : {}),
           status: rule ? 'approved' : 'pending',
-          ...(rule ? { rule } : { canRemember: canRemember({ kind, target }) }),
+          ...(rule ? { rule } : { canRemember: !items && canRemember({ kind, target }) }),
           ...(!rule && blocked ? { rememberBlocked: blocked } : {}),
           ...(!rule && answer.ruleHeld && deps.ruleBlock ? { ruleHeld: deps.ruleBlock } : {}),
         },
@@ -436,14 +519,18 @@ async function execWorkflowTool(
       const routineName = String(args.name ?? '').trim()
       const cron = String(args.cron ?? '').trim()
       const webhook = args.webhook === true
+      const mode = normalizeMode(args.mode)
       const instructions = String(args.instructions ?? '').trim()
       if (!routineName || !instructions) return 'create_routine needs "name" and "instructions".'
       if (!cron && !webhook) return 'create_routine needs a "cron" schedule, "webhook": true, or both.'
-      const routine = await deps.onCreateRoutine({ name: routineName, cron, instructions, webhook })
+      const routine = await deps.onCreateRoutine({ name: routineName, cron, instructions, webhook, mode })
       // webhook 的密钥只在操作者的电脑面板里出现，不进线程、也就不进模型的上下文
       events.onMessage(insertMessage(deps.db, {
         threadId: deps.threadId, sender: deps.bot.id, kind: 'routine_created',
-        payload: { routineId: routine.id, name: routine.name, cron: routine.cron, human: routine.human, webhook: routine.webhook },
+        payload: {
+          routineId: routine.id, name: routine.name, cron: routine.cron, human: routine.human, webhook: routine.webhook,
+          mode: routine.mode,
+        },
       }))
       return `Routine "${routine.name}" ${routine.cron ? 'scheduled' : 'set up'} (${routine.human}).`
         + (routine.webhook ? ' Your operator copies its webhook address from your computer panel.' : '')
@@ -618,13 +705,19 @@ function describeSteps(payload: unknown): string {
  * 模型知道哪个去向被放行过，被注入时就能照着填，借一条规则放别的东西出去。
  */
 function approvalForModel(payload: unknown): string {
-  const p = (payload ?? {}) as { approvalId?: unknown; action?: unknown; detail?: unknown; status?: unknown }
-  return JSON.stringify({ approvalId: p.approvalId, action: p.action, detail: p.detail, status: p.status })
+  const p = (payload ?? {}) as {
+    approvalId?: unknown; action?: unknown; detail?: unknown; status?: unknown; items?: unknown; approvedItems?: unknown
+  }
+  // 一批对象是 bot 自己列的，放行了哪几项是它接下来唯一能做的：这两样得留着
+  return JSON.stringify({
+    approvalId: p.approvalId, action: p.action, detail: p.detail, status: p.status,
+    ...(p.items ? { items: p.items } : {}), ...(p.approvedItems ? { approvedItems: p.approvedItems } : {}),
+  })
 }
 
 function decisionForModel(payload: unknown): string {
-  const p = (payload ?? {}) as { approvalId?: unknown; action?: unknown; decision?: unknown }
-  return JSON.stringify({ approvalId: p.approvalId, action: p.action, decision: p.decision })
+  const p = (payload ?? {}) as { approvalId?: unknown; action?: unknown; decision?: unknown; count?: unknown }
+  return JSON.stringify({ approvalId: p.approvalId, action: p.action, decision: p.decision, ...(p.count ? { count: p.count } : {}) })
 }
 
 /** webhook 带来的东西：明明白白标成外部数据，不是操作者的话 */

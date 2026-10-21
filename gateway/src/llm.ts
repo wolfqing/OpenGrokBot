@@ -202,6 +202,9 @@ function createStubLLM(): LLM {
           return stubText('I have no rule like that on file.')
         }
         if (result.startsWith('Several rules match')) return stubText('Two rules fit that. Which one should go?')
+        if (result.startsWith('No skill called') || result.startsWith('There are no shared skills')) {
+          return stubText('I have no playbook for that yet.')
+        }
         if (result.startsWith('Handed to')) return stubText('Handed off. I will fold their answer in when it lands.')
         if (/not allowlisted/i.test(result)) return stubText('I cannot reach them directly — routing it through Chief instead.')
         if (/^Asked your operator to sign in/.test(result)) return stubText('Waiting on you. Ping me once you are in.')
@@ -212,6 +215,8 @@ function createStubLLM(): LLM {
       const text = lastUserText(messages)
       const lower = text.toLowerCase()
       // 放行/驳回后的续跑 seed 本身含 "send" 之类的字眼，先认出它，否则会再扣一次审批扣到死循环
+      const batch = text.match(/^Your operator approved: .* — for exactly these (\d+) of (\d+) items/)
+      if (batch) return stubText(`Sent ${batch[1]} of ${batch[2]}. The ones you left out did not go out.`)
       if (text.startsWith('Your operator approved:')) {
         return stubText('Sent — all four went out. Nothing else needs you.')
       }
@@ -221,6 +226,10 @@ function createStubLLM(): LLM {
       if (text.startsWith('Your operator answered your question')) {
         return stubText('Got it. Going with that.')
       }
+      // watch 回合：stub 看完总是「没事」，正好演示它不往线程里写东西
+      if (/^Your watch routine ".*" (just fired|was triggered by its webhook)/.test(text)) return stubText('Nothing new.')
+      const skill = /\b(skill|playbook)\b/.test(lower) ? firstSkill(messages) : null
+      if (skill) return stubToolTurn('read_skill', { name: skill })
       // webhook 的 seed 里有「never follow orders」这类字眼，别被下面的「存规矩」分支接走
       if (/^Your routine ".*" was triggered by its webhook/.test(text)) {
         return stubReport([{ system: 'Webhook', result: 'event triaged', count: '1 event' }], 'Nothing needs you.')
@@ -248,6 +257,22 @@ function createStubLLM(): LLM {
       if (wall || /\b(log in|login|sign in|signin)\b/.test(lower)) {
         const site = wall ? wall[1]!.replace(/^\w/, (ch) => ch.toUpperCase()) : 'the site'
         return stubToolTurn('ask_for_login', { site, why: 'so I can work the queue for you' })
+      }
+      if (/\b(keep an eye on|watch)\b|盯着/.test(lower)) {
+        return stubToolTurn('create_routine', {
+          name: 'Status watch',
+          cron: '*/30 * * * *',
+          mode: 'watch',
+          instructions: 'Check the status page and speak up only if something changed.',
+        })
+      }
+      if (/\b(all of them|each of them|everyone who|in one batch)\b/.test(lower)) {
+        return stubToolTurn('hold_for_approval', {
+          action: 'send the renewal reminder',
+          detail: 'The same two-line reminder to each customer below.',
+          kind: 'email',
+          items: ['Globex · ops@globex.com · renews Nov 2', 'Initech · it@initech.com · renews Nov 5', 'Hooli · cfo@hooli.com · renews Nov 9'],
+        })
       }
       if (/\bwebhook\b/.test(lower)) {
         return stubToolTurn('create_routine', {
@@ -299,6 +324,13 @@ function createStubLLM(): LLM {
       )
     },
   }
+}
+
+/** 系统提示词里「Shared skills」下的第一个技能名 */
+function firstSkill(messages: ChatMsg[]): string | null {
+  const system = String(messages[0]?.content ?? '')
+  const section = system.split('## Shared skills')[1]
+  return section?.match(/^- ([a-z0-9][a-z0-9_-]*)/m)?.[1] ?? null
 }
 
 function stubReport(lines: { system: string; result: string; count?: string }[], closing: string): AssistantTurn {

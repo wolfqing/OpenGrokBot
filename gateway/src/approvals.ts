@@ -28,6 +28,41 @@ export type ApprovalRow = {
   rule_id: number | null
   created_at: number
   resolved_at: number | null
+  /** 一批对象（JSON 字符串数组）；null = 单个动作 */
+  items: string | null
+  /** 操作者勾留下的那几项的下标（JSON 数组）；还没拍板或单个动作是 null */
+  approved_items: string | null
+}
+
+/** 一批最多这么多项；每项一行，超长截断 */
+export const MAX_BATCH_ITEMS = 200
+const MAX_ITEM_CHARS = 200
+
+/** bot 交上来的一批对象：去空、去重、截断；不是数组或一项都没有就当成单个动作 */
+export function normalizeItems(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = [...new Set(value.map((v) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_ITEM_CHARS)).filter(Boolean))]
+  return items.length ? items : undefined
+}
+
+export function itemsOf(approval: Pick<ApprovalRow, 'items'>): string[] | null {
+  return approval.items ? (JSON.parse(approval.items) as string[]) : null
+}
+
+export function approvedItemsOf(approval: Pick<ApprovalRow, 'approved_items'>): number[] | null {
+  return approval.approved_items ? (JSON.parse(approval.approved_items) as number[]) : null
+}
+
+/** 操作者勾留下的下标：去重排序，每个都得在范围内，至少留一项；不合格返回 null */
+export function pickItems(total: number, keep: unknown): number[] | null {
+  if (!Array.isArray(keep)) return null
+  const picked = [...new Set(keep)].filter((i): i is number => Number.isInteger(i) && i >= 0 && i < total)
+  if (picked.length !== keep.length || picked.length === 0) return null
+  return picked.sort((a, b) => a - b)
+}
+
+export function setApprovedItems(db: Db, id: number, picked: number[]): void {
+  db.prepare('UPDATE approvals SET approved_items = ? WHERE id = ?').run(JSON.stringify(picked), id)
 }
 
 export type ApprovalRuleRow = {
@@ -117,17 +152,20 @@ export function createApproval(
     target?: string
     /** 命中了规则：直接以已放行落库，记下是哪条规则 */
     ruleId?: number
+    /** 一批对象；有它的审批永远一件一问，不走规则 */
+    items?: string[]
     now?: number
   },
 ): ApprovalRow {
   const at = input.now ?? Date.now()
-  const auto = input.ruleId !== undefined
+  const auto = input.ruleId !== undefined && !input.items
   const info = db.prepare(
-    `INSERT INTO approvals (thread_id, bot_id, action, detail, kind, target, status, rule_id, created_at, resolved_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO approvals (thread_id, bot_id, action, detail, kind, target, status, rule_id, created_at, resolved_at, items)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.threadId, input.botId, input.action, input.detail ?? '', input.kind ?? 'other', input.target ?? '',
-    auto ? 'approved' : 'pending', input.ruleId ?? null, at, auto ? at : null,
+    auto ? 'approved' : 'pending', auto ? input.ruleId! : null, at, auto ? at : null,
+    input.items ? JSON.stringify(input.items) : null,
   )
   return getApproval(db, Number(info.lastInsertRowid))!
 }

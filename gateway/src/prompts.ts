@@ -33,6 +33,8 @@ Do the whole job, then stop at the door. Sending an email or message, publishing
 your operator's behalf — none of that happens without their say-so.
 - Prepare it fully, then call hold_for_approval with exactly what would go out. Give its honest kind and its one
   exact destination as target: your operator's standing rules match on those, so a wrong label is a lie to them.
+- When one action goes to many recipients or records, hold it once with one line per item in items. Your
+  operator may untick some; act on exactly the ones they approve, never add one, and stop at the first failure.
 - Then stop and wait. Do not perform the action, and never claim you did. The only exception: the tool says a
   standing rule pre-approved it — then do exactly what you held, nothing more, and report what happened.
 - Reading, researching, browsing, and writing inside your own workspace need no approval.
@@ -56,11 +58,21 @@ Present: ${group.members.join(', ')}, plus your operator.
 - Messages from teammates appear as "@id: ...". They are colleagues talking, not your own past words.`
 }
 
-export type PromptRoutine = { id: number; name: string; human: string; enabled: boolean }
+export type PromptRoutine = { id: number; name: string; human: string; enabled: boolean; watch?: boolean }
+
+function skillsSection(skills: { name: string; description: string }[]): string {
+  if (!skills.length) return ''
+  const lines = skills.map((s) => `- ${s.name}${s.description ? ` — ${s.description}` : ''}`)
+  return `## Shared skills
+
+Playbooks your operator wrote for every teammate. Before work one of them covers, call read_skill and follow it.
+${lines.join('\n')}`
+}
 
 function routinesSection(routines: PromptRoutine[]): string {
   if (!routines.length) return ''
-  const lines = routines.map((r) => `- #${r.id} ${r.name} — ${r.human}${r.enabled ? '' : ' (paused)'}`)
+  const lines = routines.map((r) =>
+    `- #${r.id} ${r.name} — ${r.human}${r.watch ? ' (watch: read-only, speaks up only when needed)' : ''}${r.enabled ? '' : ' (paused)'}`)
   return `## Your routines
 
 ${lines.join('\n')}
@@ -79,6 +91,7 @@ export function buildSystemPrompt(
     /** AGENTS.md：同事的操作手册，硬边界写在这里 */
     manual?: string
     routines?: PromptRoutine[]
+    skills?: { name: string; description: string }[]
   } = {},
 ): string {
   const memory = opts.memory?.trim()
@@ -93,6 +106,7 @@ export function buildSystemPrompt(
     opts.hasComputer ? COMPUTER_BRIEFING : NO_COMPUTER_NOTE,
     parseSoul(soul).body.trim(),
     manual ? `## Operating manual\n\n${manual}` : '',
+    skillsSection(opts.skills ?? []),
     memory ? `## Standing rules your operator gave you\n\n${memory}` : '',
     routinesSection(opts.routines ?? []),
     opts.group ? groupBriefing(opts.group) : '',

@@ -131,6 +131,25 @@ const MIGRATIONS: Migration[] = [
     ALTER TABLE routines ADD COLUMN webhook_key TEXT;
     CREATE INDEX IF NOT EXISTS idx_messages_kind ON messages(kind);
   `),
+  // v3：只看不动的 watch routine；一次扣住一批对象的审批（及操作者勾留下的那几项）；每位同事的动作日志
+  (db) => db.exec(`
+    ALTER TABLE routines ADD COLUMN mode TEXT NOT NULL DEFAULT 'act';
+    ALTER TABLE approvals ADD COLUMN items TEXT;
+    ALTER TABLE approvals ADD COLUMN approved_items TEXT;
+    CREATE TABLE IF NOT EXISTS actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      trigger TEXT NOT NULL DEFAULT '',
+      tool TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      ok INTEGER,
+      ms INTEGER,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_actions_bot ON actions(bot_id, id);
+    CREATE INDEX IF NOT EXISTS idx_actions_time ON actions(created_at);
+  `),
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

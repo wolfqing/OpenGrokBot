@@ -221,6 +221,21 @@ describe('stub model', () => {
     expect(discarded.content).toMatch(/nothing went out/i)
   })
 
+  it('reports only the part of a batch you approved, and stays quiet on a watch run', async () => {
+    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const batch = await llm.chat(
+      [{ role: 'user', content: 'Your operator approved: send the renewal reminder — for exactly these 2 of 3 items:\n1. Globex\n2. Hooli' }],
+      toolDefs,
+    )
+    expect(batch.content).toBe('Sent 2 of 3. The ones you left out did not go out.')
+
+    const watch = await llm.chat(
+      [{ role: 'user', content: 'Your watch routine "Status watch" just fired. Do this now: check it.\n\nThis is a watch run.' }],
+      toolDefs,
+    )
+    expect(watch.content).toBe('Nothing new.')
+  })
+
   it('closes each workflow path with a short line instead of looping', async () => {
     const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
     const closings = await Promise.all([

@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import Docker from 'dockerode'
 import { parseA2AAllow } from './a2a.js'
+import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
 import { loadConfig } from './config.js'
 import { runningBotIds, stopBotContainer } from './containers.js'
@@ -75,6 +76,15 @@ schedulerBox.current = createScheduler({
   },
 })
 schedulerBox.current.load(listRoutines(db))
+
+// 动作日志留 90 天：启动时清一次，之后每天清一次
+const ACTION_LOG_DAYS = 90
+const pruneOldActions = () => {
+  const removed = pruneActions(db, Date.now() - ACTION_LOG_DAYS * 24 * 60 * 60_000)
+  if (removed) console.log(`[gateway] dropped ${removed} action-log entries older than ${ACTION_LOG_DAYS} days`)
+}
+pruneOldActions()
+setInterval(pruneOldActions, 24 * 60 * 60_000).unref()
 
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 app.get('/ws', upgradeWebSocket(() => ({

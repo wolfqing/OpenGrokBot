@@ -205,6 +205,12 @@ const WORKFLOW_TOOLS: ToolDef[] = [
             type: 'string',
             description: 'Where it goes, as one exact destination: an email address, a channel like "#ops", a site or account. Leave it empty when there is no single destination.',
           },
+          items: {
+            type: 'array',
+            items: { type: 'string' },
+            maxItems: 200,
+            description: 'When the same action goes to many recipients or records, one line per item (e.g. "#4812 · jane@acme.com · refund question"). Your operator can untick any before approving, and you then act on exactly the ones left.',
+          },
         },
         required: ['action', 'kind'],
       },
@@ -271,6 +277,11 @@ const WORKFLOW_TOOLS: ToolDef[] = [
           name: { type: 'string', description: 'Short name, e.g. "Morning digest".' },
           cron: { type: 'string', description: 'Five-field cron expression in the gateway timezone, e.g. "0 9 * * 1". Omit for a webhook-only routine.' },
           webhook: { type: 'boolean', description: 'Also start this routine whenever its webhook is called (default false).' },
+          mode: {
+            type: 'string',
+            enum: ['act', 'watch'],
+            description: '"watch" for keeping an eye on something: each run gets read-only tools and stays silent unless something needs your operator. Default "act".',
+          },
           instructions: { type: 'string', description: 'What to do each time it fires, written to yourself.' },
         },
         required: ['name', 'instructions'],
@@ -292,6 +303,32 @@ const WORKFLOW_TOOLS: ToolDef[] = [
   },
 ]
 
+const SKILL_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'read_skill',
+    description:
+      'Read one of the shared skills listed in your instructions: a playbook your operator wrote for a kind of work. Read it before doing work it covers, and follow it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The skill name, as listed.' },
+        offset: { type: 'number', description: 'Character to start from, for a long skill (default 0).' },
+      },
+      required: ['name'],
+    },
+  },
+}
+
+/**
+ * watch routine 的回合只拿这些：看网页、读文件、读技能、汇报、提问、把动作扣下来等人批。
+ * 能改东西的（shell、写文件、点击、输入、按键）、能把话传出去的（转交）、能改规矩的都不给。
+ */
+export const WATCH_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'message_user', 'hold_for_approval', 'ask_operator', 'read_skill', 'read_file',
+  'browser_goto', 'browser_extract', 'browser_scroll', 'browser_back', 'browser_screenshot', 'ask_for_login',
+])
+
 const RELAY_TOOL: ToolDef = {
   type: 'function',
   function: {
@@ -309,11 +346,13 @@ const RELAY_TOOL: ToolDef = {
   },
 }
 
-export function buildTools(opts: { hasComputer: boolean; canRelay?: boolean }): ToolDef[] {
-  return [
+export function buildTools(opts: { hasComputer: boolean; canRelay?: boolean; hasSkills?: boolean; watch?: boolean }): ToolDef[] {
+  const tools = [
     MESSAGE_USER_TOOL,
     ...WORKFLOW_TOOLS,
+    ...(opts.hasSkills ? [SKILL_TOOL] : []),
     ...(opts.canRelay ? [RELAY_TOOL] : []),
     ...(opts.hasComputer ? COMPUTER_TOOLS : []),
   ]
+  return opts.watch ? tools.filter((t) => WATCH_TOOL_NAMES.has(t.function.name)) : tools
 }
