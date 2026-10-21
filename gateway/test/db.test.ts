@@ -1,7 +1,11 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import {
-  ensureDmThread, ensureGroupThread, insertMessage, listBotsWithLastMessage, listConversations, listMessages,
-  openDb, threadMembers, updateMessagePayload, upsertBot,
+  SCHEMA_VERSION, ensureDmThread, ensureGroupThread, insertMessage, listBotsWithLastMessage, listConversations,
+  listMessages, openDb, runMigrations, schemaVersion, threadMembers, updateMessagePayload, upsertBot, type Migration,
 } from '../src/db.js'
 
 const scout = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
@@ -119,5 +123,69 @@ describe('listConversations', () => {
     expect(group.members).toEqual(['researcher', 'market-watch'])
     expect(group.subtitle).toBe('Scout, Ticker')
     expect(group.last_message!.content).toBe('on it')
+  })
+})
+
+describe('schema migrations', () => {
+  const tempDb = () => join(mkdtempSync(join(tmpdir(), 'ogb-db-')), 'test.db')
+
+  it('stamps a fresh database with the current schema version', () => {
+    const db = openDb(':memory:')
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(1)
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
+  })
+
+  it('adopts a v0.2 database (tables present, no version) without touching its rows', () => {
+    const path = tempDb()
+    // v0.2.x 建库的方式：直接建表，从不写版本号
+    const legacy = new Database(path)
+    legacy.exec(`CREATE TABLE bots (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT '',
+      emoji TEXT NOT NULL DEFAULT '🤖', soul_path TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`)
+    legacy.prepare('INSERT INTO bots (id, name, created_at) VALUES (?, ?, ?)').run('researcher', 'Scout', 1)
+    legacy.close()
+
+    const migrated: [number, number][] = []
+    const db = openDb(path, { onMigrate: (from, to) => migrated.push([from, to]) })
+    expect(migrated).toEqual([[0, SCHEMA_VERSION]])
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
+    expect(db.prepare('SELECT name FROM bots WHERE id = ?').get('researcher')).toMatchObject({ name: 'Scout' })
+    // 基线里的其余表也补齐了
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'routines'`).get()).toBeTruthy()
+    db.close()
+  })
+
+  it('is a no-op on a database that is already current', () => {
+    const path = tempDb()
+    openDb(path).close()
+    const migrated: [number, number][] = []
+    const db = openDb(path, { onMigrate: (from, to) => migrated.push([from, to]) })
+    expect(migrated).toEqual([])
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
+    db.close()
+  })
+
+  it('runs only the steps a database has not seen, each with its version bump', () => {
+    const db = openDb(':memory:')
+    upsertBot(db, scout)
+    const addNickname: Migration = (d) => d.exec('ALTER TABLE bots ADD COLUMN nickname TEXT')
+    const steps: Migration[] = [() => { throw new Error('baseline must not run twice') }, addNickname]
+    expect(runMigrations(db, steps)).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION + 1 })
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION + 1)
+    expect(db.prepare('SELECT nickname FROM bots WHERE id = ?').get('researcher')).toMatchObject({ nickname: null })
+  })
+
+  it('leaves the version untouched when a step fails', () => {
+    const db = openDb(':memory:')
+    const broken: Migration[] = [() => {}, (d) => d.exec('THIS IS NOT SQL')]
+    expect(() => runMigrations(db, broken)).toThrow()
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
+  })
+
+  it('refuses a database written by a newer gateway', () => {
+    const path = tempDb()
+    const future = new Database(path)
+    future.pragma(`user_version = ${SCHEMA_VERSION + 7}`)
+    future.close()
+    expect(() => openDb(path)).toThrow(/newer OpenGrokBot/)
   })
 })

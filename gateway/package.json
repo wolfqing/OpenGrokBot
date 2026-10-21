@@ -2,6 +2,9 @@
   "name": "@opengrokbot/gateway",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "OPENGROKBOT_WEB_URL=${OPENGROKBOT_WEB_URL:-http://localhost:5173} tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
@@ -17,15 +20,15 @@
     "better-sqlite3": "^13.0.3",
     "croner": "^10.0.1",
     "dockerode": "^5.0.1",
-    "hono": "^4.13.1",
-    "playwright-core": "^1.62.1"
+    "hono": "^4.13.13",
+    "playwright-core": "^1.64.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
-    "@types/dockerode": "^4.0.1",
-    "@types/node": "^26.2.0",
-    "tsx": "^4.23.12",
+    "@types/dockerode": "^4.0.2",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   }
 }

@@ -123,7 +123,18 @@ body {
 .row.centered { justify-content: center; }
 .row-inner { display: flex; flex-direction: column; min-width: 0; width: 100%; }
 
-.speaker { display: flex; gap: 5px; padding: 0 0 5px; color: var(--text-faint); font-size: 12px; font-weight: 500; }
+/* 每条消息上方的一行小字：群里是谁在说，停顿之后是几点说的 */
+.row-meta { display: flex; align-items: baseline; gap: 10px; padding: 0 0 5px; color: var(--text-faint); font-size: 12px; }
+.row.centered .row-meta { justify-content: center; }
+.speaker { display: flex; gap: 5px; font-weight: 500; }
+.row-time { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* 换天时的一道分隔线 */
+.day-divider {
+  display: flex; align-items: center; gap: 10px; max-width: 760px; margin: 6px auto 16px;
+  color: var(--text-faint); font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
+}
+.day-divider::before, .day-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 
 /* 文本块：bot 的话是正文，你的话是一张浅色卡片 */
 .bubble { padding: 0; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: var(--text); }
@@ -133,6 +144,36 @@ body {
   border-radius: var(--r-md); color: var(--text);
 }
 .bubble.typing { color: var(--text-faint); letter-spacing: 3px; }
+
+/* 同事的话是 markdown：块与块之间的间距由下面接管，不再靠源文本的换行 */
+.bubble.markdown { white-space: normal; }
+.bubble.markdown > :first-child { margin-top: 0; }
+.bubble.markdown > :last-child { margin-bottom: 0; }
+.bubble.markdown p, .bubble.markdown ul, .bubble.markdown ol, .bubble.markdown pre,
+.bubble.markdown blockquote, .bubble.markdown table { margin: 0 0 8px; }
+.bubble.markdown ul, .bubble.markdown ol { padding-left: 22px; }
+.bubble.markdown li + li { margin-top: 2px; }
+.bubble.markdown li > p { margin: 0; }
+.bubble.markdown h1, .bubble.markdown h2, .bubble.markdown h3,
+.bubble.markdown h4, .bubble.markdown h5, .bubble.markdown h6 { font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+.bubble.markdown a { color: var(--blue); text-decoration: none; }
+.bubble.markdown a:hover { text-decoration: underline; }
+.bubble.markdown code {
+  font-family: var(--mono); font-size: 12px; padding: 1px 5px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+}
+.bubble.markdown pre {
+  padding: 10px 12px; overflow-x: auto; line-height: 1.5;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.bubble.markdown pre code { padding: 0; background: none; border: 0; }
+.bubble.markdown blockquote { padding-left: 10px; border-left: 2px solid var(--border-strong); color: var(--text-dim); }
+.bubble.markdown table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bubble.markdown th, .bubble.markdown td { padding: 3px 9px; border: 1px solid var(--border); text-align: left; }
+.bubble.markdown th { font-weight: 600; background: var(--bg-raised); }
+.bubble.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+.bubble.markdown input[type='checkbox'] { margin: 0 6px 0 0; vertical-align: middle; }
+.bubble.markdown .md-image { color: var(--text-faint); font-family: var(--mono); font-size: 12px; }
 
 /* ── chip 通用外形 ─────────────────────── */
 .report-chip, .shot-chip, .approval-chip, .memory-chip, .routine-chip, .botref-chip, .login-chip {

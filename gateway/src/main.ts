@@ -21,7 +21,9 @@ import { serveWeb } from './web.js'
 const config = loadConfig()
 mkdirSync(config.dataDir, { recursive: true })
 if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
-const db = openDb(config.dbPath)
+const db = openDb(config.dbPath, {
+  onMigrate: (from, to) => console.log(`[gateway] database schema v${from} → v${to}`),
+})
 // 预置样板来自版本库，用户新雇的同事住在数据目录
 const bots = [
   ...seedTeammates(db, config.teammatesDir),
