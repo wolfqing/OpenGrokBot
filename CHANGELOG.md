@@ -8,6 +8,26 @@ still change behaviour.
 
 ### Added
 
+- **Standing approvals.** An approval chip for an email, message or post to one destination now has
+  *Always allow…*: approve it and let that teammate send the same kind of thing to the same destination without
+  asking, for 1 hour, 24 hours or until you revoke it. The next matching hold goes straight through, marked
+  *Allowed by your rule*. Purchases, bookings and anything the bot does not classify always ask. The rules are
+  listed, with a revoke button, under *Allowed without asking* in the computer panel. Only your own signed-in
+  browser can create one; a bot cannot.
+- **Presence in the sidebar.** Each teammate's avatar shows whether it is working, waiting on you (an approval,
+  a question or a sign-in), stuck (its last turn errored, ran out of budget or hit a turn limit) or done — it
+  finished something while you were in another thread. A group row only shows that someone is working.
+- **Question cards.** A teammate can ask you to choose between two to six options (`ask_operator`); you tap one,
+  or tick several and submit, and it carries on. Open questions count in the sidebar badge and the tab title.
+  Typing a reply instead closes the card.
+- **Forgetting a rule.** Tell a teammate to drop a standing rule and it removes that line from `MEMORY.md`
+  (`forget_memory`), with a red diff chip. The computer panel lists every standing rule with a remove button,
+  which posts the same chip, so every change to a rule is still visible in the thread.
+- **Webhook routines.** A routine can start when another system calls it, instead of — or as well as — on a
+  schedule. Each one gets its own secret address (copy it from the computer panel); a `POST` with a body wakes
+  the teammate with that body attached as outside data. The address works without the gateway token, and the
+  key never enters the thread or the model's context.
+
 - **Per-turn limits that fit real work.** A teammate can now take 40 model steps in one turn instead of 12
   (`OPENGROKBOT_MAX_STEPS`), and a turn is paused after 20 minutes (`OPENGROKBOT_TURN_MINUTES`, `0` turns it
   off; checked between steps). At either limit the teammate gets one last text-only call to say what it
@@ -28,6 +48,10 @@ still change behaviour.
 
 ### Changed
 
+- `hold_for_approval` takes a `kind` (email, message, post, purchase, booking, other) and an exact `target`.
+  Holds from older prompts without them count as "other", so they always ask.
+- The database schema moves to v2 on start (approval kinds and targets, a rules table, routine webhook keys).
+- The live stream's `status` events carry `waiting` and `blocked` as well as `thinking` and `idle`.
 - Node 22 is pinned: `engines` in the manifests and `.nvmrc`, which CI reads.
 - Dependencies bumped within their existing ranges (hono 4.13.13, vite 8.3.5, vitest 4.1.12, playwright-core
   1.64.1, react 19.3.1 and their transitives). The audit against the public registry went from 24 advisories

@@ -16,7 +16,7 @@ Yes — anything OpenAI-compatible: Anthropic-compatible gateways, OpenAI, Kimi,
 `OPENGROKBOT_MODEL` defaults to `grok-4`. Switching models is one environment variable — no config file to edit.
 
 **Does it really match Grok Bot?**
-Read [comparison.md](comparison.md) — including the "what Grok Bot genuinely does better" section. Short version: custody and model freedom, yes; teach-by-demonstration and app polish, no.
+Read [comparison.md](comparison.md) — including the "what Grok Bot genuinely does better" section. Short version: custody, model freedom and a separate computer per teammate, yes; teach-by-demonstration, form sign-in, connectors and app polish, no.
 
 **I already run OpenClaw. Does this touch it?**
 No. v0.2 runs its own gateway and its own containers, and never reads or writes an OpenClaw config. If you want the old v0.1 distribution path instead, it is in [openclaw-recipe/](openclaw-recipe/README.md) — and its `setup.sh` still refuses to overwrite an existing config, writing a merge file instead.

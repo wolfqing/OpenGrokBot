@@ -11,8 +11,8 @@
 > for Grok Chat and the official `grok` CLI. Chat embeds grok.com; Build picks up your `~/.grok` sessions over ACP.
 
 xAI's Grok Bot sells always-on teammates that each get a cloud computer — browser, filesystem, terminal — with
-persistent memory, bot-to-bot handoffs, and an iMessage-shaped app to manage them. It costs **$120–300/month**,
-and every bot runs on xAI's cloud **with your logins inside it**.
+persistent memory, bot-to-bot handoffs, and an iMessage-shaped app to manage them. It comes with paid Grok and
+Cursor plans and **meters its own usage on top**, and every bot runs on xAI's cloud **with your logins inside it**.
 
 This is the same shape, self-hosted. One gateway process on your machine, one Docker container per bot, a dense
 web client that reads like a workbench, and any OpenAI-compatible model behind it.
@@ -47,19 +47,26 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 **The management surface**
 
 - **Sidebar as org chart.** One thread per teammate, plus group threads. Previews are completion states, so a
-  glance down the list is a walk past everyone's desk. An amber badge counts the approvals waiting on you, and
-  the tab title carries the total.
+  glance down the list is a walk past everyone's desk. Each avatar says whether that teammate is working,
+  waiting on you, stuck, or done while you were elsewhere. An amber badge counts the approvals and questions
+  waiting on you, and the tab title carries the total.
 - **One report grammar.** Work comes back as `✓ system → result · count` lines with a single closing sentence
   that surfaces only what needs you. Same shape from every teammate.
 - **Draft-and-hold approvals.** Anything leaving the workspace stops at the door: the chip shows exactly what
-  would go out, with Approve / Discard. A bare 👍 in the thread releases the newest one. Decisions are
+  would go out and where, with Approve / Discard. A bare 👍 in the thread releases the newest one. Decisions are
   idempotent — a second click gets a 409, not a second send.
+- **Standing approvals, on your terms.** For an email, message or post to one destination, *Always allow…*
+  approves it and lets that teammate repeat it without asking — for an hour, a day or until you revoke it from
+  the computer panel. Money, bookings and anything unclassified always ask.
+- **Questions you answer with a tap.** When the next step is one of a few clear choices, the teammate posts a
+  card with buttons instead of a wall of options, and waits.
 - **Visible memory.** "From now on, quiet accounts wait for my read" writes a rule into that bot's `MEMORY.md`
-  and posts the diff as a chip. The file lives outside the bot's computer, so the chip is the only way a rule
-  ever changes.
+  and posts the diff as a chip; "forget that rule" removes it the same way, and the computer panel lists every
+  rule with a remove button. The file lives outside the bot's computer, so a chip marks every change.
 - **Routines from the conversation.** "Post a digest every day" registers a cron job, shows the schedule in
-  plain English, survives restarts, and never runs twice at once. Pause it, run it now or delete it from the
-  computer panel — or tell the bot to stop it.
+  plain English, survives restarts, and never runs twice at once. "Whenever a new issue comes in" gives the
+  routine a secret webhook address instead, for GitHub, a form or any script to call. Pause, run or delete them
+  from the computer panel — or tell the bot to stop one.
 - **See the work, stop the work.** Every step on its computer — the command, the page, the click — shows live
   in one card that folds away when the turn ends. A stop button ends the turn.
 - **A budget, if you want one.** `OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; the panel
@@ -157,7 +164,7 @@ on you.
 
 | | Grok Bot | OpenGrokBot |
 |---|---|---|
-| Software | $120–300/mo per seat | $0 (MIT all the way down) |
+| Software | with a paid SuperGrok or Cursor plan, plus metered usage | $0 (MIT all the way down) |
 | Compute | included (xAI's cloud) | your Mac / mini PC / ~$5 VPS |
 | Model | included (Grok only) | your key, any provider — or local at $0 |
 | Your logins | on xAI's cloud | in a container on your machine |
