@@ -60,7 +60,11 @@ describe('group orchestration', () => {
     await vi.waitFor(() => {
       expect(listMessages(db, GROUP).filter((m) => m.sender !== 'user')).toHaveLength(3)
     })
-    expect(listMessages(db, GROUP).map((m) => m.sender)).toEqual(['user', 'researcher', 'market-watch', 'chief'])
+    // 成员并行作答，谁先落库不定；确定的是：操作者开头、Chief 收尾、中间每位成员恰好一次
+    const senders = listMessages(db, GROUP).map((m) => m.sender)
+    expect(senders[0]).toBe('user')
+    expect(senders[senders.length - 1]).toBe('chief')
+    expect(senders.slice(1, -1).sort()).toEqual(['market-watch', 'researcher'])
   })
 
   it('lets a later speaker see what the earlier ones said', async () => {
