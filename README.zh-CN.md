@@ -182,7 +182,7 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 也照常运转，bot 只会如实说自己现在没有电脑。
 
 更多见 [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
-[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md)
+[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## 免责声明
 

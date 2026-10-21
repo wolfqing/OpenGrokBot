@@ -199,7 +199,7 @@ a private computer per teammate pulls against OpenClaw's shared-host model. The 
 group dispatch — runs without it; bots simply report that they have no computer attached.
 
 More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
-[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md)
+[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Disclaimer
 
