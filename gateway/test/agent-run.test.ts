@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runTurn, type AgentEvents } from '../src/agent.js'
+import { DEFAULT_MAX_STEPS, runTurn, type AgentEvents } from '../src/agent.js'
 import { createFakeComputer } from '../src/computer.js'
 import { ensureDmThread, insertMessage, listMessages, openDb, upsertBot, type MessageRow } from '../src/db.js'
 import type { AssistantTurn, ChatMsg, ChatOptions, LLM, Usage } from '../src/llm.js'
@@ -209,5 +209,69 @@ describe('stopping a long command', () => {
       await runTurn({ db, llm, bot, soul: '', threadId, getComputer: async () => computer }, 'go', events)
     }
     expect(seen).toEqual([60_000, 600_000, 5_000])
+  })
+})
+
+describe('per-turn limits', () => {
+  const shellTurn = (i: number) => toolTurn('shell', { cmd: `step ${i}` }, `c${i}`)
+  const computer = () => createFakeComputer()
+
+  it('defaults to a step cap roomy enough for real browser work', () => {
+    expect(DEFAULT_MAX_STEPS).toBe(40)
+  })
+
+  it('at the step cap, asks the model once more for a text-only wrap-up and posts it', async () => {
+    const { db, threadId, events } = setup()
+    const script = [shellTurn(1), shellTurn(2), shellTurn(3), textTurn('Ran two of three checks; the third needs your login.')]
+    const { llm, calls } = scriptedLLM(script)
+    await runTurn({ db, llm, bot, soul: '', threadId, maxSteps: 3, getComputer: async () => computer() }, 'go', events)
+    expect(calls).toHaveLength(4)
+    expect(calls[3]!.opts?.toolChoice).toBe('none')
+    expect(calls[3]!.messages.at(-1)!.content).toMatch(/3-step limit.*Do not call any tools/s)
+    const last = listMessages(db, threadId).at(-1)!.content
+    expect(last).toMatch(/^Ran two of three checks/)
+    expect(last).toMatch(/Paused at the 3-step limit for one turn\. Say "continue"/)
+  })
+
+  it('still says why it paused when the wrap-up call fails', async () => {
+    const { db, threadId, events } = setup()
+    const { llm } = scriptedLLM([shellTurn(1), shellTurn(2)]) // 收尾那一次会因为脚本用完而抛错
+    await runTurn({ db, llm, bot, soul: '', threadId, maxSteps: 2, getComputer: async () => computer() }, 'go', events)
+    expect(listMessages(db, threadId).at(-1)!.content).toBe('⏸ Paused at the 2-step limit for one turn. Say "continue" to pick it up.')
+  })
+
+  it('does not spend the wrap-up call once the budget is gone', async () => {
+    const { db, threadId, events } = setup()
+    let checks = 0
+    const { llm, calls } = scriptedLLM([shellTurn(1), textTurn('never')])
+    await runTurn({
+      db, llm, bot, soul: '', threadId, maxSteps: 1, getComputer: async () => computer(),
+      checkBudget: () => (++checks > 1 ? 'budget spent' : null),
+    }, 'go', events)
+    expect(calls).toHaveLength(1)
+    expect(listMessages(db, threadId).at(-1)!.content).toBe('budget spent')
+  })
+
+  it('pauses between steps once the turn has run past its time limit', async () => {
+    const { db, threadId, events } = setup()
+    const slow: LLM = {
+      async chat(messages, _tools, opts) {
+        await new Promise((r) => setTimeout(r, 15))
+        if (opts?.toolChoice === 'none') return textTurn('Halfway through the list.')
+        return toolTurn('shell', { cmd: `step ${messages.length}` })
+      },
+    }
+    await runTurn({ db, llm: slow, bot, soul: '', threadId, turnTimeoutMs: 10, getComputer: async () => computer() }, 'go', events)
+    const last = listMessages(db, threadId).at(-1)!.content
+    expect(last).toMatch(/^Halfway through the list\./)
+    expect(last).toMatch(/1-second limit for one turn/)
+  })
+
+  it('treats a time limit of 0 as no limit', async () => {
+    const { db, threadId, events } = setup()
+    const { llm, calls } = scriptedLLM([shellTurn(1), textTurn('Done.')])
+    await runTurn({ db, llm, bot, soul: '', threadId, turnTimeoutMs: 0, getComputer: async () => computer() }, 'go', events)
+    expect(calls).toHaveLength(2)
+    expect(listMessages(db, threadId).at(-1)!.content).toBe('Done.')
   })
 })

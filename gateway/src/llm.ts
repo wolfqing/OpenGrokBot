@@ -13,7 +13,11 @@ export type ToolDef = { type: 'function'; function: { name: string; description?
 export type ToolCall = { id: string; name: string; args: unknown }
 export type Usage = { prompt: number; completion: number; cached: number }
 export type AssistantTurn = { content: string | null; toolCalls: ToolCall[]; raw: ChatMsg; usage?: Usage }
-export type ChatOptions = { signal?: AbortSignal }
+export type ChatOptions = {
+  signal?: AbortSignal
+  /** 'none'：工具照常带上（历史里有工具调用时有的服务商要求如此），但这一次只许回文字 */
+  toolChoice?: 'none'
+}
 
 export interface LLM {
   chat(messages: ChatMsg[], tools: ToolDef[], opts?: ChatOptions): Promise<AssistantTurn>
@@ -54,7 +58,12 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep
   const url = `${config.baseURL.replace(/\/$/, '')}/chat/completions`
   return {
     async chat(messages, tools, opts = {}) {
-      const body = JSON.stringify({ model: config.model, messages: messages.map(toWire), ...(tools.length ? { tools } : {}) })
+      const body = JSON.stringify({
+        model: config.model,
+        messages: messages.map(toWire),
+        ...(tools.length ? { tools } : {}),
+        ...(tools.length && opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
+      })
       type WireToolCall = { id: string; function?: { name?: string; arguments?: string } }
       type WireResponse = {
         choices?: { message?: { role: 'assistant'; content?: string | null; tool_calls?: WireToolCall[] } }[]

@@ -22,6 +22,8 @@ function mockGateway(opts: {
   conversations?: Conversation[]
   messages?: (url: string) => Promise<unknown> | unknown
   computer?: unknown
+  /** 不为空时，/computer 的响应等它兑现了才回（模拟电脑在醒） */
+  computerGate?: Promise<void>
 } = {}) {
   const calls: string[] = []
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -32,7 +34,10 @@ function mockGateway(opts: {
     if (url === '/api/conversations') return json(opts.conversations ?? [conversation({})])
     if (url === '/api/bots') return json([])
     if (url.startsWith('/api/threads/')) return json(opts.messages ? await opts.messages(url) : [])
-    if (url.includes('/computer')) return json(opts.computer ?? {})
+    if (url.includes('/computer')) {
+      await opts.computerGate
+      return json(opts.computer ?? {})
+    }
     return json({ error: 'unexpected' }, 404)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -118,6 +123,39 @@ describe('App', () => {
     await act(async () => { release!([]) })
     // 侧栏预览里也有这句话，所以只看线程本身
     expect(document.querySelector('.thread-scroll')!.textContent).toContain('arrived mid-fetch')
+  })
+
+  it('opens the computer panel at once and fills it in when the computer is up', async () => {
+    let wake!: () => void
+    mockGateway({
+      computerGate: new Promise<void>((r) => { wake = r }),
+      computer: { botId: 'researcher', running: false, vncUrl: null, routines: [], error: 'Docker is not running.' },
+    })
+    render(<App />)
+    await screen.findAllByText('Scout')
+    await act(async () => { screen.getByRole('button', { name: 'Open its computer' }).click() })
+    expect(screen.getByRole('status')).toHaveTextContent("Starting Scout's computer…")
+    await act(async () => { wake() })
+    expect(await screen.findByText('Docker is not running.')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('does not reopen a panel whose computer woke up after you moved on', async () => {
+    let wake!: () => void
+    mockGateway({
+      conversations: [conversation({}), conversation({ id: 'dm:chief', title: 'Chief', members: ['chief'] })],
+      computerGate: new Promise<void>((r) => { wake = r }),
+      computer: { botId: 'researcher', running: false, vncUrl: null, routines: [], error: 'late answer' },
+    })
+    render(<App />)
+    await screen.findAllByText('Scout')
+    await act(async () => { screen.getByRole('button', { name: 'Open its computer' }).click() })
+    expect(document.querySelector('.computer-panel')).not.toBeNull()
+    await act(async () => { screen.getByText('Chief').click() })
+    await waitFor(() => expect(document.querySelector('.computer-panel')).toBeNull())
+    await act(async () => { wake() })
+    expect(document.querySelector('.computer-panel')).toBeNull()
+    expect(screen.queryByText('late answer')).toBeNull()
   })
 
   it('closes the computer panel when you switch to another teammate', async () => {

@@ -18,7 +18,7 @@ injection — that follows an agent wherever it runs. This page is precise about
 | Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only way in is `save_memory`, which always posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
 | Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENGROKBOT_A2A_ALLOW`, and relays stop after two hops. |
 | Spend has a ceiling if you want one | `OPENGROKBOT_DAILY_TOKENS` stops a bot for the rest of the day once it has used that many tokens. |
-| You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes. Routines can be paused or deleted from the computer panel. |
+| You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes, and a turn pauses after 40 model steps or 20 minutes (`OPENGROKBOT_MAX_STEPS`, `OPENGROKBOT_TURN_MINUTES`). Routines can be paused or deleted from the computer panel. |
 
 ## A convention, not a wall
 

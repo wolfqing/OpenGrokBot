@@ -42,6 +42,10 @@ export type AppDeps = {
   vision?: boolean
   timeZone?: string
   now?: () => Date
+  /** 一个回合最多调几次模型；不传用 agent 的默认值 */
+  maxSteps?: number
+  /** 一个回合最长几分钟；0 = 不限，不传用 agent 的默认值 */
+  turnMinutes?: number
 }
 
 export type GatewayApp = {
@@ -144,6 +148,8 @@ export function createApp(deps: AppDeps): GatewayApp {
         hop: opts.hop ?? 0,
         vision: deps.vision === true,
         ...(deps.timeZone ? { timeZone: deps.timeZone } : {}),
+        ...(deps.maxSteps ? { maxSteps: deps.maxSteps } : {}),
+        ...(deps.turnMinutes !== undefined ? { turnTimeoutMs: deps.turnMinutes * 60_000 } : {}),
         ...(opts.group ? { group: opts.group } : {}),
         onUsage: (usage) => recordUsage(db, { botId: bot.id, threadId, usage, at: now().getTime() }),
         checkBudget: () => budgetNote(bot),

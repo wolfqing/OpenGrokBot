@@ -1,9 +1,30 @@
+import { useEffect, useState } from 'react'
 import type { ComputerInfo, RoutineAction } from '../types'
 
 const formatCount = (n: number) => n.toLocaleString('en-US')
 
+/** 睡着的电脑要十几秒才醒：面板先打开，告诉人在等什么、等了多久，而不是按钮按下去毫无反应。 */
+function Waking({ botName }: { botName: string }) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return (
+    <div className="panel-loading" role="status">
+      <span className="panel-spinner" aria-hidden="true" />
+      <div className="panel-loading-title">Starting {botName}&apos;s computer…</div>
+      <div className="panel-loading-why">
+        One that was asleep takes 10–20 seconds to wake. Its logins and files come back with it.
+      </div>
+      {seconds >= 3 ? <div className="panel-loading-elapsed">{seconds}s</div> : null}
+    </div>
+  )
+}
+
 export function ComputerPanel({ info, botName, onClose, onRoutine }: {
-  info: ComputerInfo
+  /** null = 还在拉起这台电脑 */
+  info: ComputerInfo | null
   botName: string
   onClose: () => void
   onRoutine?: (id: number, action: RoutineAction) => void
@@ -15,6 +36,23 @@ export function ComputerPanel({ info, botName, onClose, onRoutine }: {
         <button className="panel-close" onClick={onClose} aria-label="Close">✕</button>
       </header>
 
+      {!info ? <Waking botName={botName} /> : <PanelBody info={info} botName={botName} onRoutine={onRoutine} />}
+
+      <div className="panel-foot">
+        Signing in here happens in this teammate&apos;s own browser. The session stays on its computer — you
+        never hand it a password in chat.
+      </div>
+    </aside>
+  )
+}
+
+function PanelBody({ info, botName, onRoutine }: {
+  info: ComputerInfo
+  botName: string
+  onRoutine?: (id: number, action: RoutineAction) => void
+}) {
+  return (
+    <>
       {info.vncUrl ? (
         <iframe className="panel-screen" title={`${botName}'s screen`} src={info.vncUrl} />
       ) : (
@@ -68,11 +106,6 @@ export function ComputerPanel({ info, botName, onClose, onRoutine }: {
           </div>
         </div>
       ) : null}
-
-      <div className="panel-foot">
-        Signing in here happens in this teammate&apos;s own browser. The session stays on its computer — you
-        never hand it a password in chat.
-      </div>
-    </aside>
+    </>
   )
 }

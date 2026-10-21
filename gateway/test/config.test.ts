@@ -43,6 +43,14 @@ describe('loadConfig', () => {
     expect(c.botMemoryMb).toBe(2048)
     expect(c.botCpus).toBe(2)
     expect(c.timeZone).toBeTruthy()
+    expect(c.maxSteps).toBe(40)
+    expect(c.turnMinutes).toBe(20)
+  })
+
+  it('reads the per-turn limits, and never lets the step cap be zero', () => {
+    expect(loadConfig({ OPENGROKBOT_MAX_STEPS: '60', OPENGROKBOT_TURN_MINUTES: '0' }))
+      .toMatchObject({ maxSteps: 60, turnMinutes: 0 })
+    expect(loadConfig({ OPENGROKBOT_MAX_STEPS: '0' }).maxSteps).toBe(40)
   })
 
   it('reads the new knobs from the environment', () => {
