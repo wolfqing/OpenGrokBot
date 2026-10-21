@@ -3,6 +3,15 @@ import type { ApprovalPayload, RuleDuration } from '../types'
 
 const OUTCOME: Record<string, string> = { approved: 'Approved', discarded: 'Discarded' }
 
+/** 规则为什么这次没放行：只认你自己开头的活 */
+const HELD_BECAUSE: Record<string, string> = {
+  webhook: 'this came in through a webhook',
+  routine: 'a routine started this, not you',
+  relay: 'a teammate handed this over',
+  'outside-data': 'webhook data is still in view',
+  unknown: 'you did not start this',
+}
+
 const DURATIONS: { value: RuleDuration; label: string }[] = [
   { value: '1h', label: '1 hour' },
   { value: '24h', label: '24 hours' },
@@ -48,6 +57,15 @@ export function ApprovalChip({ payload, onDecide }: {
       <div className="approval-action">{payload.action}</div>
       {payload.detail ? <div className="approval-detail">{payload.detail}</div> : null}
       {scope ? <div className="approval-scope">{scope}</div> : null}
+      {payload.ruleHeld && !outcome ? (
+        <div className="approval-note">
+          Your standing rule covers {scope ?? 'this'}, but rules only apply to work you start yourself:{' '}
+          {HELD_BECAUSE[payload.ruleHeld] ?? HELD_BECAUSE.unknown}.
+        </div>
+      ) : null}
+      {payload.rememberBlocked && !outcome ? (
+        <div className="approval-note">No &quot;Always allow&quot;: {payload.rememberBlocked}.</div>
+      ) : null}
       {outcome ? (
         <div className="approval-outcome">
           {outcome}

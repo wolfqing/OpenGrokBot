@@ -73,4 +73,15 @@ describe('Sidebar', () => {
     />)
     expect(screen.getByText('❓ Which reply first?')).toBeInTheDocument()
   })
+
+  it('previews a webhook call as such', () => {
+    const called = conversation({
+      last_message: {
+        id: 9, thread_id: 'dm:researcher', sender: 'webhook', kind: 'webhook', content: '', created_at: 9,
+        payload: { routineId: 2, name: 'Triage', body: '{}' },
+      },
+    })
+    render(<Sidebar conversations={[called]} selectedId={null} statuses={{}} onSelect={() => {}} onNewBot={() => {}} />)
+    expect(screen.getByText('⇣ Webhook: Triage')).toBeInTheDocument()
+  })
 })

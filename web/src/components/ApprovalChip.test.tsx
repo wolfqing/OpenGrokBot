@@ -77,4 +77,23 @@ describe('ApprovalChip', () => {
     />)
     expect(screen.getByText('Approved · email → bob@acme.com allowed until you revoke it')).toBeInTheDocument()
   })
+
+  it('says why a standing rule did not apply this time', () => {
+    render(<ApprovalChip payload={{ ...pending, kind: 'email', target: 'bob@acme.com', canRemember: true, ruleHeld: 'webhook' }} onDecide={() => {}} />)
+    expect(screen.getByText(/Your standing rule covers email → bob@acme.com, but rules only apply to work you start yourself: this came in through a webhook\./))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument()
+  })
+
+  it('says why "Always allow" is not offered for a vague destination', () => {
+    render(<ApprovalChip payload={{ ...pending, kind: 'email', target: '*', canRemember: false, rememberBlocked: '"*" is a wildcard, not one destination' }} onDecide={() => {}} />)
+    expect(screen.queryByRole('button', { name: /Always allow/ })).toBeNull()
+    expect(screen.getByText(/No "Always allow": "\*" is a wildcard, not one destination\./)).toBeInTheDocument()
+  })
+
+  it('drops both notes once the hold is decided', () => {
+    render(<ApprovalChip payload={{ ...pending, status: 'approved', kind: 'email', target: '*', ruleHeld: 'routine', rememberBlocked: 'x' }} onDecide={() => {}} />)
+    expect(screen.queryByText(/standing rule covers/)).toBeNull()
+    expect(screen.queryByText(/No "Always allow"/)).toBeNull()
+  })
 })

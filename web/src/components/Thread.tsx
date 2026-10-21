@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type {
   ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, LoginPayload, MemoryPayload,
-  Message, QuestionPayload, ReportPayload, RoutinePayload, RuleDuration, ScreenshotPayload,
+  Message, QuestionPayload, ReportPayload, RoutinePayload, RuleDuration, ScreenshotPayload, WebhookPayload,
 } from '../types'
 import { ActivityChip } from './ActivityChip'
 import { ApprovalChip } from './ApprovalChip'
@@ -13,6 +13,7 @@ import { QuestionChip } from './QuestionChip'
 import { ReportChip } from './ReportChip'
 import { RoutineChip } from './RoutineChip'
 import { ScreenshotChip } from './ScreenshotChip'
+import { WebhookChip } from './WebhookChip'
 
 /** 停顿超过这么久，下一条消息前再标一次时间；连珠炮式的往来只在开头标一次。 */
 const TIME_GAP_MS = 5 * 60_000
@@ -101,6 +102,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
       case 'login_request':
         return <LoginChip payload={m.payload as LoginPayload} onOpenScreen={() => onOpenScreen?.()} />
       case 'activity': return <ActivityChip payload={m.payload as ActivityPayload} />
+      case 'webhook': return <WebhookChip payload={m.payload as WebhookPayload} />
       case 'question':
         return <QuestionChip payload={m.payload as QuestionPayload} onAnswer={(choices) => onAnswer?.(m.id, choices)} />
       case 'approval_resolved': {

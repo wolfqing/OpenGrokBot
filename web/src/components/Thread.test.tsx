@@ -253,4 +253,19 @@ describe('Thread', () => {
     render(<Thread conversation={dm} roster={roster} messages={fresh} thinking={false} onSend={() => {}} onDecide={() => {}} />)
     expect(screen.getByText('Today')).toBeInTheDocument()
   })
+
+  it('shows a webhook call as outside data, folding a long one', async () => {
+    const body = `{"issue": "${'x'.repeat(700)}"}`
+    const called: Message[] = [{
+      id: 40, thread_id: 'dm:researcher', sender: 'webhook', kind: 'webhook', content: '', created_at: 40,
+      payload: { routineId: 2, name: 'Triage', body },
+    }]
+    const { container } = render(<Thread conversation={dm} roster={roster} messages={called} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(screen.getByText('Webhook · outside data')).toBeInTheDocument()
+    expect(screen.getByText('Triage')).toBeInTheDocument()
+    expect(container.querySelector('.webhook-body')!.textContent!.length).toBeLessThan(body.length)
+    await userEvent.click(screen.getByRole('button', { name: /Show all/ }))
+    expect(container.querySelector('.webhook-body')!.textContent).toBe(body)
+    expect(container.querySelector('.row.from-user')).toBeNull()
+  })
 })
