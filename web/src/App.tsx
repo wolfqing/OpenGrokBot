@@ -32,7 +32,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [statuses, setStatuses] = useState<Record<string, BotStatus>>({})
-  const [panel, setPanel] = useState<ComputerInfo | null>(null)
+  /** 电脑面板开给谁；info 为 null 表示那台电脑还在醒 */
+  const [panel, setPanel] = useState<{ botId: string; info: ComputerInfo | null } | null>(null)
   const [hiring, setHiring] = useState(false)
   const [hireError, setHireError] = useState<string | undefined>()
 
@@ -43,8 +44,14 @@ export default function App() {
   const threadId = selected?.id ?? null
   const threadIdRef = useRef<string | null>(null)
   useEffect(() => { threadIdRef.current = threadId }, [threadId])
+  // 面板此刻属于谁，同步记在 ref 里：拉起电脑要十几秒，结果回来时人可能早换了线程或关了面板
+  const panelFor = useRef<string | null>(null)
+  const showPanel = useCallback((next: { botId: string; info: ComputerInfo | null } | null) => {
+    panelFor.current = next?.botId ?? null
+    setPanel(next)
+  }, [])
   // 面板属于某一位同事：换了线程就收起，免得新名字盖在旧屏幕上
-  useEffect(() => { setPanel(null) }, [selectedId])
+  useEffect(() => { showPanel(null) }, [selectedId, showPanel])
 
   /** 拉消息期间经 WS 到达的更新先记下来，拉回来后叠在快照上，免得被旧快照覆盖掉 */
   const liveDuringFetch = useRef<Map<number, Message> | null>(null)
@@ -145,22 +152,32 @@ export default function App() {
     document.title = waiting ? `(${waiting}) OpenGrokBot` : 'OpenGrokBot'
   }, [waiting])
 
-  const openScreen = async () => {
+  /** 拉一次面板数据；只在面板还开给同一位同事时才放进去 */
+  const loadPanel = async (botId: string) => {
+    try {
+      const info = await fetchComputer(botId)
+      if (panelFor.current === botId) showPanel({ botId, info })
+    } catch (err) {
+      if (panelFor.current === botId) showPanel(null)
+      guard(err)
+    }
+  }
+
+  const openScreen = () => {
     if (!selected || selected.kind !== 'dm') return
     const botId = selected.members[0]
     if (!botId) return
-    try {
-      setPanel(await fetchComputer(botId))
-    } catch (err) {
-      guard(err)
-    }
+    if (panel?.botId === botId && !panel.info) return // 已经在等它醒了
+    // 已经开着就原地刷新，不闪回加载态；没开就先把面板亮出来
+    showPanel({ botId, info: panel?.botId === botId ? panel.info : null })
+    void loadPanel(botId)
   }
 
   const onRoutine = async (id: number, action: RoutineAction) => {
     if (action === 'delete' && !window.confirm('Delete this routine? It will not fire again.')) return
     try {
       await updateRoutine(id, action)
-      if (panel) setPanel(await fetchComputer(panel.botId))
+      if (panel) await loadPanel(panel.botId)
     } catch (err) {
       guard(err)
     }
@@ -201,7 +218,7 @@ export default function App() {
           roster={roster}
           onSend={(text) => { if (threadId) sendMessage(threadId, text).catch(guard) }}
           onDecide={(approvalId, decision) => { resolveApproval(approvalId, decision).catch(guard) }}
-          onOpenScreen={() => { void openScreen() }}
+          onOpenScreen={openScreen}
           onStop={() => { if (threadId) stopThread(threadId).catch(guard) }}
         />
       ) : (
@@ -209,9 +226,9 @@ export default function App() {
       )}
       {panel ? (
         <ComputerPanel
-          info={panel}
+          info={panel.info}
           botName={selected?.title ?? ''}
-          onClose={() => setPanel(null)}
+          onClose={() => showPanel(null)}
           onRoutine={(id, action) => { void onRoutine(id, action) }}
         />
       ) : null}

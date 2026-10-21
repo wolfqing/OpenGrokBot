@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { ComputerInfo } from '../types'
@@ -62,6 +62,22 @@ describe('ComputerPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete Old sweep' }))
     expect(onRoutine.mock.calls).toEqual([[1, 'run'], [1, 'pause'], [2, 'resume'], [2, 'delete']])
     expect(screen.getByText('paused')).toBeInTheDocument()
+  })
+
+  it('opens straight away while the computer is still waking, and shows how long it has waited', () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = render(<ComputerPanel info={null} botName="Scout" onClose={() => {}} />)
+      expect(screen.getByRole('status')).toHaveTextContent("Starting Scout's computer…")
+      expect(container.querySelector('iframe')).toBeNull()
+      expect(screen.queryByText('Routines')).toBeNull()
+      expect(screen.queryByText(/\ds$/)).toBeNull() // 头两秒不跳数字
+      act(() => { vi.advanceTimersByTime(4_000) })
+      expect(screen.getByText('4s')).toBeInTheDocument()
+      expect(screen.getByText(/never hand it a password in chat/i)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows today\'s token use against the budget', () => {
