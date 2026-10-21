@@ -71,3 +71,22 @@ so two jobs never fight over one browser. The same routine never runs twice at o
 `OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; its computer panel shows today's count. A
 routine that fires every minute cannot run up your bill past that line — and you can pause or delete it from the
 same panel, or tell the bot to `stop_routine`.
+
+## Shared skills
+
+Write a playbook once and every teammate can follow it. A skill is a Markdown file in `<data>/skills/`
+(`gateway/data/skills/` by default); its file name is its name, in lowercase letters, digits, `-` or `_`:
+
+```markdown
+---
+description: How the Friday report is laid out
+---
+# Weekly report
+
+Three sections: wins, risks, asks. One line each, numbers first.
+```
+
+Every teammate sees the list — names and the `description` line, or the first line of text — in its
+instructions, and calls `read_skill` to load one before work it covers. Skills are read fresh at the start of
+each turn, so a new or edited file applies from the next message. Bots cannot write them: the folder is outside
+their computers. Memory and routines stay per teammate; skills are the one thing they all share.

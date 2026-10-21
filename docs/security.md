@@ -20,6 +20,10 @@ injection — that follows an agent wherever it runs. This page is precise about
 | A bot cannot put code in front of you | The screen page and its noVNC code are served by the gateway from its own copy; only the raw VNC stream comes from the bot's computer. Nothing a bot changes inside its container reaches your browser as a page. |
 | Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only ways to change it are `save_memory`, `forget_memory` and the remove button in the computer panel, and each of them posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
 | Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENGROKBOT_A2A_ALLOW`, and relays stop after two hops. |
+| A watch routine cannot act | Its turns are offered only read-only tools, and any other tool the model names is refused by the gateway: no shell, no writing files, no clicking, typing or key presses in the browser, no handoffs, no changes to rules or routines. What it holds never matches a standing rule. It can still load pages, so it can still be steered by what it reads; it just has nothing to act with. |
+| A batch is approved item by item | The gateway stores the exact items a bot held and the ones you left ticked; the bot is told that subset and nothing else. A batch can never become a standing rule. |
+| Shared skills are yours | Skills live in `<data>/skills`, outside every bot's computer; bots read them through `read_skill`, which only accepts a name from the list. |
+| There is a record | Every tool call, approval decision and webhook call lands in the action log in SQLite, with what started the turn. Text typed into a page is not logged. Entries older than 90 days are dropped. |
 | Spend has a ceiling if you want one | `OPENGROKBOT_DAILY_TOKENS` stops a bot for the rest of the day once it has used that many tokens. |
 | You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes, and a turn pauses after 40 model steps or 20 minutes (`OPENGROKBOT_MAX_STEPS`, `OPENGROKBOT_TURN_MINUTES`). Routines can be paused or deleted from the computer panel. |
 
@@ -77,7 +81,7 @@ because of something the bot read shows up there.
 | Where your sessions live | the vendor's cloud VM | your disk |
 | Who can subpoena, breach or train on them | the vendor | you |
 | Kill switch | a support ticket | the stop button, `docker stop`, or the power cable |
-| Audit trail | what the vendor shows you | every message in SQLite on your disk |
+| Audit trail | what the vendor shows you | every message and every action in SQLite on your disk |
 
 ## The threat you still own
 

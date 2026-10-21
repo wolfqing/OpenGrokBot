@@ -22,11 +22,15 @@ ships almost daily, so this table ages fast. Corrections welcome via PR — it o
 | Presence on the roster | ✅ animated avatars: idle, thinking, working, waiting, blocked, done | ✅ status dot and label: working, needs you, stuck, done | |
 | Routines on a schedule | ✅ | ✅ | Cron in plain English, survives restarts, never runs twice at once |
 | Routines on events | ✅ webhooks, GitHub, Slack, Linear, a bot's own inbox | ✅ webhooks | Point GitHub or anything else at the routine's address |
+| Look-only routines | Not a separate mode in the changelog | ✅ watch routines: read-only tools, silent unless something needs you | The shape of dots' "proactive research" |
+| Batch approvals | Shown in xAI's IncidentSweep write-up: review the batch, then it sends | ✅ one chip per batch; untick items, the bot does exactly the rest | A batch never becomes a standing rule |
+| Shared skills | ✅ account-level skills from plugins | ✅ Markdown playbooks in `<data>/skills/` | Only you write them |
+| Action log | Audit logs and action recording for Enterprise teams | ✅ every tool call, decision and webhook call, per teammate, 90 days | Typed text is never logged |
 | See and stop the work | ✅ | ✅ | Each computer step shows live; a stop button ends the turn |
 | Spend control | Included usage, then an on-demand limit you set | ✅ per-bot daily token budget | Plus whatever cap you set on the API key |
 | Bots messaging each other | ✅; Team admins can switch it off | ✅ off by default, allowlisted per direction, two hops max | |
 | Group threads + dispatch | ✅ up to six bots per group | ✅ members report, the chief of staff closes with `✓ item → @bot · when` | |
-| A bot that offers work unasked | ✅ the primary Bot | ❌ | Routines cover the scheduled part |
+| A bot that offers work unasked | ✅ the primary Bot | Partly: a watch routine speaks up when it finds something | Nothing here goes looking for work on its own |
 | Its own email address | ✅ with `name+tag@` routing to routines | ❌ | |
 | Learn a routine by watching you | ✅ "follow along" | ❌ roadmap | The one big gap; routines are written in words today |
 | Shared team bots, Slack | ✅ Team Bots, Slack threads, per-person memory | ❌ | This stack is built for one operator |
@@ -51,16 +55,18 @@ Two more always-on agents launched in September 2026. Both are personal assistan
 | Model | Meta's own only | OpenAI's own only |
 | Price | Free tier, then paid tiers | First dot included in Pro and Business Premium |
 
-What we took from them and from Grok Bot in this release: standing approvals with a fixed scope and an expiry
-(all three have a form of it), presence on the roster (Grok Bot), question cards (Grok Bot), forgetting a single
-rule (Muse has it; dots can only reset everything), and webhook routines (Grok Bot). What we did not take: card
-wallets and shopping, team-shared bots, voice. They fit a hosted product for many people; this one is for a single
-operator who wants custody.
+What we took from them: standing approvals with a fixed scope and an expiry (all three have a form of it),
+presence on the roster (Grok Bot), question cards (Grok Bot), forgetting a single rule (Muse has it; dots can only
+reset everything), webhook routines (Grok Bot); then look-only watch routines (dots' proactive research), batch
+approvals with per-item control (xAI's IncidentSweep), shared skills (Grok Bot) and a per-teammate action log
+(Grok Bot's enterprise audit trail, brought down to one operator). What we did not take: card wallets and
+shopping, team-shared bots, voice. They fit a hosted product for many people; this one is for a single operator
+who wants custody.
 
 What they do better and we should learn from next: Muse's egress control — every network request from the agent
 passes one gate that the agent cannot switch off — is a real wall where ours is a rule in the prompt. A per-teammate
-egress allowlist is the closest thing a self-hosted stack can build. dots' read-only background research is the
-right shape for proactive work, and the next candidate for a routine type here.
+egress allowlist is the closest thing a self-hosted stack can build, and it would make watch routines safer still:
+today they cannot act, but they can still load any page.
 
 ## Cost, concretely
 
