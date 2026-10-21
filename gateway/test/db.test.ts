@@ -168,7 +168,8 @@ describe('schema migrations', () => {
     const db = openDb(':memory:')
     upsertBot(db, scout)
     const addNickname: Migration = (d) => d.exec('ALTER TABLE bots ADD COLUMN nickname TEXT')
-    const steps: Migration[] = [() => { throw new Error('baseline must not run twice') }, addNickname]
+    const done: Migration[] = Array.from({ length: SCHEMA_VERSION }, () => () => { throw new Error('a step must not run twice') })
+    const steps: Migration[] = [...done, addNickname]
     expect(runMigrations(db, steps)).toEqual({ from: SCHEMA_VERSION, to: SCHEMA_VERSION + 1 })
     expect(schemaVersion(db)).toBe(SCHEMA_VERSION + 1)
     expect(db.prepare('SELECT nickname FROM bots WHERE id = ?').get('researcher')).toMatchObject({ nickname: null })
@@ -176,7 +177,7 @@ describe('schema migrations', () => {
 
   it('leaves the version untouched when a step fails', () => {
     const db = openDb(':memory:')
-    const broken: Migration[] = [() => {}, (d) => d.exec('THIS IS NOT SQL')]
+    const broken: Migration[] = [...Array.from({ length: SCHEMA_VERSION }, () => () => {}), (d) => d.exec('THIS IS NOT SQL')]
     expect(() => runMigrations(db, broken)).toThrow()
     expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
   })

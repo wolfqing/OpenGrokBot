@@ -1,3 +1,4 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { Cron } from 'croner'
 import type { Db } from './db.js'
 
@@ -5,11 +6,14 @@ export type RoutineRow = {
   id: number
   bot_id: string
   name: string
+  /** 空串 = 不按时间跑，只等 webhook */
   cron: string
   instructions: string
   enabled: number
   created_at: number
   last_run_at: number | null
+  /** 有值 = 外部系统带着这个密钥 POST /hooks/routines/:id 就能叫醒它；从不进模型的上下文 */
+  webhook_key: string | null
 }
 
 export function isValidCron(expr: string): boolean {
@@ -41,15 +45,31 @@ export function describeCron(expr: string): string {
   return expr
 }
 
+/** 「每天 09:00」「它的 webhook 被调用时」，或两者都有 */
+export function describeRoutine(r: { cron: string; webhook_key?: string | null }): string {
+  const parts = [r.cron.trim() ? describeCron(r.cron) : '', r.webhook_key ? 'when its webhook is called' : '']
+  return parts.filter(Boolean).join(', and ') || 'never (no schedule and no webhook)'
+}
+
 export function createRoutine(
   db: Db,
-  input: { botId: string; name: string; cron: string; instructions: string },
+  input: { botId: string; name: string; cron: string; instructions: string; webhook?: boolean },
 ): RoutineRow {
+  const key = input.webhook ? randomBytes(18).toString('base64url') : null
   const info = db.prepare(
-    `INSERT INTO routines (bot_id, name, cron, instructions, enabled, created_at)
-     VALUES (?, ?, ?, ?, 1, ?)`,
-  ).run(input.botId, input.name, input.cron, input.instructions, Date.now())
+    `INSERT INTO routines (bot_id, name, cron, instructions, enabled, created_at, webhook_key)
+     VALUES (?, ?, ?, ?, 1, ?, ?)`,
+  ).run(input.botId, input.name, input.cron, input.instructions, Date.now(), key)
   return db.prepare('SELECT * FROM routines WHERE id = ?').get(Number(info.lastInsertRowid)) as RoutineRow
+}
+
+/** webhook 的入口：id 对得上、密钥逐字节相等（恒定时间比较）才算数；不区分「没这条」和「密钥错」 */
+export function routineForWebhook(db: Db, id: number, key: string): RoutineRow | null {
+  const routine = Number.isInteger(id) ? getRoutine(db, id) : null
+  if (!routine?.webhook_key || !key) return null
+  const a = Buffer.from(key)
+  const b = Buffer.from(routine.webhook_key)
+  return a.length === b.length && timingSafeEqual(a, b) ? routine : null
 }
 
 export function listRoutines(db: Db, botId?: string): RoutineRow[] {

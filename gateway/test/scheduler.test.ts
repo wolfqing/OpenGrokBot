@@ -3,7 +3,10 @@ import type { RoutineRow } from '../src/routines.js'
 import { createScheduler } from '../src/scheduler.js'
 
 function routine(id: number, cron = '0 9 * * *'): RoutineRow {
-  return { id, bot_id: 'market-watch', name: `R${id}`, cron, instructions: 'do it', enabled: 1, created_at: 1, last_run_at: null }
+  return {
+    id, bot_id: 'market-watch', name: `R${id}`, cron, instructions: 'do it', enabled: 1, created_at: 1, last_run_at: null,
+    webhook_key: null,
+  }
 }
 
 /** 假 cron：不看时间，暴露一个手动触发的 tick。 */
