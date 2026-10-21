@@ -54,12 +54,16 @@ export async function createBot(name: string, role: string): Promise<Bot> {
   return res.json() as Promise<Bot>
 }
 
+/** items：一批对象里只放行这几项（下标）；不传 = 全部 */
 export async function resolveApproval(
   approvalId: number,
   decision: 'approve' | 'discard',
   remember?: RuleDuration,
+  items?: number[],
 ): Promise<void> {
-  await send('POST', `/api/approvals/${approvalId}`, remember ? { decision, remember } : { decision })
+  await send('POST', `/api/approvals/${approvalId}`, {
+    decision, ...(remember ? { remember } : {}), ...(items ? { items } : {}),
+  })
 }
 
 export async function answerQuestion(messageId: number, choices: string[]): Promise<void> {

@@ -28,12 +28,64 @@ export function untilLabel(expiresAt: number | null, now = new Date()): string {
     : `until ${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
 }
 
+/** 一批里先摊开这么多项，再多的折起来 */
+const SHOWN_ITEMS = 6
+
+/** 一批对象：待批时每项一个勾，默认全勾；批完后放行的打 ✓，留下的划掉 */
+function BatchItems({ items, kept, onToggle, approved }: {
+  items: string[]
+  kept: Set<number>
+  onToggle?: (index: number) => void
+  approved?: number[]
+}) {
+  const [all, setAll] = useState(items.length <= SHOWN_ITEMS)
+  const shown = all ? items : items.slice(0, SHOWN_ITEMS)
+  const done = approved ? new Set(approved) : null
+  return (
+    <div className="approval-items">
+      <ul>
+        {shown.map((item, i) => (
+          <li key={i} className={done && !done.has(i) ? 'left-out' : undefined}>
+            {onToggle ? (
+              <label>
+                <input type="checkbox" checked={kept.has(i)} onChange={() => onToggle(i)} />
+                <span>{item}</span>
+              </label>
+            ) : (
+              <span>{done?.has(i) ? '✓ ' : ''}{item}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {all ? null : (
+        <button className="approval-items-more" onClick={() => setAll(true)}>Show all {items.length}</button>
+      )}
+    </div>
+  )
+}
+
 export function ApprovalChip({ payload, onDecide }: {
   payload: ApprovalPayload
-  onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration) => void
+  onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration, items?: number[]) => void
 }) {
   const [choosing, setChoosing] = useState(false)
+  const items = payload.items ?? []
+  const [kept, setKept] = useState(() => new Set(items.map((_, i) => i)))
+  const toggle = (i: number) => setKept((k) => {
+    const next = new Set(k)
+    if (next.has(i)) next.delete(i)
+    else next.add(i)
+    return next
+  })
   const scope = payload.kind && payload.target ? `${payload.kind} → ${payload.target}` : null
+  // 全勾着就不传下标：网关默认整批放行
+  const approve = () => {
+    if (items.length && kept.size < items.length) {
+      onDecide(payload.approvalId, 'approve', undefined, [...kept].sort((a, b) => a - b))
+    } else {
+      onDecide(payload.approvalId, 'approve')
+    }
+  }
 
   // 一条你早先留下的规则已经放行了它：只是告诉你发生了什么，没有按钮
   if (payload.rule) {
@@ -51,9 +103,10 @@ export function ApprovalChip({ payload, onDecide }: {
   }
 
   const outcome = OUTCOME[payload.status]
+  const approvedCount = payload.approvedItems?.length
   return (
     <div className={`approval-chip${outcome ? ' resolved' : ''}`}>
-      <div className="approval-label">Needs you</div>
+      <div className="approval-label">{items.length ? `Needs you · ${items.length} items` : 'Needs you'}</div>
       <div className="approval-action">{payload.action}</div>
       {payload.detail ? <div className="approval-detail">{payload.detail}</div> : null}
       {scope ? <div className="approval-scope">{scope}</div> : null}
@@ -66,9 +119,17 @@ export function ApprovalChip({ payload, onDecide }: {
       {payload.rememberBlocked && !outcome ? (
         <div className="approval-note">No &quot;Always allow&quot;: {payload.rememberBlocked}.</div>
       ) : null}
+      {items.length ? (
+        <BatchItems
+          items={items}
+          kept={kept}
+          {...(outcome ? { approved: payload.approvedItems ?? [] } : { onToggle: toggle })}
+        />
+      ) : null}
       {outcome ? (
         <div className="approval-outcome">
           {outcome}
+          {items.length && approvedCount !== undefined ? ` ${approvedCount} of ${items.length}` : ''}
           {payload.remembered && scope ? ` · ${scope} allowed ${untilLabel(payload.remembered.expiresAt)}` : ''}
         </div>
       ) : choosing ? (
@@ -85,7 +146,9 @@ export function ApprovalChip({ payload, onDecide }: {
         </div>
       ) : (
         <div className="approval-buttons">
-          <button className="approve" onClick={() => onDecide(payload.approvalId, 'approve')}>Approve</button>
+          <button className="approve" disabled={items.length > 0 && kept.size === 0} onClick={approve}>
+            {!items.length ? 'Approve' : kept.size === items.length ? `Approve all ${items.length}` : `Approve ${kept.size} of ${items.length}`}
+          </button>
           <button className="discard" onClick={() => onDecide(payload.approvalId, 'discard')}>Discard</button>
           {payload.canRemember ? (
             <button className="remember-toggle" onClick={() => setChoosing(true)}>Always allow…</button>

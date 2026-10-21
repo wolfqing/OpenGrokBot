@@ -133,4 +133,32 @@ describe('ComputerPanel', () => {
     expect(screen.getByText('No longer applies: "*" is a wildcard, not one destination')).toBeInTheDocument()
     expect(container.querySelector('.panel-rule.inert')).not.toBeNull()
   })
+
+  it('marks watch routines, lists shared skills and the recent actions', () => {
+    const watch = { ...running.routines[0]!, id: 3, name: 'Status watch', human: 'every 30 minutes', mode: 'watch' as const }
+    render(<ComputerPanel
+      info={{
+        ...running,
+        routines: [watch],
+        skills: [{ name: 'weekly-report', description: 'How the Friday report is laid out' }],
+        actions: [
+          { id: 2, thread_id: 'dm:researcher', trigger: 'webhook', tool: 'browser_goto', summary: 'status.example.com', ok: false, ms: 900, created_at: Date.now() },
+          { id: 1, thread_id: 'dm:researcher', trigger: 'you', tool: 'approval', summary: 'approved by you: send it', ok: null, ms: null, created_at: Date.now() },
+        ],
+      }}
+      botName="Scout"
+      onClose={() => {}}
+    />)
+    expect(screen.getByText('watch')).toBeInTheDocument()
+    expect(screen.getByText('weekly-report')).toBeInTheDocument()
+    expect(screen.getByText('How the Friday report is laid out')).toBeInTheDocument()
+    expect(screen.getByText('status.example.com').closest('li')).toHaveClass('failed')
+    expect(screen.getByText(/· webhook$/)).toBeInTheDocument()
+    expect(screen.getByText('approved by you: send it')).toBeInTheDocument()
+  })
+
+  it('says the log is empty instead of hiding it', () => {
+    render(<ComputerPanel info={{ ...running, actions: [] }} botName="Scout" onClose={() => {}} />)
+    expect(screen.getByText('Nothing yet. Every step it takes is logged here.')).toBeInTheDocument()
+  })
 })

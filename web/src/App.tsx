@@ -47,6 +47,8 @@ export default function App() {
   useEffect(() => { threadIdRef.current = threadId }, [threadId])
   // 正看着的线程里有谁：他们干完了你自己看得见，不用再标「done」；点开的那一刻把已有的「done」消掉
   const watchingRef = useRef<string[]>([])
+  /** 这一轮忙碌里真往线程说过话的同事：只有它们收工时才标「done」 */
+  const postedRef = useRef(new Set<string>())
   const members = selected?.members.join(',') ?? ''
   useEffect(() => {
     const ids = members ? members.split(',') : []
@@ -131,9 +133,13 @@ export default function App() {
         return
       }
       if (e.type === 'status') {
-        setStatuses((s) => applyStatus(s, e.botId, e.state, watchingRef.current.includes(e.botId)))
+        if (e.state === 'thinking') postedRef.current.delete(e.botId)
+        const posted = postedRef.current.has(e.botId)
+        if (e.state !== 'thinking') postedRef.current.delete(e.botId)
+        setStatuses((s) => applyStatus(s, e.botId, e.state, watchingRef.current.includes(e.botId), posted))
         return
       }
+      if (e.message.sender !== 'user' && e.message.kind !== 'activity') postedRef.current.add(e.message.sender)
       // 就地更新的旧消息（activity 卡片收尾、审批 chip 翻转）不该顶掉更新的那条预览
       setConversations((cs) => cs.map((c) => (
         c.id === e.threadId && e.message.id >= (c.last_message?.id ?? 0) ? { ...c, last_message: e.message } : c
@@ -245,7 +251,9 @@ export default function App() {
           thinking={thinking}
           roster={roster}
           onSend={(text) => { if (threadId) sendMessage(threadId, text).catch(guard) }}
-          onDecide={(approvalId, decision, remember) => { resolveApproval(approvalId, decision, remember).catch(guard) }}
+          onDecide={(approvalId, decision, remember, items) => {
+            resolveApproval(approvalId, decision, remember, items).catch(guard)
+          }}
           onAnswer={(messageId, choices) => { answerQuestion(messageId, choices).catch(guard) }}
           onOpenScreen={openScreen}
           onStop={() => { if (threadId) stopThread(threadId).catch(guard) }}

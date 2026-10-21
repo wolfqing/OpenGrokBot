@@ -39,7 +39,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
   messages: Message[]
   thinking: boolean
   onSend: (text: string) => void
-  onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration) => void
+  onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration, items?: number[]) => void
   /** 问题卡片上点了选项 */
   onAnswer?: (messageId: number, choices: string[]) => void
   roster: Record<string, { name: string; emoji: string }>
@@ -110,6 +110,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
         return (
           <div className="decision">
             {p.decision === 'approve' ? '✓ Approved' : '✕ Discarded'} · {p.action}
+            {p.count ? ` · ${p.count.approved} of ${p.count.of} items` : ''}
             {p.remembered ? ` · rule saved: ${p.remembered.kind} → ${p.remembered.target}` : ''}
           </div>
         )

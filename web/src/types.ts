@@ -21,15 +21,29 @@ export type ApprovalPayload = {
   rememberBlocked?: string
   /** 有规则本来能放行它，但这一回合不是你开的头（或眼前有外部数据），所以还是问了你 */
   ruleHeld?: 'routine' | 'webhook' | 'relay' | 'outside-data' | 'unknown'
+  /** 一批对象，一项一行 */
+  items?: string[]
+  /** 你勾留下、放行了的那几项的下标 */
+  approvedItems?: number[]
 }
 export type ApprovalResolvedPayload = {
   approvalId: number
   action: string
   decision: 'approve' | 'discard'
   remembered?: { id: number; expiresAt: number | null; kind: string; target: string }
+  /** 一批对象时：放行了几项、一共几项 */
+  count?: { approved: number; of: number }
 }
 export type MemoryPayload = { rule: string; diff: string; total: number; removed?: boolean; by?: 'operator' }
-export type RoutinePayload = { routineId: number; name: string; cron: string; human: string; webhook?: boolean }
+export type RoutineMode = 'act' | 'watch'
+export type RoutinePayload = {
+  routineId: number
+  name: string
+  cron: string
+  human: string
+  webhook?: boolean
+  mode?: RoutineMode
+}
 export type QuestionPayload = {
   question: string
   options: string[]
@@ -54,6 +68,21 @@ export type ComputerRoutine = {
   enabled: number
   /** 带密钥的 webhook 路径（以 / 开头）；没有 webhook 就是 null */
   webhook_path?: string | null
+  mode?: RoutineMode
+}
+
+export type Skill = { name: string; description: string }
+
+/** 动作日志里的一笔：哪个工具、对什么、成没成、谁叫它开始的 */
+export type ActionEntry = {
+  id: number
+  thread_id: string
+  trigger: string
+  tool: string
+  summary: string
+  ok: boolean | null
+  ms: number | null
+  created_at: number
 }
 
 export type ApprovalRule = {
@@ -81,6 +110,10 @@ export type ComputerInfo = {
   rules?: ApprovalRule[]
   /** MEMORY.md 里的规矩，一条一行 */
   memory?: string[]
+  /** 所有同事共用的技能（做事手册） */
+  skills?: Skill[]
+  /** 最近做过的动作，最新的在前 */
+  actions?: ActionEntry[]
 }
 
 export type RoutineAction = 'run' | 'pause' | 'resume' | 'delete'

@@ -3,11 +3,12 @@ import type { BotStatus } from './types'
 type Statuses = Record<string, BotStatus>
 
 /**
- * 网关说某位同事回到 idle：如果它刚才在干活、而你没在看它的线程，就记成「done」，
- * 等你点开它的线程再消掉。你正看着的，干完了你自己就看见了，不用再提示。
+ * 网关说某位同事回到 idle：如果它刚才在干活、这期间往线程里说了话、而你没在看它的线程，就记成「done」，
+ * 等你点开它的线程再消掉。你正看着的，干完了你自己就看见了；什么都没说的（比如一次没发现问题的 watch）
+ * 不值得提醒你。
  */
-export function applyStatus(prev: Statuses, botId: string, state: BotStatus, watching: boolean): Statuses {
-  const next = state === 'idle' && prev[botId] === 'thinking' && !watching ? 'done' : state
+export function applyStatus(prev: Statuses, botId: string, state: BotStatus, watching: boolean, posted = true): Statuses {
+  const next = state === 'idle' && prev[botId] === 'thinking' && !watching && posted ? 'done' : state
   return { ...prev, [botId]: next }
 }
 
