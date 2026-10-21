@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type {
   ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, LoginPayload, MemoryPayload,
   Message, ReportPayload, RoutinePayload, ScreenshotPayload,
@@ -7,10 +7,30 @@ import { ActivityChip } from './ActivityChip'
 import { ApprovalChip } from './ApprovalChip'
 import { BotRefChip } from './BotRefChip'
 import { LoginChip } from './LoginChip'
+import { Markdown } from './Markdown'
 import { MemoryChip } from './MemoryChip'
 import { ReportChip } from './ReportChip'
 import { RoutineChip } from './RoutineChip'
 import { ScreenshotChip } from './ScreenshotChip'
+
+/** 停顿超过这么久，下一条消息前再标一次时间；连珠炮式的往来只在开头标一次。 */
+const TIME_GAP_MS = 5 * 60_000
+const dayKey = (ts: number) => new Date(ts).toDateString()
+
+function dayLabel(ts: number, now: Date): string {
+  const key = dayKey(ts)
+  if (key === now.toDateString()) return 'Today'
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (key === yesterday.toDateString()) return 'Yesterday'
+  const day = new Date(ts)
+  return day.toLocaleDateString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric',
+    ...(day.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  })
+}
+
+const timeLabel = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
 export function Thread({ conversation, messages, thinking, onSend, onDecide, roster, onOpenScreen, onStop }: {
   conversation: Conversation
@@ -62,7 +82,12 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, ros
   }
 
   const renderBody = (m: Message) => {
-    if (!m.payload) return <div className="bubble">{m.content}</div>
+    // 同事的话按 markdown 显示（模型天然写 markdown）；你自己打的字照原样显示，星号就是星号
+    if (!m.payload) {
+      return m.sender === 'user'
+        ? <div className="bubble">{m.content}</div>
+        : <div className="bubble markdown"><Markdown text={m.content} /></div>
+    }
     switch (m.kind) {
       case 'report': return <ReportChip payload={m.payload as ReportPayload} />
       case 'screenshot': return <ScreenshotChip payload={m.payload as ScreenshotPayload} />
@@ -90,6 +115,8 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, ros
       ? roster[m.sender]
       : undefined
 
+  const now = new Date()
+
   return (
     <main className="thread">
       <header className="thread-header">
@@ -110,20 +137,36 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, ros
           pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
         }}
       >
-        {messages.map((m) => {
+        {messages.map((m, i) => {
+          const prev = messages[i - 1]
+          const newDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at)
+          const showTime = newDay || m.created_at - prev.created_at > TIME_GAP_MS
           const speaker = speakerOf(m)
+          const at = new Date(m.created_at)
           return (
-            <div key={m.id} className={`row ${rowClass(m)}`}>
-              <div className="row-inner">
-                {speaker ? (
-                  <div className="speaker">
-                    <span className="speaker-emoji">{speaker.emoji}</span>
-                    <span className="speaker-name">{speaker.name}</span>
-                  </div>
-                ) : null}
-                {renderBody(m)}
+            <Fragment key={m.id}>
+              {newDay ? <div className="day-divider" role="separator">{dayLabel(m.created_at, now)}</div> : null}
+              <div className={`row ${rowClass(m)}`}>
+                <div className="row-inner">
+                  {speaker || showTime ? (
+                    <div className="row-meta">
+                      {speaker ? (
+                        <span className="speaker">
+                          <span className="speaker-emoji">{speaker.emoji}</span>
+                          <span className="speaker-name">{speaker.name}</span>
+                        </span>
+                      ) : null}
+                      {showTime ? (
+                        <time className="row-time" dateTime={at.toISOString()} title={at.toLocaleString()}>
+                          {timeLabel(m.created_at)}
+                        </time>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {renderBody(m)}
+                </div>
               </div>
-            </div>
+            </Fragment>
           )
         })}
         {thinking ? <div className="row from-bot"><div className="bubble typing">•••</div></div> : null}

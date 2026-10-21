@@ -192,4 +192,65 @@ describe('Thread', () => {
     render(<Thread conversation={dm} roster={roster} messages={working} thinking={true} onSend={() => {}} onDecide={() => {}} />)
     expect(screen.getByText('https://example.com')).toBeInTheDocument()
   })
+
+  it('renders a teammate reply as markdown, with safe links and no images', () => {
+    const md: Message[] = [{
+      id: 30, thread_id: 'dm:researcher', sender: 'researcher', kind: 'text', created_at: 30, payload: null,
+      content: 'Found **two** options:\n\n- [Docs](https://example.com/docs)\n- run `pnpm dev`\n- [boom](javascript:alert(1))\n\n'
+        + '![pixel](https://tracker.invalid/p.png) <b>raw html</b>',
+    }]
+    const { container } = render(<Thread conversation={dm} roster={roster} messages={md} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(screen.getByText('two').tagName).toBe('STRONG')
+    expect(screen.getByText('pnpm dev').tagName).toBe('CODE')
+    const link = screen.getByRole('link', { name: 'Docs' })
+    expect(link).toHaveAttribute('href', 'https://example.com/docs')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByText(/pixel/)).toBeInTheDocument() // 图片只留替代文字
+    expect(container.querySelector('b')).toBeNull()
+    expect(screen.getByText(/raw html/).tagName).toBe('P') // 夹带的 HTML 标签被丢掉，文字保留
+  })
+
+  it('keeps a single newline as a line break, so a dispatch table stays one item per line', () => {
+    const table: Message[] = [{
+      id: 32, thread_id: 'group:offsite-crew', sender: 'chief', kind: 'text', payload: null, created_at: 32,
+      content: '✓ Pricing → @market-watch · Friday\n✓ Brief → @researcher · Thursday\nOne thing needs you today.',
+    }]
+    const { container } = render(<Thread conversation={group} roster={roster} messages={table} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(container.querySelectorAll('.bubble.markdown br')).toHaveLength(2)
+  })
+
+  it("keeps the operator's own words exactly as typed", () => {
+    const typed: Message[] = [{
+      id: 31, thread_id: 'dm:researcher', sender: 'user', kind: 'text', content: 'use **literal** stars', payload: null, created_at: 31,
+    }]
+    render(<Thread conversation={dm} roster={roster} messages={typed} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(screen.getByText('use **literal** stars')).toBeInTheDocument()
+  })
+
+  it('separates days and stamps the time again only after a pause', () => {
+    const t0 = Date.UTC(2026, 2, 9, 12, 0)
+    const row = (id: number, sender: string, content: string, created_at: number): Message =>
+      ({ id, thread_id: 'dm:researcher', sender, kind: 'text', content, payload: null, created_at })
+    const spread: Message[] = [
+      row(1, 'user', 'morning', t0),
+      row(2, 'researcher', 'hi', t0 + 20_000), // 20 秒后：不再标时间
+      row(3, 'user', 'later', t0 + 40 * 60_000), // 停了 40 分钟：标
+      row(4, 'researcher', 'next day', t0 + 26 * 3_600_000), // 换天：分隔线 + 标
+    ]
+    const { container } = render(<Thread conversation={dm} roster={roster} messages={spread} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(container.querySelectorAll('.day-divider')).toHaveLength(2)
+    const stamped = [...container.querySelectorAll('time.row-time')].map((t) => t.getAttribute('datetime'))
+    expect(stamped).toEqual([t0, t0 + 40 * 60_000, t0 + 26 * 3_600_000].map((t) => new Date(t).toISOString()))
+  })
+
+  it('calls the current day "Today"', () => {
+    const fresh: Message[] = [{
+      id: 1, thread_id: 'dm:researcher', sender: 'user', kind: 'text', content: 'now', payload: null, created_at: Date.now(),
+    }]
+    render(<Thread conversation={dm} roster={roster} messages={fresh} thinking={false} onSend={() => {}} onDecide={() => {}} />)
+    expect(screen.getByText('Today')).toBeInTheDocument()
+  })
 })
