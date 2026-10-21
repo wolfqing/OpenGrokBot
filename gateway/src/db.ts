@@ -100,10 +100,50 @@ CREATE TABLE IF NOT EXISTS usage (
 CREATE INDEX IF NOT EXISTS idx_usage_bot ON usage(bot_id, created_at);
 `
 
-export function openDb(path = ':memory:'): Db {
+/**
+ * 迁移一步一格：新库从 0 跑到底，老库从自己记着的版本接着跑。版本号存在 SQLite 文件头的
+ * user_version 里，和数据同生共死。要加表、加列、补索引，就在末尾追加一步——已经发布过的步骤不再改。
+ */
+export type Migration = (db: Db) => void
+
+const MIGRATIONS: Migration[] = [
+  // v1：v0.2 的基线。v0.2.x 的老库表都在、版本号却是 0——这一步对它是空操作，只把版本号补上。
+  (db) => db.exec(SCHEMA),
+]
+
+export const SCHEMA_VERSION = MIGRATIONS.length
+
+export function schemaVersion(db: Db): number {
+  return Number(db.pragma('user_version', { simple: true }))
+}
+
+/** 把库从它现在的版本升到 steps 的末尾；每一步连同版本号一起落在一个事务里，断电也不会留下半步。 */
+export function runMigrations(db: Db, steps: Migration[]): { from: number; to: number } {
+  const from = schemaVersion(db)
+  if (from > steps.length) {
+    throw new Error(
+      `This database was written by a newer OpenGrokBot (schema v${from}; this build knows v${steps.length}). `
+      + 'Upgrade the gateway, or point OPENGROKBOT_DATA at a different directory.',
+    )
+  }
+  for (let v = from; v < steps.length; v++) {
+    db.transaction(() => {
+      steps[v]!(db)
+      db.pragma(`user_version = ${v + 1}`)
+    })()
+  }
+  return { from, to: steps.length }
+}
+
+export function migrate(db: Db): { from: number; to: number } {
+  return runMigrations(db, MIGRATIONS)
+}
+
+export function openDb(path = ':memory:', opts: { onMigrate?: (from: number, to: number) => void } = {}): Db {
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
-  db.exec(SCHEMA)
+  const { from, to } = migrate(db)
+  if (from !== to) opts.onMigrate?.(from, to)
   return db
 }
 
