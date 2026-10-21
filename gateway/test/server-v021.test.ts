@@ -71,7 +71,7 @@ function setup(llm: LLM, extra: Partial<Parameters<typeof createApp>[0]> = {}) {
 
 describe('one turn at a time per bot', () => {
   it('never lets two turns of the same bot talk to the model at once', async () => {
-    const { llm, log } = recordingLLM()
+    const { llm, log } = recordingLLM(() => text('ok'), 80)
     const { app, db, events } = setup(llm)
     await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'first' })
     await new Promise((r) => setTimeout(r, 5))
@@ -91,25 +91,25 @@ describe('one turn at a time per bot', () => {
   })
 
   it('answers messages that piled up while it was busy in a single turn', async () => {
-    const { llm, log } = recordingLLM(() => text('ok'), 40)
+    const { llm, log } = recordingLLM(() => text('ok'), 80)
     const { app, db } = setup(llm)
     await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'one' })
     await new Promise((r) => setTimeout(r, 5))
     await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'two' })
     await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'three' })
-    await vi.waitFor(() => expect(log.seen.every((s) => s.done)).toBe(true))
+    // 先等两轮都答完（固定 sleep 在慢机器上不够用），再留一点时间确认没有多出来的第三轮
+    await vi.waitFor(() => expect(listMessages(db, DM).filter((m) => m.sender === 'researcher')).toHaveLength(2))
     await new Promise((r) => setTimeout(r, 60))
     expect(log.seen).toHaveLength(2) // 「one」一轮，「two」「three」合并成一轮
     const secondTurn = log.seen[1]!.messages.map((m) => m.content ?? '').join('\n')
     expect(secondTurn).toContain('two')
     expect(secondTurn).toContain('three')
-    expect(listMessages(db, DM).filter((m) => m.sender === 'researcher')).toHaveLength(2)
   })
 })
 
 describe('messages that arrive while the bot is busy', () => {
   it('answers a follow-up as the latest thing said, after the reply it missed', async () => {
-    const { llm, log } = recordingLLM((messages) => text(`reply to ${messages.at(-1)!.content!.split('\n')[0]}`), 40)
+    const { llm, log } = recordingLLM((messages) => text(`reply to ${messages.at(-1)!.content!.split('\n')[0]}`), 80)
     const { app, db } = setup(llm)
     await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'one' })
     await new Promise((r) => setTimeout(r, 10))
@@ -121,7 +121,7 @@ describe('messages that arrive while the bot is busy', () => {
   })
 
   it('keeps a routine that runs first from answering a message still waiting its turn', async () => {
-    const { llm, log } = recordingLLM(() => text('ok'), 40)
+    const { llm, log } = recordingLLM(() => text('ok'), 80)
     const { app, db, runRoutine } = setup(llm)
     await send(app, 'POST', `/api/threads/${DM}/messages`, { text: 'one' })
     const routine = createRoutine(db, { botId: scout.id, name: 'Sweep', cron: '0 9 * * *', instructions: 'sweep the inbox' })
@@ -154,9 +154,8 @@ describe('stop', () => {
     await send(app, 'POST', `/api/threads/${GROUP}/messages`, { text: 'status?' })
     await new Promise((r) => setTimeout(r, 10))
     await send(app, 'POST', `/api/threads/${GROUP}/stop`)
-    await new Promise((r) => setTimeout(r, 30))
+    await vi.waitFor(() => expect(listMessages(db, GROUP).filter((m) => m.content.startsWith('⏹')).length).toBeGreaterThan(0))
     expect(log.seen.some((s) => s.who === 'Chief')).toBe(false)
-    expect(listMessages(db, GROUP).filter((m) => m.content.startsWith('⏹')).length).toBeGreaterThan(0)
   })
 })
 
