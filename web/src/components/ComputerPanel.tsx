@@ -133,10 +133,12 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
           <div className="panel-empty">Nothing goes out without your approval.</div>
         ) : (
           rules.map((rule) => (
-            <div className="panel-rule" key={rule.id}>
+            <div className={`panel-rule${rule.applies === false ? ' inert' : ''}`} key={rule.id}>
               <div className="panel-routine-text">
                 <span className="panel-rule-scope">{rule.kind} → {rule.target}</span>
-                <span className="panel-routine-when">{untilLabel(rule.expiresAt)}</span>
+                <span className="panel-routine-when">
+                  {rule.applies === false ? `No longer applies: ${rule.whyNot ?? 'not one destination'}` : untilLabel(rule.expiresAt)}
+                </span>
               </div>
               {onRevokeRule ? (
                 <div className="panel-routine-actions">

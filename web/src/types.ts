@@ -17,6 +17,10 @@ export type ApprovalPayload = {
   rule?: { id: number; kind: string; target: string; expiresAt: number | null }
   /** 你放行时顺手留下的规则 */
   remembered?: { id: number; expiresAt: number | null }
+  /** 类别可以记规则、但去向不是一个确定的地方：为什么不给「Always allow」 */
+  rememberBlocked?: string
+  /** 有规则本来能放行它，但这一回合不是你开的头（或眼前有外部数据），所以还是问了你 */
+  ruleHeld?: 'routine' | 'webhook' | 'relay' | 'outside-data' | 'unknown'
 }
 export type ApprovalResolvedPayload = {
   approvalId: number
@@ -36,6 +40,8 @@ export type QuestionPayload = {
 }
 export type BotRefPayload = { from: string; fromName: string; content: string }
 export type LoginPayload = { site: string; why?: string }
+/** webhook 带来的东西，网关已排好版、截过长 */
+export type WebhookPayload = { routineId: number; name: string; body: string }
 export type ActivityStep = { tool: string; summary: string; ok?: boolean; ms?: number }
 export type ActivityPayload = { steps: ActivityStep[]; done: boolean }
 
@@ -50,7 +56,16 @@ export type ComputerRoutine = {
   webhook_path?: string | null
 }
 
-export type ApprovalRule = { id: number; kind: string; target: string; expiresAt: number | null; createdAt: number }
+export type ApprovalRule = {
+  id: number
+  kind: string
+  target: string
+  expiresAt: number | null
+  createdAt: number
+  /** false：去向校验收紧之前留下的模糊规则，还列着但不再放行任何东西 */
+  applies?: boolean
+  whyNot?: string
+}
 
 export type UsageTotals = { prompt: number; completion: number; cached: number; total: number }
 
@@ -82,11 +97,12 @@ export type MessageKind =
   | 'login_request'
   | 'activity'
   | 'question'
+  | 'webhook'
 
 export type Message = {
   id: number
   thread_id: string
-  sender: string // 'user' | bot id
+  sender: string // 'user' | bot id | 'webhook'
   kind: MessageKind
   content: string
   payload:
@@ -100,6 +116,7 @@ export type Message = {
     | LoginPayload
     | ActivityPayload
     | QuestionPayload
+    | WebhookPayload
     | null
   created_at: number
 }

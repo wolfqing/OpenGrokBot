@@ -12,8 +12,9 @@ injection — that follows an agent wherever it runs. This page is precise about
 | Other websites cannot act as you | Anything that changes state, and the WebSocket, must come from the gateway's own origin (or the UI's, `OPENGROKBOT_WEB_URL`), and requests with a body must be JSON — which no other page can send without a preflight the gateway never answers. A page you happen to visit cannot approve a hold, post into a thread or read the stream. |
 | Your network cannot reach it | The gateway listens on `127.0.0.1` unless you set `OPENGROKBOT_HOST`. |
 | A bot cannot approve its own holds | The token never enters a bot's workspace. A bot's shell or browser can reach the host, but cannot authenticate. |
-| Only you can grant a standing approval | A rule is created only when you approve a hold with *Always allow…* from your signed-in browser. Its scope is fixed by the gateway: one teammate, one kind, one exact destination, with an expiry you pick. Purchases, bookings, "other" and holds without a single destination can never become rules. Bots have no tool to create, widen or extend one; you revoke them from the computer panel. |
-| A webhook opens one routine and nothing else | `POST /hooks/routines/:id` is the only path outside the token. Each routine has its own random key, compared in constant time; a wrong key and an unknown id both get `404`. Bodies over 1 MB are refused and at most 16,000 characters reach the model. The key never enters the thread or the model's context — only the computer panel shows the address. |
+| Only you can grant a standing approval | A rule is created only when you approve a hold with *Always allow…* from your signed-in browser. Its scope is fixed by the gateway: one teammate, one kind, one exact destination, with an expiry you pick. The destination must have the shape of one place — one email address, one channel or handle, one account, page or thread; wildcards, lists, "everyone" and whole services are refused. Purchases, bookings and "other" can never become rules. Bots have no tool to create, widen or extend one; you revoke them from the computer panel. |
+| Rules only cover work you started | A rule lets a hold through only in a turn you started — your message, your decision, your answer, your question to the group — and only while no webhook payload is in the teammate's view. Turns started by a routine, a webhook or a teammate's handoff always ask, and the chip says why. The model is never told which destinations a rule covers. |
+| A webhook opens one routine and nothing else | `POST /hooks/routines/:id` is the only path outside the token. Each routine has its own random key, compared in constant time; a wrong key and an unknown id both get `404`. Bodies over 1 MB are refused and at most 16,000 characters reach the model. The body is posted into the thread as an *outside data* card when the teammate picks it up, so you can see what set it off. The key never enters the thread or the model's context — only the computer panel shows the address. |
 | Bots cannot reach each other | All bot computers share one Docker network with container-to-container traffic switched off. And because on Docker Desktop a container can still reach ports published on the host, everything a computer publishes wants that computer's own secret: its shell/file shim and its browser control port (CDP) a per-container token, its screen a per-container VNC password. |
 | Each computer is a cage | Its own container with memory, CPU and process limits, `no-new-privileges`, and only its own workspace mounted. Every port is published to `127.0.0.1` only. |
 | A bot cannot put code in front of you | The screen page and its noVNC code are served by the gateway from its own copy; only the raw VNC stream comes from the bot's computer. Nothing a bot changes inside its container reaches your browser as a page. |
@@ -32,9 +33,11 @@ mistake is cheap (rule 1 below).
 
 **What a standing approval trusts.** A rule matches the kind and destination the bot itself declares when it
 holds an action, and then the bot performs the action on its own computer. The gateway decides whether to ask
-you again; it does not inspect what the bot then does. A bot that mislabels an action — by mistake, or because
-something it read told it to — could slip one past a rule. So rules save you waiting on a teammate you already
-trust with that destination; they do not make the approval gate stronger. Keep them narrow and short-lived.
+you again; it does not inspect what the bot then does. Outside input cannot start a turn in which a rule
+applies, and the bot is not told which destinations its rules cover — but within a turn you started, a bot that
+mislabels an action, by mistake or because a page it read told it to, could still slip one past a rule. So rules
+save you waiting on a teammate you already trust with that destination; they do not make the approval gate
+stronger. Keep them narrow and short-lived.
 
 **Treating what it reads as data.** Bots are told that pages, files and emails are data, never orders, and a
 webhook's body arrives explicitly labelled as data from another system. Prompt injection against tool-using

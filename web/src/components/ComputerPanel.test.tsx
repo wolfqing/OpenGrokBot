@@ -121,4 +121,16 @@ describe('ComputerPanel', () => {
     expect(writeText).toHaveBeenCalledWith(`${location.origin}/hooks/routines/2?key=k3y`)
     expect(screen.getByText('Copied')).toBeInTheDocument()
   })
+
+  it('marks a rule that no longer applies instead of showing it as live', () => {
+    const { container } = render(
+      <ComputerPanel
+        info={{ ...running, rules: [{ id: 5, kind: 'email', target: '*', expiresAt: null, createdAt: 1, applies: false, whyNot: '"*" is a wildcard, not one destination' }] }}
+        botName="Scout"
+        onClose={() => {}}
+      />,
+    )
+    expect(screen.getByText('No longer applies: "*" is a wildcard, not one destination')).toBeInTheDocument()
+    expect(container.querySelector('.panel-rule.inert')).not.toBeNull()
+  })
 })

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  attachApprovalMessage, canRemember, createApproval, createRule, findMatchingRule, getApproval, isThumbsUp,
-  latestPendingApproval, listActiveRules, normalizeKind, normalizeTarget, resolveApproval, revokeRule,
+  attachApprovalMessage, canRemember, createApproval, createRule, destinationProblem, findMatchingRule, getApproval,
+  isThumbsUp, latestPendingApproval, listActiveRules, normalizeKind, normalizeTarget, rememberBlock, resolveApproval,
+  revokeRule,
 } from '../src/approvals.js'
 import { ensureDmThread, openDb, upsertBot } from '../src/db.js'
 
@@ -90,6 +91,29 @@ describe('approval kinds and targets', () => {
     expect(canRemember({ kind: 'other', target: 'x' })).toBe(false)
   })
 
+  it('only counts one exact destination, judged by the shape each kind needs', () => {
+    const one: [string, string][] = [
+      ['email', 'bob@acme.com'], ['message', '#ops'], ['message', '@alice'], ['message', 'bob on slack'],
+      ['post', '@acme'], ['post', 'x.com/acme'], ['post', 'https://www.linkedin.com/company/acme'], ['post', 'r/selfhosted'],
+    ]
+    const vague: [string, string, RegExp][] = [
+      ['email', '*', /wildcard/], ['email', '*@acme.com', /wildcard/], ['email', 'a@x.com, b@y.com', /more than one/],
+      ['email', 'bob and alice', /more than one/], ['email', 'everyone', /means everyone/], ['email', 'acme.com', /not a single email/],
+      ['message', '@channel', /means everyone/], ['message', 'slack', /whole service/], ['message', 'slack.com', /whole site/],
+      ['post', 'twitter', /whole service/], ['post', 'x.com', /whole site/], ['post', 'acme blog', /does not name one/],
+    ]
+    for (const [kind, target] of one) {
+      expect(destinationProblem(kind as never, normalizeTarget(target)), `${kind} ${target}`).toBeNull()
+      expect(canRemember({ kind: kind as never, target: normalizeTarget(target) })).toBe(true)
+    }
+    for (const [kind, target, why] of vague) {
+      expect(destinationProblem(kind as never, normalizeTarget(target)), `${kind} ${target}`).toMatch(why)
+      expect(canRemember({ kind: kind as never, target: normalizeTarget(target) })).toBe(false)
+    }
+    expect(rememberBlock({ kind: 'purchase', target: 'amazon.com' })).toMatch(/always ask/)
+    expect(rememberBlock({ kind: 'email', target: 'bob@acme.com' })).toBeNull()
+  })
+
   it('records an approval a rule already covered as approved, with the rule it came from', () => {
     const { db, threadId } = setup()
     const a = createApproval(db, {
@@ -138,8 +162,23 @@ describe('approval rules', () => {
   it('refuses to write a rule for money or for an action with no destination', () => {
     const { db } = setup()
     expect(() => createRule(db, { botId: bot.id, kind: 'purchase', target: 'amazon.com', duration: 'always', now: 0 }))
-      .toThrow(/always asks/)
+      .toThrow(/cannot remember this: purchases, bookings/)
     expect(() => createRule(db, { botId: bot.id, kind: 'email', target: '  ', duration: 'always', now: 0 }))
-      .toThrow(/always asks/)
+      .toThrow(/cannot remember this: there is no destination/)
+  })
+
+  it('refuses a rule whose destination is not one place', () => {
+    const { db } = setup()
+    for (const target of ['*', 'everyone', 'a@x.com, b@y.com', 'all customers']) {
+      expect(() => createRule(db, { botId: bot.id, kind: 'email', target, duration: '1h', now: 0 })).toThrow(/cannot remember this/)
+    }
+    expect(listActiveRules(db, bot.id, 1)).toEqual([])
+  })
+
+  it('no longer honours a vague rule written before destinations were checked', () => {
+    const { db } = setup()
+    db.prepare(`INSERT INTO approval_rules (bot_id, kind, target, expires_at, created_at) VALUES (?, 'email', '*', NULL, 0)`).run(bot.id)
+    expect(findMatchingRule(db, { botId: bot.id, kind: 'email', target: '*', now: 1 })).toBeNull()
+    expect(listActiveRules(db, bot.id, 1)).toHaveLength(1) // 还列着，面板上标成「不再生效」
   })
 })

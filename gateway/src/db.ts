@@ -13,6 +13,7 @@ export type MessageKind =
   | 'login_request'
   | 'activity'
   | 'question'
+  | 'webhook'
 
 export type BotRow = {
   id: string
@@ -25,7 +26,7 @@ export type BotRow = {
 export type MessageRow = {
   id: number
   thread_id: string
-  sender: string // 'user' | bot id
+  sender: string // 'user' | bot id | 'webhook'
   kind: MessageKind
   content: string
   payload: unknown | null

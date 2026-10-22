@@ -1,6 +1,6 @@
 import type {
   ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, BotStatus, Conversation, LoginPayload,
-  MemoryPayload, QuestionPayload, ReportPayload, RoutinePayload, ScreenshotPayload,
+  MemoryPayload, QuestionPayload, ReportPayload, RoutinePayload, ScreenshotPayload, WebhookPayload,
 } from '../types'
 
 /**
@@ -44,6 +44,8 @@ function preview(c: Conversation): string {
       return `🕐 ${(m.payload as RoutinePayload | null)?.name ?? 'Routine created'}`
     case 'bot_ref':
       return `↪ from @${(m.payload as BotRefPayload | null)?.fromName ?? 'a teammate'}`
+    case 'webhook':
+      return `⇣ Webhook: ${(m.payload as WebhookPayload | null)?.name ?? 'a routine'}`
     case 'login_request':
       return `🔑 Sign in to ${(m.payload as LoginPayload | null)?.site ?? 'a site'}`
     case 'activity': {

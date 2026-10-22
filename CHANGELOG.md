@@ -14,6 +14,13 @@ still change behaviour.
   *Allowed by your rule*. Purchases, bookings and anything the bot does not classify always ask. The rules are
   listed, with a revoke button, under *Allowed without asking* in the computer panel. Only your own signed-in
   browser can create one; a bot cannot.
+  - The destination has to be one place: one email address, one channel or handle, one account, page or thread.
+    Wildcards, lists, "everyone" and a whole service such as "twitter" never get *Always allow*, and the chip
+    says why.
+  - A rule only lets a hold through in a turn you started: your message, your decision, your answer or your
+    question to the group, with no webhook payload in view. Work started by a routine, a webhook or a teammate's
+    handoff always asks, and the chip says which rule would have covered it.
+  - The teammate is never told which destinations a rule covers, so something it reads cannot steer it to one.
 - **Presence in the sidebar.** Each teammate's avatar shows whether it is working, waiting on you (an approval,
   a question or a sign-in), stuck (its last turn errored, ran out of budget or hit a turn limit) or done — it
   finished something while you were in another thread. A group row only shows that someone is working.
@@ -25,8 +32,9 @@ still change behaviour.
   which posts the same chip, so every change to a rule is still visible in the thread.
 - **Webhook routines.** A routine can start when another system calls it, instead of — or as well as — on a
   schedule. Each one gets its own secret address (copy it from the computer panel); a `POST` with a body wakes
-  the teammate with that body attached as outside data. The address works without the gateway token, and the
-  key never enters the thread or the model's context.
+  the teammate with that body attached as outside data. The body is posted into the thread as an *outside data*
+  card when the teammate picks it up, so you can see what set it off. The address works without the gateway
+  token, and the key never enters the thread or the model's context.
 
 - **Per-turn limits that fit real work.** A teammate can now take 40 model steps in one turn instead of 12
   (`OPENGROKBOT_MAX_STEPS`), and a turn is paused after 20 minutes (`OPENGROKBOT_TURN_MINUTES`, `0` turns it
