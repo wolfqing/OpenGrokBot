@@ -6,6 +6,30 @@ still change behaviour.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-22
+
+Teammates you can leave work with: scoped standing approvals, presence on the roster, question cards, webhook
+and watch routines, batch approvals, shared skills and an action log — most of it borrowed from Grok Bot, Meta
+Muse and OpenAI dots — plus 40-step turns, Markdown replies and the security review that came with them.
+
+### Security
+
+- **GitHub can call a webhook routine without a key in the address.** Give GitHub the routine's address without
+  `?key=` and its key as the webhook *Secret*; the gateway checks the `X-Hub-Signature-256` signature against
+  the raw body. GitHub's setup `ping` is answered without waking anyone, a repeated delivery
+  (`X-GitHub-Delivery`) runs only once, and form-encoded deliveries are read too. *For GitHub* in the computer
+  panel copies the three settings.
+- **A webhook payload can no longer step outside its fence.** The lines around it carry the payload's own
+  SHA-256 fingerprint and every payload line starts with `│`, so a payload cannot write a closing line or pose
+  as your operator.
+- **Two long destinations can no longer share a rule.** Destinations used to be cut at 200 characters and
+  lower-cased whole, so two webhook URLs with the same first 200 characters, or two URLs whose paths differ
+  only in case, matched each other's rules. Now nothing is cut, URL paths keep their case, and a destination over
+  200 characters always asks. A rule saved earlier for a URL with capital letters in its path asks once more.
+- **Upgrades keep a way back.** Before the gateway upgrades an existing database's schema it writes a full copy
+  next to it (`opengrokbot.db.v<old>-before-v<new>.<time>.bak`, the three most recent are kept). If the copy
+  cannot be written it does not upgrade.
+
 ### Added
 
 - **Watch routines.** "Keep an eye on the status page" creates a routine that only looks: each run gets
@@ -70,24 +94,6 @@ still change behaviour.
   refused with a clear message instead of being half-upgraded.
 - **Dependency audit in CI** (`pnpm audit --audit-level high`) and Dependabot for npm, GitHub Actions and the
   bot image's base.
-
-### Security
-
-- **GitHub can call a webhook routine without a key in the address.** Give GitHub the routine's address without
-  `?key=` and its key as the webhook *Secret*; the gateway checks the `X-Hub-Signature-256` signature against
-  the raw body. GitHub's setup `ping` is answered without waking anyone, a repeated delivery
-  (`X-GitHub-Delivery`) runs only once, and form-encoded deliveries are read too. *For GitHub* in the computer
-  panel copies the three settings.
-- **A webhook payload can no longer step outside its fence.** The lines around it carry the payload's own
-  SHA-256 fingerprint and every payload line starts with `│`, so a payload cannot write a closing line or pose
-  as your operator.
-- **Two long destinations can no longer share a rule.** Destinations used to be cut at 200 characters and
-  lower-cased whole, so two webhook URLs with the same first 200 characters, or two URLs whose paths differ
-  only in case, matched each other's rules. Now nothing is cut, URL paths keep their case, and a destination over
-  200 characters always asks. A rule saved earlier for a URL with capital letters in its path asks once more.
-- **Upgrades keep a way back.** Before the gateway upgrades an existing database's schema it writes a full copy
-  next to it (`opengrokbot.db.v<old>-before-v<new>.<time>.bak`, the three most recent are kept). If the copy
-  cannot be written it does not upgrade.
 
 ### Changed
 
@@ -185,7 +191,8 @@ A self-hosted Grok Bot alternative assembled from OpenClaw: three preconfigured 
 Ticker) with strict boundaries, agent-to-agent handoffs, any model provider, a one-command setup that never
 overwrites an existing OpenClaw config, a Docker/VPS path and an honest comparison with Grok Bot.
 
-[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wolfqing/OpenGrokBot/releases/tag/v0.1.0
