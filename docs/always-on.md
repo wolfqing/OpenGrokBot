@@ -64,8 +64,12 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
 
 - The key can travel in the `X-OpenGrokBot-Key` header or as `?key=`. Prefer the header where the sender allows
   it: query strings tend to end up in proxy logs.
-- A call gets `202` once the routine is started, `404` for a wrong key or id, `409` while the routine is paused
-  or still busy with the last call (retry later), and `413` for a body over 1 MB.
+- **GitHub** cannot add headers, so it signs instead. In the repository's *Settings → Webhooks → Add webhook*,
+  paste what *For GitHub* in the computer panel copies: the address **without** `?key=` as the payload URL,
+  `application/json` as the content type, and the key as the secret. GitHub's first `ping` gets `200` and wakes
+  no one; a redelivery of the same event runs only once.
+- A call gets `202` once the routine is started, `404` for a wrong key, signature or id, `409` while the routine
+  is paused or still busy with the last call (retry later), and `413` for a body over 1 MB.
 - The gateway still listens on loopback only. For a service on the internet (GitHub, a form provider) to reach
   it, put a tunnel in front — Tailscale Funnel, Cloudflare Tunnel, ngrok — and, where the tunnel can, forward
   only paths under `/hooks/`. The rest of the gateway stays behind its token either way.
@@ -110,6 +114,12 @@ docker build -t opengrokbot/bot:dev docker/bot
 
 Computers built from an older image or container spec are rebuilt the next time they are used. Files and
 browser logins live in the mounted workspace and survive; anything installed inside the container does not.
+
+An upgrade that changes the database schema is one-way: an older gateway refuses the upgraded file. So before
+it upgrades, the gateway writes a full copy next to the database, for example
+`gateway/data/opengrokbot.db.v2-before-v3.20261022T083000Z.bak`, and logs where. To go back, stop the gateway,
+check out the older release, and copy the `.bak` over `opengrokbot.db` (delete `opengrokbot.db-wal` and
+`opengrokbot.db-shm` next to it first). The three most recent copies are kept.
 
 ## Backups
 
