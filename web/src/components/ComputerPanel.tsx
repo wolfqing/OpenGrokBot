@@ -32,22 +32,44 @@ type PanelActions = {
 }
 
 /** webhook 地址带着密钥：给一个「复制」，不把它整串摊在面板上 */
-function CopyWebhook({ routine }: { routine: ComputerRoutine }) {
+/** 复制到剪贴板；不让写剪贴板（非 https、权限）就弹框让人手动复制 */
+function CopyButton({ label, value, what, aria }: { label: string; value: string; what: string; aria: string }) {
   const [copied, setCopied] = useState(false)
-  if (!routine.webhook_path) return null
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(`${location.origin}${routine.webhook_path}`)
+      await navigator.clipboard.writeText(value)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      window.prompt('Copy the webhook address:', `${location.origin}${routine.webhook_path}`)
+      window.prompt(`Copy the ${what}:`, value)
     }
   }
   return (
-    <button className="panel-copy" onClick={() => void copy()} aria-label={`Copy the webhook address of ${routine.name}`}>
-      {copied ? 'Copied' : 'Copy webhook'}
+    <button className="panel-copy" onClick={() => void copy()} aria-label={aria}>
+      {copied ? 'Copied' : label}
     </button>
+  )
+}
+
+/**
+ * 两种接法：普通调用方拿带密钥的整串地址；GitHub 这类发送方填不带密钥的地址，
+ * 再把密钥填进它的 Secret，由它给每次请求签名。
+ */
+function CopyWebhook({ routine }: { routine: ComputerRoutine }) {
+  if (!routine.webhook_path) return null
+  const withKey = `${location.origin}${routine.webhook_path}`
+  return (
+    <span className="panel-copy-row">
+      <CopyButton label="Copy webhook" value={withKey} what="webhook address" aria={`Copy the webhook address of ${routine.name}`} />
+      {routine.webhook_secret ? (
+        <CopyButton
+          label="For GitHub"
+          value={`Payload URL: ${withKey.replace(/\?key=.*$/, '')}\nContent type: application/json\nSecret: ${routine.webhook_secret}`}
+          what="GitHub webhook settings"
+          aria={`Copy the GitHub webhook settings of ${routine.name}`}
+        />
+      ) : null}
+    </span>
   )
 }
 
