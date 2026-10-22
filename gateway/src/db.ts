@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, rmSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 
 export type Db = Database.Database
@@ -180,9 +182,49 @@ export function migrate(db: Db): { from: number; to: number } {
   return runMigrations(db, MIGRATIONS)
 }
 
-export function openDb(path = ':memory:', opts: { onMigrate?: (from: number, to: number) => void } = {}): Db {
+/** 每个库最多留这么多份迁移前备份，旧的删掉 */
+export const KEEP_BACKUPS = 3
+
+const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
+const sqlString = (s: string) => `'${s.replace(/'/g, "''")}'`
+
+/**
+ * 迁移只能往前走：升级后的库，老版本的网关打不开。所以动手之前先用 VACUUM INTO 留一份完整、一致的
+ * 备份（WAL 里的内容也在里面），放在库文件旁边：<库>.v<旧>-before-v<新>.<时间>.bak。只留最近 KEEP_BACKUPS 份。
+ * 备份失败就不迁移：宁可网关起不来，也不在没有退路的情况下改用户的数据。
+ */
+export function backupBeforeMigration(db: Db, path: string, from: number, to: number, now: Date): string {
+  const base = basename(path)
+  const file = join(dirname(path), `${base}.v${from}-before-v${to}.${stamp(now)}.bak`)
+  try {
+    db.exec(`VACUUM INTO ${sqlString(file)}`)
+  } catch (err) {
+    throw new Error(
+      `Could not back up ${path} before upgrading its schema v${from} → v${to} (${err instanceof Error ? err.message : String(err)}). `
+      + 'Nothing was changed. Free some disk space or copy the file somewhere safe, then start the gateway again.',
+    )
+  }
+  const mine = readdirSync(dirname(path))
+    .filter((f) => f.startsWith(`${base}.v`) && /\.v\d+-before-v\d+\.\d{8}T\d{6}Z\.bak$/.test(f))
+    .sort()
+  for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_BACKUPS))) rmSync(join(dirname(path), old), { force: true })
+  return file
+}
+
+export function openDb(
+  path = ':memory:',
+  opts: { onMigrate?: (from: number, to: number) => void; onBackup?: (file: string) => void; now?: () => Date } = {},
+): Db {
+  const existed = path !== ':memory:' && existsSync(path)
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
+  const before = schemaVersion(db)
+  // 只有真有东西可丢时才备份：新建的空库、已经是最新的库、更新的网关写的库（下面会直接拒绝）都不用
+  const hasData = existed && Number(db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'`).pluck().get()) > 0
+  if (hasData && before < SCHEMA_VERSION) {
+    const file = backupBeforeMigration(db, path, before, SCHEMA_VERSION, (opts.now ?? (() => new Date()))())
+    opts.onBackup?.(file)
+  }
   const { from, to } = migrate(db)
   if (from !== to) opts.onMigrate?.(from, to)
   return db

@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Cron } from 'croner'
 import type { Db } from './db.js'
 
@@ -101,4 +101,17 @@ export function setRoutineEnabled(db: Db, id: number, enabled: boolean): Routine
 
 export function deleteRoutine(db: Db, id: number): boolean {
   return db.prepare('DELETE FROM routines WHERE id = ?').run(id).changes > 0
+}
+
+/**
+ * GitHub 发 webhook 时不能加自定义头、也不该把密钥放进网址：它用你填的 Secret 给请求体算 HMAC-SHA256，
+ * 放在 X-Hub-Signature-256: sha256=<hex>。这里用这条 routine 的密钥当 Secret 重算一遍，恒定时间比较。
+ * 签名对不上和「没这条」一样返回 null。
+ */
+export function routineForSignature(db: Db, id: number, body: Buffer, signature: string): RoutineRow | null {
+  const routine = Number.isInteger(id) ? getRoutine(db, id) : null
+  if (!routine?.webhook_key || !signature.startsWith('sha256=')) return null
+  const expected = Buffer.from(`sha256=${createHmac('sha256', routine.webhook_key).update(body).digest('hex')}`)
+  const given = Buffer.from(signature.trim().toLowerCase())
+  return given.length === expected.length && timingSafeEqual(given, expected) ? routine : null
 }
