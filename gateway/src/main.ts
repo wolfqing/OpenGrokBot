@@ -23,6 +23,7 @@ const config = loadConfig()
 mkdirSync(config.dataDir, { recursive: true })
 if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
 const db = openDb(config.dbPath, {
+  onBackup: (file) => console.log(`[gateway] backed up the database before upgrading it → ${file}`),
   onMigrate: (from, to) => console.log(`[gateway] database schema v${from} → v${to}`),
 })
 // 预置样板来自版本库，用户新雇的同事住在数据目录

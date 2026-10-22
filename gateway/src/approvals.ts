@@ -81,9 +81,23 @@ export function normalizeKind(value: unknown): ApprovalKind {
   return (APPROVAL_KINDS as readonly string[]).includes(v) ? (v as ApprovalKind) : 'other'
 }
 
-/** 去向按「同一个地方」比较：去首尾空白、压掉多余空格、不分大小写；超长的截断 */
+/** 比这还长的去向不当成「一个地方」：可以扣下来等人批，但记不成规则 */
+export const MAX_RULE_TARGET_CHARS = 200
+/** 存储时的上限：只为防止有人塞进一本书；规则从来不比较这么长的去向 */
+const MAX_STORED_TARGET_CHARS = 2000
+/** 带路径的网址：主机部分（可带协议）+ 从第一个 / 开始的路径 */
+const URL_WITH_PATH = /^((?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@]+\.[^\s/@]+)(\/\S*)$/i
+
+/**
+ * 去向按「同一个地方」比较：去首尾空白、压掉多余空格。邮箱、频道、账号、主机名不分大小写，一律小写；
+ * 网址的路径分大小写（github.com/Acme/Repo 和 github.com/acme/repo 可能是两个地方），原样保留。
+ * 不再截断：截断会让前 200 个字相同的两个去向撞成同一条规则。
+ */
 export function normalizeTarget(value: unknown): string {
-  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 200)
+  const text = String(value ?? '').trim().replace(/\s+/g, ' ')
+  const url = text.match(URL_WITH_PATH)
+  const normalized = url ? `${url[1]!.toLowerCase()}${url[2]!}` : text.toLowerCase()
+  return normalized.slice(0, MAX_STORED_TARGET_CHARS)
 }
 
 export function isRuleDuration(value: unknown): value is RuleDuration {
@@ -116,6 +130,7 @@ const WHOLE_SITE = /^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/?$/
  */
 export function destinationProblem(kind: ApprovalKind, target: string): string | null {
   if (!target) return 'there is no destination'
+  if (target.length > MAX_RULE_TARGET_CHARS) return `the destination is longer than ${MAX_RULE_TARGET_CHARS} characters`
   if (target.includes('*')) return `"${target}" is a wildcard, not one destination`
   if (/[,;|\n]/.test(target) || /\s(and|or|&|\+)\s/.test(target)) return `"${target}" names more than one destination`
   if (EVERYONE.has(target) || /^(all|every|any)\b/.test(target) || /(^|\s)@(everyone|here|channel|all)\b/.test(target)) {

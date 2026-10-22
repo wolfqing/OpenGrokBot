@@ -68,6 +68,8 @@ export type ComputerRoutine = {
   enabled: number
   /** 带密钥的 webhook 路径（以 / 开头）；没有 webhook 就是 null */
   webhook_path?: string | null
+  /** 同一个密钥，单独给 GitHub 当 Secret 用来签名 */
+  webhook_secret?: string | null
   mode?: RoutineMode
 }
 

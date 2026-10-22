@@ -22,7 +22,7 @@ import { appendMemoryRule, listMemoryRules, readMemory, removeMemoryRule } from 
 import type { Pool } from './pool.js'
 import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
-  routineForWebhook, setRoutineEnabled, type RoutineRow,
+  routineForSignature, routineForWebhook, setRoutineEnabled, type RoutineRow,
 } from './routines.js'
 import { screenPagePath } from './screen.js'
 import { saveScreenshot, screenshotFilePath } from './screenshots.js'
@@ -63,6 +63,9 @@ export type GatewayApp = {
 
 type QuestionPayload = { question: string; options: string[]; multi: boolean; status: string; answer?: string[] }
 
+/** 每条 routine 记住最近这么多个投递编号 */
+const MAX_DELIVERIES = 500
+
 /** webhook 带来的东西最多收这么多字给模型看；再大的请求直接拒 */
 const MAX_HOOK_CHARS = 16_000
 const MAX_HOOK_BYTES = 1_000_000
@@ -73,7 +76,13 @@ const BLOCKING: ReadonlySet<TurnOutcome> = new Set(['error', 'budget', 'limit'])
 function describeWebhookBody(raw: string, contentType: string | undefined): string {
   let body = raw.trim()
   if (!body) return '(empty body)'
-  if ((contentType ?? '').includes('json')) {
+  const type = contentType ?? ''
+  // GitHub 选 application/x-www-form-urlencoded 时，真正的 JSON 在 payload= 里
+  if (type.includes('x-www-form-urlencoded')) {
+    const form = new URLSearchParams(body).get('payload')
+    if (form) body = form
+  }
+  if (type.includes('json') || type.includes('x-www-form-urlencoded')) {
     try { body = JSON.stringify(JSON.parse(body), null, 2) } catch { /* 不是合法 JSON 就按原文给 */ }
   }
   return body.length > MAX_HOOK_CHARS ? `${body.slice(0, MAX_HOOK_CHARS)}\n…(truncated, ${body.length} characters in all)` : body
@@ -127,6 +136,16 @@ export function createApp(deps: AppDeps): GatewayApp {
   const turns = createTurnQueue((botId) => publishPresence(botId))
   const rounds = createTurnQueue(() => {})
   const lastOutcome = new Map<string, TurnOutcome>()
+  /** 每条 routine 最近见过的投递编号：重投和重放只算一次 */
+  const deliveries = new Map<number, string[]>()
+  const rememberDelivery = (routineId: number, delivery: string): boolean => {
+    const seen = deliveries.get(routineId) ?? []
+    if (seen.includes(delivery)) return false
+    seen.push(delivery)
+    if (seen.length > MAX_DELIVERIES) seen.shift()
+    deliveries.set(routineId, seen)
+    return true
+  }
   const lastSent = new Map<string, Presence>()
   const routinesInFlight = new Set<number>()
   /** 已落库、还没交给某个回合去回答的用户消息（按线程） */
@@ -485,10 +504,15 @@ export function createApp(deps: AppDeps): GatewayApp {
   }
 
   /** 密钥只以完整地址的形式给操作者的面板（同样要令牌才能拿到），不单独暴露字段 */
+  /**
+   * 密钥只给操作者的面板（同样要令牌才能拿到）：一份拼在地址里给普通调用方，
+   * 一份单独给 GitHub 这类「地址里不放密钥、拿它当 Secret 签名」的发送方。
+   */
   const routineView = ({ webhook_key, ...r }: RoutineRow) => ({
     ...r,
     human: describeRoutine({ cron: r.cron, webhook_key }),
     webhook_path: webhook_key ? `/hooks/routines/${r.id}?key=${webhook_key}` : null,
+    webhook_secret: webhook_key ?? null,
   })
 
   app.get('/api/bots', (c) => c.json(listBotsWithLastMessage(db)))
@@ -581,17 +605,28 @@ export function createApp(deps: AppDeps): GatewayApp {
    * 放在 X-OpenGrokBot-Key 头里，或者 ?key=。密钥错和「没这条」一律 404。
    */
   app.post('/hooks/routines/:id', async (c) => {
+    const id = Number(c.req.param('id'))
+    if (Number(c.req.header('content-length') ?? 0) > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
+    const signature = c.req.header('x-hub-signature-256')
     const key = c.req.header('x-opengrokbot-key') ?? c.req.query('key') ?? ''
-    const routine = routineForWebhook(db, Number(c.req.param('id')), key)
+    // 签名要对着原始字节算，所以先读请求体；带密钥的老路子不需要它也能先挡掉生人
+    const bytes = signature || key ? Buffer.from(await c.req.arrayBuffer().catch(() => new ArrayBuffer(0))) : Buffer.alloc(0)
+    if (bytes.length > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
+    const routine = signature ? routineForSignature(db, id, bytes, signature) : routineForWebhook(db, id, key)
     if (!routine) return c.json({ error: 'unknown webhook' }, 404)
+    // GitHub 建好钩子先发一个 ping：签名对了就回一声，不叫醒任何人
+    const event = c.req.header('x-github-event')
+    if (event === 'ping') return c.json({ ok: true, pong: true })
+    // 同一次投递（GitHub 的重投、或者被人截下来重放）只算一次
+    const delivery = c.req.header('x-github-delivery')
+    if (delivery && !rememberDelivery(routine.id, delivery)) return c.json({ ok: true, duplicate: true })
     if (!routine.enabled) return c.json({ error: 'this routine is paused' }, 409)
     if (routinesInFlight.has(routine.id)) return c.json({ error: 'still running the last call; try again later' }, 409)
-    if (Number(c.req.header('content-length') ?? 0) > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
-    const raw = await c.req.text().catch(() => '')
-    if (raw.length > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
+    const raw = bytes.toString('utf8')
     recordAction(db, {
       botId: routine.bot_id, threadId: `dm:${routine.bot_id}`, trigger: 'webhook', tool: 'webhook', at: now().getTime(),
-      summary: `routine #${routine.id} "${routine.name}" called (${raw.length.toLocaleString('en-US')} characters)`,
+      summary: `routine #${routine.id} "${routine.name}" called${signature ? ` by GitHub${event ? ` (${event})` : ''}` : ''} `
+        + `(${raw.length.toLocaleString('en-US')} characters)`,
     })
     void runRoutine(routine, { payload: describeWebhookBody(raw, c.req.header('content-type')) })
     return c.json({ ok: true }, 202)

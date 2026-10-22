@@ -455,6 +455,7 @@ button.question-option:hover { background: var(--bg-hover); }
   border-radius: 4px; background: transparent; color: var(--text-dim); font: inherit; font-size: 11px; cursor: pointer;
 }
 .panel-copy:hover { background: var(--bg-hover); color: var(--text); }
+.panel-copy-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .panel-rule {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 8px 0; border-bottom: 1px solid var(--border);

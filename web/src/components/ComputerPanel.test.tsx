@@ -122,6 +122,20 @@ describe('ComputerPanel', () => {
     expect(screen.getByText('Copied')).toBeInTheDocument()
   })
 
+  it('copies GitHub settings with the key as the secret and no key in the address', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const hooked = {
+      id: 2, name: 'Triage', cron: '', human: 'when its webhook is called', last_run_at: null, enabled: 1,
+      webhook_path: '/hooks/routines/2?key=k3y', webhook_secret: 'k3y',
+    }
+    render(<ComputerPanel info={{ ...running, routines: [hooked] }} botName="Scout" onClose={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Copy the GitHub webhook settings of Triage' }))
+    expect(writeText).toHaveBeenCalledWith(
+      `Payload URL: ${location.origin}/hooks/routines/2\nContent type: application/json\nSecret: k3y`,
+    )
+  })
+
   it('marks a rule that no longer applies instead of showing it as live', () => {
     const { container } = render(
       <ComputerPanel
