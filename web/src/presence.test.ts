@@ -21,4 +21,8 @@ describe('presence', () => {
     const same = { scout: 'thinking' as const }
     expect(clearDone(same, ['scout'])).toBe(same)
   })
+
+  it('does not mark a teammate done when it finished without saying anything', () => {
+    expect(applyStatus({ scout: 'thinking' }, 'scout', 'idle', false, false)).toEqual({ scout: 'idle' })
+  })
 })

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ComputerInfo, ComputerRoutine, RoutineAction } from '../types'
+import type { ActionEntry, ComputerInfo, ComputerRoutine, RoutineAction } from '../types'
 import { untilLabel } from './ApprovalChip'
 
 const formatCount = (n: number) => n.toLocaleString('en-US')
@@ -51,6 +51,43 @@ function CopyWebhook({ routine }: { routine: ComputerRoutine }) {
   )
 }
 
+/** 谁叫它开始的，用人话 */
+const TRIGGER: Record<string, string> = {
+  you: 'you', group: 'group', handoff: 'handoff', approval: 'after approval', question: 'your answer',
+  routine: 'routine', watch: 'watch', webhook: 'webhook',
+}
+
+function actionTime(ts: number, now = new Date()): string {
+  const at = new Date(ts)
+  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return at.toDateString() === now.toDateString()
+    ? time
+    : `${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
+}
+
+function RecentActions({ actions }: { actions: ActionEntry[] }) {
+  return (
+    <div className="panel-section">
+      <div className="panel-section-title">Recent actions</div>
+      {actions.length === 0 ? (
+        <div className="panel-empty">Nothing yet. Every step it takes is logged here.</div>
+      ) : (
+        <ol className="panel-actions">
+          {actions.map((a) => (
+            <li key={a.id} className={a.ok === false ? 'failed' : undefined}>
+              <span className="panel-action-mark">{a.ok === null ? '·' : a.ok ? '✓' : '✕'}</span>
+              <span className="panel-action-text">
+                <span className="panel-action-tool">{a.tool}</span> {a.summary}
+              </span>
+              <span className="panel-action-meta">{actionTime(a.created_at)} · {TRIGGER[a.trigger] ?? a.trigger}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
 export function ComputerPanel({ info, botName, onClose, ...actions }: {
   /** null = 还在拉起这台电脑 */
   info: ComputerInfo | null
@@ -80,6 +117,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
 } & PanelActions) {
   const rules = info.rules ?? []
   const memory = info.memory ?? []
+  const skills = info.skills ?? []
   return (
     <>
       {info.vncUrl ? (
@@ -104,6 +142,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
                   <span className="panel-routine-name">{r.name}</span>
                   <span className="panel-routine-when">
                     {r.human}
+                    {r.mode === 'watch' ? <span className="panel-routine-tag">watch</span> : null}
                     {paused ? <span className="panel-routine-paused">paused</span> : null}
                   </span>
                   <CopyWebhook routine={r} />
@@ -173,6 +212,22 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
           ))
         )}
       </div>
+
+      {skills.length ? (
+        <div className="panel-section">
+          <div className="panel-section-title">Shared skills</div>
+          {skills.map((s) => (
+            <div className="panel-rule" key={s.name}>
+              <div className="panel-routine-text">
+                <span className="panel-rule-scope">{s.name}</span>
+                {s.description ? <span className="panel-skill-why">{s.description}</span> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {info.actions ? <RecentActions actions={info.actions} /> : null}
 
       {info.usage ? (
         <div className="panel-section">

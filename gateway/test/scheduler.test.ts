@@ -5,7 +5,7 @@ import { createScheduler } from '../src/scheduler.js'
 function routine(id: number, cron = '0 9 * * *'): RoutineRow {
   return {
     id, bot_id: 'market-watch', name: `R${id}`, cron, instructions: 'do it', enabled: 1, created_at: 1, last_run_at: null,
-    webhook_key: null,
+    webhook_key: null, mode: 'act',
   }
 }
 

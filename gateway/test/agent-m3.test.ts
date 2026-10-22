@@ -113,11 +113,13 @@ describe('create_routine', () => {
     ])
     await runTurn({
       db, llm, bot, soul: '', threadId,
-      onCreateRoutine: async (input) => ({ id: 3, name: input.name, cron: input.cron, human: 'every day at 09:00', webhook: false }),
+      onCreateRoutine: async (input) => ({
+        id: 3, name: input.name, cron: input.cron, human: 'every day at 09:00', webhook: false, mode: input.mode,
+      }),
     }, 'run this every day', events)
 
     expect(messages.find((m) => m.kind === 'routine_created')!.payload).toEqual({
-      routineId: 3, name: 'Overnight outbound', cron: '0 9 * * *', human: 'every day at 09:00', webhook: false,
+      routineId: 3, name: 'Overnight outbound', cron: '0 9 * * *', human: 'every day at 09:00', webhook: false, mode: 'act',
     })
     expect(toolResult(llm, 1)).toMatch(/scheduled/i)
   })

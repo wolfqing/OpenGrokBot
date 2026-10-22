@@ -250,6 +250,18 @@ body {
 .approval-remember .approval-buttons { margin-top: 7px; flex-wrap: wrap; }
 .approval-buttons .remember { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); }
 .approval-buttons .remember:hover { background: #fff; }
+.approval-items { margin-top: 9px; }
+.approval-items ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.approval-items li { padding: 3px 0; font-size: 13px; }
+.approval-items label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.approval-items input { accent-color: var(--accent); }
+.approval-items li.left-out { color: var(--text-faint); text-decoration: line-through; }
+.approval-items-more {
+  margin-top: 4px; padding: 0; border: 0; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+.approval-items-more:hover { color: var(--text); }
+.approval-buttons .approve:disabled { opacity: 0.4; cursor: default; }
 .approval-chip.by-rule { border-left-color: var(--green); }
 .approval-chip.by-rule .approval-label { color: var(--green); }
 
@@ -451,6 +463,22 @@ button.question-option:hover { background: var(--bg-hover); }
 .panel-rule-scope { font-family: var(--mono); font-size: 12px; }
 .panel-rule.inert .panel-rule-scope { color: var(--text-faint); text-decoration: line-through; }
 .panel-memory-rule { min-width: 0; color: var(--text); font-size: 13px; line-height: 1.45; }
+.panel-skill-why { color: var(--text-dim); font-size: 12px; line-height: 1.45; }
+.panel-routine-tag {
+  margin-left: 6px; padding: 0 5px; border: 1px solid var(--border-strong); border-radius: 4px;
+  color: var(--blue); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.panel-actions { list-style: none; margin: 8px 0 0; padding: 0; }
+.panel-actions li {
+  display: grid; grid-template-columns: 14px 1fr; column-gap: 6px;
+  padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.panel-actions li:last-child { border-bottom: 0; }
+.panel-action-mark { color: var(--green); }
+.panel-actions li.failed .panel-action-mark { color: var(--red); }
+.panel-action-text { min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.panel-action-tool { font-family: var(--mono); color: var(--text-dim); }
+.panel-action-meta { grid-column: 2; color: var(--text-faint); font-size: 11px; }
 .panel-foot {
   margin-top: auto; padding: 12px 14px; color: var(--text-faint); font-size: 12px;
   border-top: 1px solid var(--border);

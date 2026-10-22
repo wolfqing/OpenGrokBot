@@ -96,4 +96,36 @@ describe('ApprovalChip', () => {
     expect(screen.queryByText(/standing rule covers/)).toBeNull()
     expect(screen.queryByText(/No "Always allow"/)).toBeNull()
   })
+
+  it('lets you untick items in a batch and approves only the rest', async () => {
+    const onDecide = vi.fn()
+    render(<ApprovalChip payload={{ ...pending, kind: 'email', items: ['Globex', 'Initech', 'Hooli'], canRemember: false }} onDecide={onDecide} />)
+    expect(screen.getByText('Needs you · 3 items')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Always allow…' })).toBeNull()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Initech' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve 2 of 3' }))
+    expect(onDecide).toHaveBeenCalledWith(7, 'approve', undefined, [0, 2])
+  })
+
+  it('approves a whole batch without listing it, and will not approve an empty one', async () => {
+    const onDecide = vi.fn()
+    render(<ApprovalChip payload={{ ...pending, items: ['A', 'B'] }} onDecide={onDecide} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Approve all 2' }))
+    expect(onDecide).toHaveBeenCalledWith(7, 'approve')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'A' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'B' }))
+    expect(screen.getByRole('button', { name: 'Approve 0 of 2' })).toBeDisabled()
+  })
+
+  it('folds a long batch and shows what went and what was left out once decided', async () => {
+    const items = Array.from({ length: 9 }, (_, i) => `item ${i + 1}`)
+    const { rerender } = render(<ApprovalChip payload={{ ...pending, items }} onDecide={() => {}} />)
+    expect(screen.queryByText('item 9')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 9' }))
+    expect(screen.getByText('item 9')).toBeInTheDocument()
+    rerender(<ApprovalChip payload={{ ...pending, items: ['A', 'B'], status: 'approved', approvedItems: [1] }} onDecide={() => {}} />)
+    expect(screen.getByText('Approved 1 of 2')).toBeInTheDocument()
+    expect(screen.getByText('A').closest('li')).toHaveClass('left-out')
+    expect(screen.getByText('✓ B')).toBeInTheDocument()
+  })
 })

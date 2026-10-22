@@ -54,7 +54,8 @@ Every line below is implemented and covered by tests — nothing here is a roadm
   that surfaces only what needs you. Same shape from every teammate.
 - **Draft-and-hold approvals.** Anything leaving the workspace stops at the door: the chip shows exactly what
   would go out and where, with Approve / Discard. A bare 👍 in the thread releases the newest one. Decisions are
-  idempotent — a second click gets a 409, not a second send.
+  idempotent — a second click gets a 409, not a second send. When the same action goes to many people, the chip
+  lists every one with a checkbox: untick any, and the teammate does exactly the rest.
 - **Standing approvals, on your terms.** For an email, message or post to one destination, *Always allow…*
   approves it and lets that teammate repeat it without asking — for an hour, a day or until you revoke it from
   the computer panel. Money, bookings and anything unclassified always ask.
@@ -65,10 +66,14 @@ Every line below is implemented and covered by tests — nothing here is a roadm
   rule with a remove button. The file lives outside the bot's computer, so a chip marks every change.
 - **Routines from the conversation.** "Post a digest every day" registers a cron job, shows the schedule in
   plain English, survives restarts, and never runs twice at once. "Whenever a new issue comes in" gives the
-  routine a secret webhook address instead, for GitHub, a form or any script to call. Pause, run or delete them
+  routine a secret webhook address instead, for GitHub, a form or any script to call. "Keep an eye on the status
+  page" makes a watch routine: read-only tools, and silence unless something needs you. Pause, run or delete them
   from the computer panel — or tell the bot to stop one.
+- **Shared skills.** Drop a Markdown playbook into `<data>/skills/` and every teammate sees it and reads it
+  before work it covers. Memory and routines stay with each teammate; skills are shared.
 - **See the work, stop the work.** Every step on its computer — the command, the page, the click — shows live
-  in one card that folds away when the turn ends. A stop button ends the turn.
+  in one card that folds away when the turn ends. A stop button ends the turn. Every action also lands in a log
+  you can read from the computer panel, with what started it.
 - **A budget, if you want one.** `OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; the panel
   shows today's count.
 

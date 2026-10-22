@@ -8,6 +8,23 @@ still change behaviour.
 
 ### Added
 
+- **Watch routines.** "Keep an eye on the status page" creates a routine that only looks: each run gets
+  read-only tools (pages, files, skills, a report, a question, a hold), with no shell, typing, clicking,
+  handoffs or rule changes. A tool it was not given is refused even if the model asks for it. When nothing changed it
+  replies "Nothing new." and the gateway posts nothing. What a watch run holds always waits for you; a
+  standing rule never applies to it.
+- **Batch holds.** When one action goes to many recipients or records, the teammate holds it once with one
+  line per item. The chip lists them with checkboxes; untick any and approve the rest. The teammate is told
+  exactly which items were approved and which were left out, never to add one, and to stop at the first
+  failure. A batch never becomes a standing rule, and a bare 👍 approves all of it.
+- **Shared skills.** Markdown playbooks in `<data>/skills/*.md` are listed, by name and one line, in every
+  teammate's instructions; `read_skill` fetches one when the work calls for it. Only you write them — they live
+  outside every bot's computer. The computer panel lists them.
+- **Action log.** Every tool a teammate calls is recorded with what it acted on, whether it worked, how long it
+  took and what started the turn (you, a routine, a watch, a webhook, an approval, a handoff, the group or your
+  answer to a question), plus your approval decisions and every webhook call. Text typed into a page is never
+  logged, only the field. The computer panel shows the latest 30, `GET /api/bots/:id/actions` serves more, and
+  entries older than 90 days are dropped.
 - **Standing approvals.** An approval chip for an email, message or post to one destination now has
   *Always allow…*: approve it and let that teammate send the same kind of thing to the same destination without
   asking, for 1 hour, 24 hours or until you revoke it. The next matching hold goes straight through, marked
@@ -58,7 +75,10 @@ still change behaviour.
 
 - `hold_for_approval` takes a `kind` (email, message, post, purchase, booking, other) and an exact `target`.
   Holds from older prompts without them count as "other", so they always ask.
-- The database schema moves to v2 on start (approval kinds and targets, a rules table, routine webhook keys).
+- The database schema moves to v2 and then v3 on start (approval kinds and targets, a rules table, routine webhook
+  keys; routine modes, batch items, the action log).
+- A teammate is marked *done* in the sidebar only when it said something while you were elsewhere, so a quiet
+  watch run does not flag it.
 - The live stream's `status` events carry `waiting` and `blocked` as well as `thinking` and `idle`.
 - Node 22 is pinned: `engines` in the manifests and `.nvmrc`, which CI reads.
 - Dependencies bumped within their existing ranges (hono 4.13.13, vite 8.3.5, vitest 4.1.12, playwright-core
