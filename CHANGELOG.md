@@ -6,6 +6,14 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Fixed
+
+- Web tests that failed now and then on a busy machine. The full-page App tests acted in the gap between the first
+  render and the effects that run after it, before the live connection existed or while a "close the panel on a
+  thread switch" effect was still queued; they now wait for both. A render test could also run past the 5-second
+  limit when the CPU was saturated, and its unfinished typing then leaked into the next test; web tests now get 15
+  seconds.
+
 ## [0.3.0] - 2026-10-22
 
 Teammates you can leave work with: scoped standing approvals, presence on the roster, question cards, webhook
