@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, extname, resolve, sep } from 'node:path'
 import type { Hono } from 'hono'
+import type { WSEvents } from 'hono/ws'
 
 /**
  * 屏幕：查看页和 noVNC 库都由网关自己提供（npm 装的那份），只把 websockify 的数据流转发给容器。
@@ -100,4 +101,33 @@ export function mountScreenProxy(app: Hono, deps: { knownBot: (botId: string) =>
       'Cache-Control': 'public, max-age=86400',
     })
   })
+}
+
+/**
+ * 把浏览器里 noVNC 的连接接到容器的 websockify：两头的帧原样转（二进制是 noVNC 的画面和键鼠），
+ * 上游还没连上时先排队；任一头断了另一头也关。hooks 让调用方记下「有人在看这块屏幕」。
+ */
+export function screenRelay(target: string, hooks: { onOpen?: () => void; onClose?: () => void } = {}): WSEvents {
+  let upstream: WebSocket | null = null
+  const queued: (string | ArrayBuffer)[] = []
+  return {
+    onOpen: (_evt, ws) => {
+      hooks.onOpen?.()
+      upstream = new WebSocket(target)
+      upstream.binaryType = 'arraybuffer'
+      upstream.onopen = () => { for (const data of queued.splice(0)) upstream?.send(data) }
+      upstream.onmessage = (ev) => ws.send(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data as ArrayBuffer))
+      upstream.onclose = () => ws.close()
+      upstream.onerror = () => ws.close()
+    },
+    onMessage: (evt) => {
+      const data = evt.data as string | ArrayBuffer
+      if (upstream?.readyState === WebSocket.OPEN) upstream.send(data)
+      else queued.push(data)
+    },
+    onClose: () => {
+      hooks.onClose?.()
+      upstream?.close()
+    },
+  }
 }
