@@ -6,6 +6,10 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- CI runs on actions/checkout v7, actions/setup-node v7 and pnpm/action-setup v6, all on the Node 24 action runtime.
+
 ### Fixed
 
 - Web tests that failed now and then on a busy machine. The full-page App tests acted in the gap between the first
