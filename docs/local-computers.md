@@ -1,7 +1,8 @@
 # Plan: teammates' computers without Docker
 
 > **Status: planned, not built.** Today every teammate's computer is a Docker container. This page is the plan for
-> the next step; details will change as it lands, and the open questions at the end are still open.
+> the next step; details will change as it lands. The two questions it left open were settled on 2026-10-30
+> (see [Decided](#decided)).
 
 The computers stay **on your machine** — no cloud VMs. What changes is what you have to install first. Many people
 will not install Docker Desktop (or Node, pnpm and git) to try a product, so the default experience should need
@@ -14,7 +15,7 @@ and picks one per machine:
 
 | Backend | What you install | Isolation | Runs on |
 |---|---|---|---|
-| **Local** (planned default) | Nothing: an existing Chrome/Edge, or a browser downloaded on first run | Browser: a separate profile per teammate. Commands: an OS sandbox that confines them to the teammate's own folder | macOS (Intel and Apple silicon), Windows, Linux |
+| **Local** (planned default) | Nothing: an existing Chrome/Edge, or a browser downloaded on first run | Browser: a separate profile per teammate. Commands: an OS sandbox that confines them to the teammate's own folder | macOS (Intel and Apple silicon) and Linux first; Windows later |
 | **Apple container** | Apple's signed `container` package (one admin password) | A lightweight VM per teammate | macOS 26 on Apple silicon |
 | **Docker** (today) | Docker Desktop, or Docker on a server | A container per teammate | Anywhere Docker runs |
 
@@ -26,10 +27,10 @@ and picks one per machine:
 - **Watching still works.** The computer panel streams the browser's screen directly.
 - **The browser keeps its own sandbox.** On the host, Chromium runs with its sandbox on (inside containers it
   cannot).
-- **Commands are the trade-off.** Instead of a separate computer, shell commands run in an OS sandbox: Seatbelt on
-  macOS, bubblewrap on Linux — the same primitives developer agents use today. Windows has no equally mature
-  built-in option yet, so there the first version limits teammates to the browser and their files, or asks you
-  before each command.
+- **Commands are off by default.** A local teammate gets a browser and its own folder; most of the work people
+  hand off needs nothing more. You can turn commands on per teammate, and then they run in an OS sandbox that
+  confines them to that teammate's folder: Seatbelt on macOS, bubblewrap on Linux — the same primitives developer
+  agents use today.
 - **No Linux userland.** A local teammate cannot `apt install` tools. Teammates that need that get a sealed
   computer (Apple container or Docker) instead.
 
@@ -45,16 +46,18 @@ The interface gets a Chinese translation. The desktop technology is not decided 
 
 ## Order
 
-1. The computer backend interface and local mode (sandboxed commands on macOS and Linux; browser and files on
-   Windows).
+1. The computer backend interface and local mode on macOS and Linux (browser and files; commands off by default,
+   sandboxed when turned on).
 2. The desktop app, first-run wizard and Chinese UI.
 3. The Apple container backend, for strong isolation without Docker on macOS 26.
 4. Docker stays for servers and anyone who prefers it.
 
-## Open questions
+## Decided
 
-- In local mode, should shell commands be **off by default** (safest and simplest; most teammates mostly need the
-  browser) or **on inside the sandbox**?
-- Does the first version cover **Windows**?
+- **Shell commands are off by default in local mode.** It is the safest and simplest default, and most teammates
+  mostly need the browser. Turning them on is a per-teammate switch, and they still run inside the OS sandbox.
+- **The first version does not cover Windows.** It has no sandbox as mature as Seatbelt or bubblewrap, and
+  half-supporting it would make the default experience worse. Windows comes after macOS and Linux are solid;
+  until then Docker remains the way to run teammates there.
 
 Ideas and objections are welcome in the issues.
