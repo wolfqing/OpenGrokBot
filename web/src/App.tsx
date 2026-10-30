@@ -67,7 +67,8 @@ export default function App() {
   /** 拉消息期间经 WS 到达的更新先记下来，拉回来后叠在快照上，免得被旧快照覆盖掉 */
   const liveDuringFetch = useRef<Map<number, Message> | null>(null)
   const loadMessages = useCallback(async (thread: string) => {
-    liveDuringFetch.current = new Map()
+    const mine = new Map<number, Message>()
+    liveDuringFetch.current = mine
     try {
       const fetched = await fetchMessages(thread)
       const live = liveDuringFetch.current ?? new Map<number, Message>()
@@ -77,7 +78,8 @@ export default function App() {
       for (const m of live.values()) if (!known.has(m.id)) merged.push(m)
       setMessages(merged.sort((a, b) => a.id - b.id))
     } finally {
-      liveDuringFetch.current = null
+      // 只清自己的记账：两次拉取重叠时，晚到的那次不能把正在飞的那次的记账抹掉
+      if (liveDuringFetch.current === mine) liveDuringFetch.current = null
     }
   }, [])
 
@@ -254,7 +256,7 @@ export default function App() {
           onDecide={(approvalId, decision, remember, items) => {
             resolveApproval(approvalId, decision, remember, items).catch(guard)
           }}
-          onAnswer={(messageId, choices) => { answerQuestion(messageId, choices).catch(guard) }}
+          onAnswer={(messageId, choices) => answerQuestion(messageId, choices).catch((err) => { guard(err); throw err })}
           onOpenScreen={openScreen}
           onStop={() => { if (threadId) stopThread(threadId).catch(guard) }}
         />

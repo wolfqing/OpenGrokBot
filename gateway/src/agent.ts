@@ -389,13 +389,27 @@ async function execReadSkill(deps: AgentDeps, args: Record<string, unknown>): Pr
   return sliceForModel(text, args, 'read_skill', 'skill')
 }
 
+/** 动作日志会留 90 天：网址的查询串（里面常有一次性令牌）和命令里的密钥不该跟着留下来 */
+function withoutQuery(url: string): string {
+  const cut = url.search(/[?#]/)
+  return cut === -1 ? url : `${url.slice(0, cut)}${url[cut] === '?' ? '?…' : ''}`
+}
+
+const SECRET_FLAG = /(--?(?:token|password|passwd|pass|secret|api[-_]?key|key|auth)(?:[= ]))(\S+)/gi
+const SECRET_HEADER = /((?:authorization|x-api-key|x-shim-token|cookie)\s*:\s*)([^"'\\]+)/gi
+const USER_PASS = /(\s-u\s+[^\s:]+:)(\S+)/g
+
+function redactCommand(cmd: string): string {
+  return cmd.replace(SECRET_HEADER, '$1…').replace(SECRET_FLAG, '$1…').replace(USER_PASS, '$1…')
+}
+
 function summarize(tool: string, args: Record<string, unknown>): string {
   const pick = (key: string) => String(args[key] ?? '').trim().split('\n')[0]!.slice(0, 120)
   switch (tool) {
-    case 'shell': return pick('cmd')
+    case 'shell': return redactCommand(String(args.cmd ?? '').trim().split('\n')[0]!).slice(0, 120)
     case 'read_file':
     case 'write_file': return pick('path')
-    case 'browser_goto': return pick('url')
+    case 'browser_goto': return withoutQuery(String(args.url ?? '').trim()).slice(0, 120)
     case 'browser_extract': return typeof args.offset === 'number' && args.offset > 0 ? `page text from ${args.offset}` : 'page text'
     case 'browser_click':
     case 'browser_type': return pick('target')

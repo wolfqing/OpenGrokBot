@@ -41,7 +41,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
   onSend: (text: string) => void
   onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration, items?: number[]) => void
   /** 问题卡片上点了选项 */
-  onAnswer?: (messageId: number, choices: string[]) => void
+  onAnswer?: (messageId: number, choices: string[]) => void | Promise<void>
   roster: Record<string, { name: string; emoji: string }>
   onOpenScreen?: () => void
   onStop?: () => void

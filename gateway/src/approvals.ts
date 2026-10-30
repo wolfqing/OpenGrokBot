@@ -133,6 +133,9 @@ export function destinationProblem(kind: ApprovalKind, target: string): string |
   if (target.length > MAX_RULE_TARGET_CHARS) return `the destination is longer than ${MAX_RULE_TARGET_CHARS} characters`
   if (target.includes('*')) return `"${target}" is a wildcard, not one destination`
   if (/[,;|\n]/.test(target) || /\s(and|or|&|\+)\s/.test(target)) return `"${target}" names more than one destination`
+  // 用空格隔开的几个频道、几个账号、几个邮箱，同样是一张名单
+  const handles = target.split(' ').filter((w) => /^[#@]\S+$/.test(w) || EMAIL_ADDRESS.test(w))
+  if (handles.length > 1) return `"${target}" names more than one destination`
   if (EVERYONE.has(target) || /^(all|every|any)\b/.test(target) || /(^|\s)@(everyone|here|channel|all)\b/.test(target)) {
     return `"${target}" means everyone, not one destination`
   }

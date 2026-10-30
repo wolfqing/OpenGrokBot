@@ -73,6 +73,29 @@ const MAX_HOOK_BYTES = 1_000_000
 /** 回合这样收场，这位同事就算「卡住了」，直到下一回合 */
 const BLOCKING: ReadonlySet<TurnOutcome> = new Set(['error', 'budget', 'limit'])
 
+/** 最多读 limit 字节；多一个字节就停下并返回 null，不把超大的请求体整个搬进内存 */
+async function readBodyUpTo(body: ReadableStream<Uint8Array> | null, limit: number): Promise<Buffer | null> {
+  if (!body) return Buffer.alloc(0)
+  const chunks: Uint8Array[] = []
+  let size = 0
+  const reader = body.getReader()
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(value)
+    }
+  } catch {
+    return Buffer.alloc(0)
+  }
+  return Buffer.concat(chunks)
+}
+
 function describeWebhookBody(raw: string, contentType: string | undefined): string {
   let body = raw.trim()
   if (!body) return '(empty body)'
@@ -564,7 +587,10 @@ export function createApp(deps: AppDeps): GatewayApp {
     const rule = typeof body?.rule === 'string' ? body.rule.trim() : ''
     if (!rule) return c.json({ error: 'rule required' }, 400)
     const result = await removeMemoryRule(dataDir, bot.id, rule, { exact: true })
-    if (result.removed === null) return c.json({ error: 'no such rule on file' }, 404)
+    if (result.removed === null) {
+      if (result.reason === 'ambiguous') return c.json({ error: 'several rules read the same; edit MEMORY.md by hand', candidates: result.candidates }, 409)
+      return c.json({ error: 'no such rule on file' }, 404)
+    }
     const threadId = ensureDmThread(db, bot.id)
     const chip = insertMessage(db, {
       threadId, sender: bot.id, kind: 'memory_updated',
@@ -586,7 +612,11 @@ export function createApp(deps: AppDeps): GatewayApp {
       && (question.multi || choices.length === 1)
     if (!valid) return c.json({ error: question.multi ? 'pick one or more of the options' : 'pick exactly one option' }, 400)
 
-    updateMessagePayload(db, message.id, { ...question, status: 'answered', answer: choices })
+    // 和审批一样原子：两次点击同时到，只有把状态从 open 翻过来的那次算数
+    const flipped = db.prepare(
+      `UPDATE messages SET payload = ? WHERE id = ? AND kind = 'question' AND json_extract(payload, '$.status') = 'open'`,
+    ).run(JSON.stringify({ ...question, status: 'answered', answer: choices }), message.id).changes
+    if (!flipped) return c.json({ error: 'already answered' }, 409)
     const updated = getMessage(db, message.id)
     if (updated) hub.broadcast({ type: 'message', threadId: message.thread_id, message: updated })
 
@@ -609,19 +639,25 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (Number(c.req.header('content-length') ?? 0) > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
     const signature = c.req.header('x-hub-signature-256')
     const key = c.req.header('x-opengrokbot-key') ?? c.req.query('key') ?? ''
-    // 签名要对着原始字节算，所以先读请求体；带密钥的老路子不需要它也能先挡掉生人
-    const bytes = signature || key ? Buffer.from(await c.req.arrayBuffer().catch(() => new ArrayBuffer(0))) : Buffer.alloc(0)
-    if (bytes.length > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
+    // 签名要对着原始字节算，所以先读请求体；带密钥的老路子不需要它也能先挡掉生人。
+    // 边读边数：分块传输没有 content-length，不能等读完一整个请求再说它太大
+    const bytes = signature || key ? await readBodyUpTo(c.req.raw.body, MAX_HOOK_BYTES) : Buffer.alloc(0)
+    if (bytes === null) return c.json({ error: 'payload too large' }, 413)
     const routine = signature ? routineForSignature(db, id, bytes, signature) : routineForWebhook(db, id, key)
     if (!routine) return c.json({ error: 'unknown webhook' }, 404)
     // GitHub 建好钩子先发一个 ping：签名对了就回一声，不叫醒任何人
     const event = c.req.header('x-github-event')
     if (event === 'ping') return c.json({ ok: true, pong: true })
-    // 同一次投递（GitHub 的重投、或者被人截下来重放）只算一次
+    // 同一次投递（GitHub 的重投、或者被人截下来重放）只算一次。投递编号和签名都记：签名盖住的是请求体，
+    // 截下来再发一遍、哪怕换个编号头，签名还是同一个。
     const delivery = c.req.header('x-github-delivery')
-    if (delivery && !rememberDelivery(routine.id, delivery)) return c.json({ ok: true, duplicate: true })
+    const marks = [...(delivery ? [`delivery:${delivery}`] : []), ...(signature ? [`sig:${signature.trim().toLowerCase()}`] : [])]
+    const seenBefore = deliveries.get(routine.id) ?? []
+    if (marks.some((m) => seenBefore.includes(m))) return c.json({ ok: true, duplicate: true })
     if (!routine.enabled) return c.json({ error: 'this routine is paused' }, 409)
     if (routinesInFlight.has(routine.id)) return c.json({ error: 'still running the last call; try again later' }, 409)
+    // 只记真正接下来的投递：被 409 挡回去的那次，GitHub 之后重投时还得算数
+    for (const mark of marks) rememberDelivery(routine.id, mark)
     const raw = bytes.toString('utf8')
     recordAction(db, {
       botId: routine.bot_id, threadId: `dm:${routine.bot_id}`, trigger: 'webhook', tool: 'webhook', at: now().getTime(),

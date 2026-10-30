@@ -176,3 +176,29 @@ describe('activity chip', () => {
     expect(history).toContain('shell: ls reports/')
   })
 })
+
+describe('action log hygiene', () => {
+  const logged = async (name: string, args: unknown) => {
+    const { db, threadId, events } = setup()
+    const seen: string[] = []
+    const { llm } = scriptedLLM([toolTurn(name, args), textTurn])
+    await runTurn({
+      db, llm, bot, soul: '', threadId, getComputer: async () => createFakeComputer(),
+      onAction: (a) => { seen.push(a.summary) },
+    }, 'go', events)
+    return seen[0] ?? ''
+  }
+
+  it('keeps query strings and fragments out of logged page addresses', async () => {
+    const summary = await logged('browser_goto', { url: 'https://app.example.com/reset?token=s3cr3t&x=1#frag' })
+    expect(summary).toBe('https://app.example.com/reset?…')
+  })
+
+  it('masks tokens, passwords and bearer headers in logged commands', async () => {
+    const summary = await logged('shell', { cmd: 'curl -H "Authorization: Bearer abc.def.ghi" https://x.test -u bob:hunter2 --token=zzz' })
+    expect(summary).not.toContain('abc.def.ghi')
+    expect(summary).not.toContain('hunter2')
+    expect(summary).not.toContain('zzz')
+    expect(summary).toContain('curl')
+  })
+})

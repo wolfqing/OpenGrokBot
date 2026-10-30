@@ -4,7 +4,7 @@ import type { QuestionPayload } from '../types'
 /** 同事问你一个有几个选项的问题：点一下就答了；多选的勾好再提交；也可以直接在下面打字回。 */
 export function QuestionChip({ payload, onAnswer }: {
   payload: QuestionPayload
-  onAnswer: (choices: string[]) => void
+  onAnswer: (choices: string[]) => void | Promise<void>
 }) {
   const [picked, setPicked] = useState<string[]>([])
   /** 点下去就先按「已答」显示，别让连点发两次；网关那头也会对第二次回 409 */
@@ -12,7 +12,8 @@ export function QuestionChip({ payload, onAnswer }: {
   const open = payload.status === 'open' && !sent
   const answer = (choices: string[]) => {
     setSent(choices)
-    onAnswer(choices)
+    // 没送到（网关拒了、断网）就把卡片放回来，别让人对着一个假的「已答」干等
+    Promise.resolve().then(() => onAnswer(choices)).catch(() => setSent(null))
   }
   const toggle = (option: string) =>
     setPicked((p) => (p.includes(option) ? p.filter((x) => x !== option) : [...p, option]))

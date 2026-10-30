@@ -194,7 +194,12 @@ describe('question cards', () => {
 
     expect((await send(app, 'POST', `/api/questions/${card.id}`, { choices: ['Globex', 'Initech'] })).status).toBe(400)
     expect((await send(app, 'POST', `/api/questions/${card.id}`, { choices: ['Hooli'] })).status).toBe(400)
-    expect((await send(app, 'POST', `/api/questions/${card.id}`, { choices: ['Initech'] })).status).toBe(202)
+    // 两次点击几乎同时到达：只能有一次算数，同事也只续跑一回
+    const [first, second] = await Promise.all([
+      send(app, 'POST', `/api/questions/${card.id}`, { choices: ['Initech'] }),
+      send(app, 'POST', `/api/questions/${card.id}`, { choices: ['Globex'] }),
+    ])
+    expect([first.status, second.status].sort()).toEqual([202, 409])
     expect((await send(app, 'POST', `/api/questions/${card.id}`, { choices: ['Globex'] })).status).toBe(409)
     expect(getMessage(db, card.id)!.payload).toMatchObject({ status: 'answered', answer: ['Initech'] })
     await vi.waitFor(() => expect(lastReply(db)).toBe('Going with it.'))

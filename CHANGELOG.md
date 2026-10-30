@@ -6,12 +6,31 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Security
+
+- A webhook delivery refused because the last run was still going is no longer remembered as "seen", so
+  GitHub's redelivery of it runs instead of being dropped as a duplicate.
+- A captured signed webhook request can no longer be replayed under a different (or no) delivery id: the
+  signature itself is remembered per routine.
+- Oversized webhook bodies are refused as they arrive instead of being buffered first, so a caller with a bad key
+  cannot make the gateway allocate the whole request.
+- A space-separated list of channels, handles or email addresses ("#ops #dev", "bob@acme.com alice@acme.com")
+  is treated as a list and never gets *Always allow*, as the changelog already promised.
+- The action log keeps query strings and fragments out of page addresses, and masks tokens, passwords and
+  authorization headers in logged commands.
+
 ### Changed
 
 - CI runs on actions/checkout v7, actions/setup-node v7 and pnpm/action-setup v6, all on the Node 24 action runtime.
 
 ### Fixed
 
+- A standing rule that differed only by case or trailing punctuation could be saved twice and then removed by
+  neither route; saving now dedupes the way removal compares, and the panel reports an ambiguous match as such.
+- Answering a question card twice at the same moment started two turns; the second now gets `409`.
+- Web: a reply that arrived while two thread loads overlapped (switching away and straight back) could vanish
+  until the next reconnect; a question card whose answer the gateway refused stayed on "Answered"; two timing-
+  dependent tests.
 - Web tests that failed now and then on a busy machine. The full-page App tests acted in the gap between the first
   render and the effects that run after it, before the live connection existed or while a "close the panel on a
   thread switch" effect was still queued; they now wait for both. A render test could also run past the 5-second

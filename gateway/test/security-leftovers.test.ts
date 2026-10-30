@@ -72,6 +72,66 @@ describe('GitHub webhook signatures', () => {
     expect(replies(db)).toHaveLength(1)
   })
 
+  it('lets GitHub redeliver an event that was refused because the last call was still running', async () => {
+    const db = openDb(':memory:')
+    upsertBot(db, scout)
+    ensureDmThread(db, scout.id)
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    let calls = 0
+    const llm: LLM = { async chat() { calls++; if (calls === 1) await gate; return text('Triaged.') } }
+    const { app } = createApp({ db, llm, dataDir: mkdtempSync(join(tmpdir(), 'ogb-sec-')), chiefId: 'chief', token: 'gateway-token' })
+    const r = createRoutine(db, { botId: 'researcher', name: 'Triage', cron: '', instructions: 'x', webhook: true })
+    const post = (b: string, delivery: string) => app.request(`/hooks/routines/${r.id}`, {
+      method: 'POST', body: b,
+      headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': sign(r.webhook_key!, b), 'X-GitHub-Event': 'issues', 'X-GitHub-Delivery': delivery },
+    })
+    expect((await post('{"n":1}', 'd-1')).status).toBe(202)
+    await vi.waitFor(() => expect(calls).toBe(1))
+    expect((await post('{"n":2}', 'd-2')).status).toBe(409) // 上一次还在跑
+    release()
+    await vi.waitFor(() => expect(replies(db)).toHaveLength(1))
+    // GitHub 的「Redeliver」带着同一个投递编号再来：这次必须跑，不能被当成重复
+    expect((await post('{"n":2}', 'd-2')).status).toBe(202)
+    await vi.waitFor(() => expect(replies(db)).toHaveLength(2))
+  })
+
+  it('does not run a captured signed delivery again when the replay drops the delivery id', async () => {
+    const { db, hook } = setup()
+    const r = createRoutine(db, { botId: 'researcher', name: 'Triage', cron: '', instructions: 'x', webhook: true })
+    const headers = { 'X-Hub-Signature-256': sign(r.webhook_key!, body), 'X-GitHub-Event': 'issues' }
+    expect((await hook(r.id, body, headers)).status).toBe(202)
+    await vi.waitFor(() => expect(replies(db)).toHaveLength(1))
+    expect(await (await hook(r.id, body, headers)).json()).toEqual({ ok: true, duplicate: true })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(replies(db)).toHaveLength(1)
+  })
+
+  it('does not run a captured signed delivery again even under a fresh delivery id', async () => {
+    const { db, hook } = setup()
+    const r = createRoutine(db, { botId: 'researcher', name: 'Triage', cron: '', instructions: 'x', webhook: true })
+    const signed = { 'X-Hub-Signature-256': sign(r.webhook_key!, body), 'X-GitHub-Event': 'issues' }
+    expect((await hook(r.id, body, { ...signed, 'X-GitHub-Delivery': 'd-1' })).status).toBe(202)
+    await vi.waitFor(() => expect(replies(db)).toHaveLength(1))
+    expect(await (await hook(r.id, body, { ...signed, 'X-GitHub-Delivery': 'forged-2' })).json()).toEqual({ ok: true, duplicate: true })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(replies(db)).toHaveLength(1)
+  })
+
+  it('refuses an oversized body without buffering it, even with no content-length', async () => {
+    const { db, app } = setup()
+    const r = createRoutine(db, { botId: 'researcher', name: 'Triage', cron: '', instructions: 'x', webhook: true })
+    const chunk = new Uint8Array(256 * 1024)
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { for (let i = 0; i < 8; i++) controller.enqueue(chunk); controller.close() }, // 2 MB
+    })
+    const res = await app.request(`/hooks/routines/${r.id}`, {
+      method: 'POST', body: stream, duplex: 'half',
+      headers: { 'Content-Type': 'application/json', 'x-opengrokbot-key': 'not-even-right' },
+    } as RequestInit)
+    expect(res.status).toBe(413)
+  })
+
   it('reads GitHub\'s form-encoded deliveries', async () => {
     const { db, hook, seen } = setup()
     const r = createRoutine(db, { botId: 'researcher', name: 'Triage', cron: '', instructions: 'x', webhook: true })
@@ -116,6 +176,19 @@ describe('webhook payload fence', () => {
   it('ties the markers to the payload, so a different payload gets different markers', () => {
     expect(fenceOutsideData('a').close).not.toBe(fenceOutsideData('b').close)
     expect(fenceOutsideData('a')).toEqual(fenceOutsideData('a'))
+  })
+})
+
+describe('destinations that are really lists', () => {
+  it('never lets a space-separated list of channels, handles or addresses become a rule', () => {
+    for (const [kind, target] of [
+      ['message', '#general #random'], ['post', '@alice @bob'], ['message', '#ops #dev #qa'],
+      ['message', 'bob@acme.com alice@acme.com'], ['email', 'bob@acme.com alice@acme.com'],
+    ] as const) {
+      expect(destinationProblem(kind, normalizeTarget(target)), target).toMatch(/more than one destination/)
+    }
+    expect(destinationProblem('message', normalizeTarget('#general'))).toBeNull()
+    expect(destinationProblem('post', normalizeTarget('@acme'))).toBeNull()
   })
 })
 

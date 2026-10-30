@@ -36,4 +36,12 @@ describe('QuestionChip', () => {
     rerender(<QuestionChip payload={{ ...open, status: 'skipped' }} onAnswer={() => {}} />)
     expect(screen.getByText('Answered in chat')).toBeInTheDocument()
   })
+
+  it('reopens the card when the answer could not be delivered', async () => {
+    const onAnswer = vi.fn(async () => { throw new Error('gateway 400') })
+    render(<QuestionChip payload={{ question: 'Which?', options: ['A', 'B'], multi: false, status: 'open' }} onAnswer={onAnswer} />)
+    await userEvent.click(screen.getByRole('button', { name: 'A' }))
+    expect(await screen.findByRole('button', { name: 'A' })).toBeInTheDocument()
+    expect(screen.queryByText('Answered')).toBeNull()
+  })
 })

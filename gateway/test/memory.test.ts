@@ -62,6 +62,15 @@ describe('appendMemoryRule', () => {
       .toBe('# MEMORY\n\n- quiet-account sends wait for your read\n')
   })
 
+  it('treats case and trailing punctuation variants as the same rule, so one can always be removed again', async () => {
+    const dir = newDir()
+    await appendMemoryRule(dir, 'inbox-keeper', 'Never email Acme.')
+    const again = await appendMemoryRule(dir, 'inbox-keeper', 'never email acme')
+    expect(again).toEqual({ rule: 'never email acme', diff: '', total: 1 })
+    const gone = await removeMemoryRule(dir, 'inbox-keeper', 'never email acme', { exact: true })
+    expect(gone).toMatchObject({ removed: 'Never email Acme.' })
+  })
+
   it('appends further rules and counts them', async () => {
     const dir = newDir()
     await appendMemoryRule(dir, 'inbox-keeper', 'first rule')

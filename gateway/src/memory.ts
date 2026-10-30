@@ -61,7 +61,8 @@ export async function appendMemoryRule(
   const path = memoryPath(dataDir, botId)
   const existing = await readMemory(dataDir, botId)
   const rules = rulesIn(existing)
-  if (rules.includes(clean)) return { rule: clean, diff: '', total: rules.length }
+  // 判重和删除用同一把尺子（不计大小写、句末标点）：否则存进两条「一样」的，之后哪条都删不掉
+  if (rules.some((r) => comparable(r) === comparable(clean))) return { rule: clean, diff: '', total: rules.length }
 
   const body = existing.trim() ? `${existing.replace(/\n+$/, '')}\n- ${clean}\n` : `${HEADING}\n\n- ${clean}\n`
   await mkdir(dirname(path), { recursive: true })

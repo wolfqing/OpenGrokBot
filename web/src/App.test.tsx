@@ -133,8 +133,8 @@ describe('App', () => {
       })
     })
     await act(async () => { release!([]) })
-    // 侧栏预览里也有这句话，所以只看线程本身
-    expect(document.querySelector('.thread-scroll')!.textContent).toContain('arrived mid-fetch')
+    // 侧栏预览里也有这句话，所以只看线程本身；合并发生在 fetch 的 then 里，要等它落到 DOM
+    await waitFor(() => expect(document.querySelector('.thread-scroll')!.textContent).toContain('arrived mid-fetch'))
   })
 
   it('opens the computer panel at once and fills it in when the computer is up', async () => {
@@ -146,7 +146,7 @@ describe('App', () => {
     render(<App />)
     await ready()
     await act(async () => { screen.getByRole('button', { name: 'Open its computer' }).click() })
-    expect(screen.getByRole('status')).toHaveTextContent("Starting Scout's computer…")
+    expect(await screen.findByRole('status')).toHaveTextContent("Starting Scout's computer…")
     await act(async () => { wake() })
     expect(await screen.findByText('Docker is not running.')).toBeInTheDocument()
     expect(screen.queryByRole('status')).toBeNull()
@@ -181,5 +181,30 @@ describe('App', () => {
     expect(await screen.findByText("Scout's computer")).toBeInTheDocument()
     await act(async () => { screen.getByText('Chief').click() })
     await waitFor(() => expect(document.querySelector('.computer-panel')).toBeNull())
+  })
+
+  it('keeps a live reply that lands while two thread loads overlap', async () => {
+    const gates: Record<string, (rows: unknown) => void> = {}
+    let slow = false
+    mockGateway({
+      conversations: [conversation({}), conversation({ id: 'dm:chief', title: 'Chief', members: ['chief'] })],
+      messages: (url) => (slow ? new Promise((r) => { gates[decodeURIComponent(url)] = r }) : []),
+    })
+    render(<App />)
+    await screen.findAllByText('Scout')
+    slow = true
+    await act(async () => { screen.getByText('Chief').click() }) // load(chief) 在飞
+    await act(async () => { screen.getAllByText('Scout')[0]!.click() }) // 马上切回：load(scout) 在飞
+    await waitFor(() => expect(gates['/api/threads/dm:chief/messages']).toBeTypeOf('function'))
+    await waitFor(() => expect(gates['/api/threads/dm:researcher/messages']).toBeTypeOf('function'))
+    await act(async () => { gates['/api/threads/dm:chief/messages']!([]) }) // 晚到的 chief 结果被丢掉，但不能把 scout 的记账清掉
+    await act(async () => {
+      FakeSocket.last!.emit({
+        type: 'message', threadId: 'dm:researcher',
+        message: { id: 9, thread_id: 'dm:researcher', sender: 'researcher', kind: 'text', content: 'final reply', payload: null, created_at: 9 },
+      })
+    })
+    await act(async () => { gates['/api/threads/dm:researcher/messages']!([]) })
+    await waitFor(() => expect(document.querySelector('.thread-scroll')!.textContent).toContain('final reply'))
   })
 })
