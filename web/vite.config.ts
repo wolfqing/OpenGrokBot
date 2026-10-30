@@ -19,5 +19,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test-setup.ts',
+    // jsdom 渲染吃 CPU：机器被别的进程占满时，一个本该几毫秒的渲染测试也跑过 5 秒。
+    // 放宽的只是时间上限，断言错了照样立刻失败
+    testTimeout: 15_000,
   },
 })

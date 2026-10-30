@@ -44,6 +44,18 @@ function mockGateway(opts: {
   return calls
 }
 
+/**
+ * 首屏画出来了还不算准备好：连 WebSocket、换线程时收面板，都是 React 在渲染之后才跑的 effect。
+ * 机器一忙，测试就会在「画出来了」和「effect 跑完了」之间的空当里动手：socket 还是 null，
+ * 或者刚打开的面板被一个迟到的「换线程就收面板」关掉。等 socket 建好、把排着的 effect 冲掉，再开始操作。
+ */
+async function ready(): Promise<FakeSocket> {
+  await screen.findAllByText('Scout')
+  await waitFor(() => expect(FakeSocket.last).not.toBeNull())
+  await act(async () => {})
+  return FakeSocket.last!
+}
+
 beforeEach(() => {
   FakeSocket.last = null
   vi.stubGlobal('WebSocket', FakeSocket)
@@ -72,9 +84,9 @@ describe('App', () => {
   it('catches up after the live connection comes back', async () => {
     const calls = mockGateway()
     render(<App />)
-    await screen.findAllByText('Scout')
+    const socket = await ready()
     const before = calls.filter((u) => u === '/api/conversations').length
-    await act(async () => { FakeSocket.last!.emit({ type: 'hello', statuses: { researcher: 'thinking' } }) })
+    await act(async () => { socket.emit({ type: 'hello', statuses: { researcher: 'thinking' } }) })
     await waitFor(() => expect(calls.filter((u) => u === '/api/conversations').length).toBe(before + 1))
     expect(screen.getByText(/Scout …/)).toBeInTheDocument()
   })
@@ -82,15 +94,15 @@ describe('App', () => {
   it('keeps the newest line as the sidebar preview when an older card updates in place', async () => {
     mockGateway()
     render(<App />)
-    await screen.findAllByText('Scout')
+    const socket = await ready()
     const at = (id: number, kind: string, content: string, payload: unknown = null) => ({
       type: 'message', threadId: 'dm:researcher',
       message: { id, thread_id: 'dm:researcher', sender: 'researcher', kind, content, payload, created_at: id },
     })
     await act(async () => {
-      FakeSocket.last!.emit(at(3, 'activity', '', { done: false, steps: [{ tool: 'shell', summary: 'ls' }] }))
-      FakeSocket.last!.emit(at(4, 'text', 'All filed.'))
-      FakeSocket.last!.emit(at(3, 'activity', '', { done: true, steps: [{ tool: 'shell', summary: 'ls', ok: true }] }))
+      socket.emit(at(3, 'activity', '', { done: false, steps: [{ tool: 'shell', summary: 'ls' }] }))
+      socket.emit(at(4, 'text', 'All filed.'))
+      socket.emit(at(3, 'activity', '', { done: true, steps: [{ tool: 'shell', summary: 'ls', ok: true }] }))
     })
     expect(screen.getAllByText('All filed.').length).toBeGreaterThan(0)
     expect(document.querySelector('.sidebar-preview')!.textContent).toBe('All filed.')
@@ -110,12 +122,12 @@ describe('App', () => {
       messages: () => (slow ? new Promise((r) => { release = r }) : []),
     })
     render(<App />)
-    await screen.findAllByText('Scout')
+    const socket = await ready()
     slow = true
-    await act(async () => { FakeSocket.last!.emit({ type: 'hello', statuses: {} }) })
+    await act(async () => { socket.emit({ type: 'hello', statuses: {} }) })
     await waitFor(() => expect(release).toBeTypeOf('function')) // 补拉的请求已经发出、还没回来
     await act(async () => {
-      FakeSocket.last!.emit({
+      socket.emit({
         type: 'message', threadId: 'dm:researcher',
         message: { id: 9, thread_id: 'dm:researcher', sender: 'researcher', kind: 'text', content: 'arrived mid-fetch', payload: null, created_at: 9 },
       })
@@ -132,7 +144,7 @@ describe('App', () => {
       computer: { botId: 'researcher', running: false, vncUrl: null, routines: [], error: 'Docker is not running.' },
     })
     render(<App />)
-    await screen.findAllByText('Scout')
+    await ready()
     await act(async () => { screen.getByRole('button', { name: 'Open its computer' }).click() })
     expect(screen.getByRole('status')).toHaveTextContent("Starting Scout's computer…")
     await act(async () => { wake() })
@@ -148,7 +160,7 @@ describe('App', () => {
       computer: { botId: 'researcher', running: false, vncUrl: null, routines: [], error: 'late answer' },
     })
     render(<App />)
-    await screen.findAllByText('Scout')
+    await ready()
     await act(async () => { screen.getByRole('button', { name: 'Open its computer' }).click() })
     expect(document.querySelector('.computer-panel')).not.toBeNull()
     await act(async () => { screen.getByText('Chief').click() })
@@ -164,7 +176,7 @@ describe('App', () => {
       computer: { botId: 'researcher', running: false, vncUrl: null, routines: [], error: 'Docker is not running.' },
     })
     render(<App />)
-    await screen.findAllByText('Scout')
+    await ready()
     await act(async () => { screen.getByRole('button', { name: 'Open its computer' }).click() })
     expect(await screen.findByText("Scout's computer")).toBeInTheDocument()
     await act(async () => { screen.getByText('Chief').click() })
