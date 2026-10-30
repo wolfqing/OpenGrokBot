@@ -6,6 +6,17 @@ still change behaviour.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+Teammates' computers without Docker: on macOS and Linux each teammate can get a browser and a folder of its
+own on your machine, with commands off by default and sandboxed when on — plus `@hono/node-server` 2 to clear a
+security advisory, WebSockets on its built-in support, and croner 11.
+
+### Security
+
+- The gateway runs on `@hono/node-server` 2.1.5, which clears GHSA-rmxm-3fg6-px4f (`serveStatic` decoding a
+  path twice). The gateway never used `serveStatic`, so it was not exploitable here, but no 1.x release fixes it.
+
 ### Added
 
 - **Local computers — no Docker needed.** When Docker is not running (or `OPENGROKBOT_COMPUTERS=local`), each
@@ -21,11 +32,6 @@ still change behaviour.
   Off, the shell tool is not even offered to the model.
 - `pnpm --filter @opengrokbot/gateway run smoke:local` exercises a local computer against a real browser and the
   real sandbox.
-
-### Security
-
-- The gateway runs on `@hono/node-server` 2.1.5, which clears GHSA-rmxm-3fg6-px4f (`serveStatic` decoding a
-  path twice). The gateway never used `serveStatic`, so it was not exploitable here, but no 1.x release fixes it.
 
 ### Changed
 
@@ -260,7 +266,8 @@ A self-hosted Grok Bot alternative assembled from OpenClaw: three preconfigured 
 Ticker) with strict boundaries, agent-to-agent handoffs, any model provider, a one-command setup that never
 overwrites an existing OpenClaw config, a Docker/VPS path and an honest comparison with Grok Bot.
 
-[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.0...v0.2.1
