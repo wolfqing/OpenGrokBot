@@ -6,8 +6,8 @@ import { WebSocketServer } from 'ws'
 import { parseA2AAllow } from './a2a.js'
 import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
+import { chooseBackend, createDockerBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
-import { runningBotIds, stopBotContainer } from './containers.js'
 import { openDb } from './db.js'
 import { createLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
@@ -35,12 +35,18 @@ seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
 if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
 const llm = createLLM(config)
+// 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（本机后端随 M6 的 B 片接进来）
 const docker = new Docker()
-const pool = createPool({
-  dataDir: config.dataDir,
-  docker,
-  containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
+const { backend, reason: backendReason } = await chooseBackend(config.computers, {
+  docker: () => createDockerBackend(docker, {
+    dataDir: config.dataDir,
+    containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
+  }),
+  local: () => null,
+  dockerReachable: () => dockerReachable(docker),
 })
+console.log(`[gateway] bot computers: ${backend.kind} (${backendReason})`)
+const pool = createPool({ dataDir: config.dataDir, backend })
 // 令牌放在数据目录（0600），不在任何 bot 的 workspace 里：容器里的 bot 拿不到它
 const token = loadOrCreateToken(config.dataDir, config.token)
 
@@ -141,9 +147,9 @@ if (config.idleStopMinutes > 0) {
     reapIdleComputers({
       pool,
       idleMs: config.idleStopMinutes * 60_000,
-      runningBots: () => runningBotIds(docker, config.dataDir),
+      runningBots: () => backend.running(),
       isBusy: (botId) => gateway.isBusy(botId) || viewers.watching(botId),
-      stop: (botId) => stopBotContainer(docker, botId),
+      stop: (botId) => backend.stop(botId),
       now: Date.now(),
       startedAt,
     })

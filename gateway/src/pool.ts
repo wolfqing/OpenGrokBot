@@ -1,9 +1,5 @@
-import { mkdir } from 'node:fs/promises'
-import type Docker from 'dockerode'
+import type { ComputerBackend } from './backend.js'
 import type { BotComputer } from './computer.js'
-import { createDockerComputer } from './computer-docker.js'
-import { ensureContainer, type ContainerOptions } from './containers.js'
-import { workspaceDir } from './screenshots.js'
 
 export type Pool = {
   get(botId: string): Promise<BotComputer>
@@ -18,9 +14,9 @@ export type Pool = {
 
 export function createPool(opts: {
   dataDir: string
-  docker?: Docker
+  /** 电脑是什么做的（容器 / 本机）；测试里直接给 makeComputer */
+  backend?: ComputerBackend
   makeComputer?: (botId: string) => Promise<BotComputer>
-  containerOptions?: ContainerOptions
   now?: () => number
 }): Pool {
   const live = new Map<string, Promise<BotComputer>>()
@@ -29,10 +25,8 @@ export function createPool(opts: {
   const now = opts.now ?? Date.now
 
   const makeComputer = opts.makeComputer ?? (async (botId: string) => {
-    if (!opts.docker) throw new Error('no docker client configured; bot computers are unavailable')
-    const dir = workspaceDir(opts.dataDir, botId)
-    await mkdir(dir, { recursive: true })
-    return createDockerComputer(await ensureContainer(opts.docker, botId, dir, opts.containerOptions))
+    if (!opts.backend) throw new Error('no computer backend configured; bot computers are unavailable')
+    return opts.backend.make(botId)
   })
 
   /** 容器重启后端口会重新映射，缓存的连接就全指向旧端口——先探一下活。 */
