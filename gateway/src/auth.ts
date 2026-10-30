@@ -47,7 +47,7 @@ function sameHost(a: URL, b: URL): boolean {
   return loopback(a.hostname) === loopback(b.hostname) && a.port === b.port
 }
 
-/** 网关自己的地址以 Host 头为准：@hono/node-ws 给升级请求拼的 URL 不带端口 */
+/** 网关自己的地址以 Host 头为准：WebSocket 升级请求拼出来的 URL 未必带端口 */
 function selfUrl(c: Context): URL {
   const host = c.req.header('host')
   return host ? new URL(`http://${host}`) : new URL(c.req.url)

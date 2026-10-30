@@ -6,8 +6,16 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Security
+
+- The gateway runs on `@hono/node-server` 2.1.5, which clears GHSA-rmxm-3fg6-px4f (`serveStatic` decoding a
+  path twice). The gateway never used `serveStatic`, so it was not exploitable here, but no 1.x release fixes it.
+
 ### Changed
 
+- WebSockets — the live stream and each bot's screen — use node-server's built-in support instead of
+  `@hono/node-ws`, which only declares support for node-server 1.x. Upgrades still pass the gateway's token and
+  origin checks first, and screen frames are relayed byte for byte as before.
 - Routines are scheduled with croner 11. Around daylight-saving changes this follows cron's usual behaviour: a
   routine set for a time that the clocks skip runs at the first valid time after the jump, and one that repeats
   through the day keeps running through the repeated hour.

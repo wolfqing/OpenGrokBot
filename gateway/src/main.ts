@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { serve } from '@hono/node-server'
-import { createNodeWebSocket } from '@hono/node-ws'
+import { serve, upgradeWebSocket } from '@hono/node-server'
 import Docker from 'dockerode'
+import { WebSocketServer } from 'ws'
 import { parseA2AAllow } from './a2a.js'
 import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
@@ -13,7 +13,7 @@ import { createLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
-import { createScreenViewers, mountScreenProxy } from './screen.js'
+import { createScreenViewers, mountScreenProxy, screenRelay } from './screen.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
@@ -87,7 +87,7 @@ const pruneOldActions = () => {
 pruneOldActions()
 setInterval(pruneOldActions, 24 * 60 * 60_000).unref()
 
-const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
+// WebSocket 用 node-server 自带的支持：升级请求照样先过 app（令牌、来源检查都在），二进制帧交成 ArrayBuffer
 app.get('/ws', upgradeWebSocket(() => ({
   onOpen: (_evt, ws) => {
     hub.add(ws)
@@ -104,36 +104,22 @@ app.get('/vnc/:botId/websockify', upgradeWebSocket(async (c) => {
   if (!knownBot(botId)) throw new Error(`unknown bot ${botId}`)
   const screen = (await pool.get(botId)).screen
   if (!screen) throw new Error(`${botId} has no screen`)
-  const target = `${screen.base.replace(/^http/, 'ws')}/websockify`
-  let upstream: WebSocket | null = null
-  const queued: (string | ArrayBuffer)[] = []
-  return {
-    onOpen: (_evt, ws) => {
-      viewers.open(botId)
-      upstream = new WebSocket(target)
-      upstream.binaryType = 'arraybuffer'
-      upstream.onopen = () => { for (const data of queued.splice(0)) upstream?.send(data) }
-      upstream.onmessage = (ev) => ws.send(typeof ev.data === 'string' ? ev.data : new Uint8Array(ev.data as ArrayBuffer))
-      upstream.onclose = () => ws.close()
-      upstream.onerror = () => ws.close()
-    },
-    onMessage: (evt) => {
-      const data = evt.data as string | ArrayBuffer
-      if (upstream?.readyState === WebSocket.OPEN) upstream.send(data)
-      else queued.push(data)
-    },
-    onClose: () => {
-      viewers.close(botId)
-      upstream?.close()
-    },
-  }
+  return screenRelay(`${screen.base.replace(/^http/, 'ws')}/websockify`, {
+    onOpen: () => viewers.open(botId),
+    onClose: () => viewers.close(botId),
+  })
 }))
 mountScreenProxy(app, { knownBot })
 
 // pnpm build 之后网关直接托管前端：一个端口、一个进程；dev 下前端走 Vite（5173）
 const servingWeb = serveWeb(app, config.webDist)
 
-const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
+serve({
+  fetch: app.fetch,
+  port: config.port,
+  hostname: config.host,
+  websocket: { server: new WebSocketServer({ noServer: true }) },
+}, (info) => {
   const base = config.webUrl || `http://localhost:${info.port}`
   console.log(
     `[gateway] listening on ${config.host}:${info.port} · model=${config.model}` +
@@ -147,7 +133,6 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: config.hos
     console.log(`[gateway] sign in → ${base}/auth?token=${token}`)
   }
 })
-injectWebSocket(server)
 
 // 空闲的电脑停机省内存；登录态和文件都在 workspace 里，下次用时原样拉起
 if (config.idleStopMinutes > 0) {
