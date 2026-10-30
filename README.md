@@ -144,7 +144,7 @@ pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/alwa
 Every other setting — listen address, idle stop, per-computer limits, timeouts — is in
 [docs/always-on.md](docs/always-on.md#configuration).
 
-In a slow-network region, build with a mirror: `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`
+In a slow-network region, build with a mirror: `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …` (or `mirrors.huaweicloud.com`, `mirrors.tuna.tsinghua.edu.cn`)
 
 ## Security is the point, not a footnote
 

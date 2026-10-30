@@ -21,6 +21,8 @@ still change behaviour.
 
 ### Changed
 
+- The bot image build gives apt 300 seconds per download and ten retries instead of the defaults, so
+  fetching Chromium over a slow mirror no longer fails the build.
 - CI runs on actions/checkout v7, actions/setup-node v7 and pnpm/action-setup v6, all on the Node 24 action runtime.
 
 ### Fixed

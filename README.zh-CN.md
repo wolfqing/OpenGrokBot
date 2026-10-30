@@ -134,7 +134,7 @@ OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 [docs/always-on.md](docs/always-on.md#configuration)。
 
 国内网络建议挂镜像源构建：`docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`（某个源不稳就换
-`mirrors.tuna.tsinghua.edu.cn`；apt 会自动重试）。
+`mirrors.huaweicloud.com` 或 `mirrors.tuna.tsinghua.edu.cn`；apt 会自动重试，单个包最多等 5 分钟）。
 
 ## 安全不是脚注，是全部理由
 
