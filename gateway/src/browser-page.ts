@@ -78,14 +78,15 @@ function missing(what: string): never {
  */
 export type BrowserSession = {
   page(): Promise<PageLike>
-  /** 现在手里有活着的连接吗（不会去开新的） */
-  connected(): boolean
+  /** idle = 还没开过；open = 连着；gone = 开过但浏览器没了（下次 page() 会重开）。不会去开新的。 */
+  state(): 'idle' | 'open' | 'gone'
   dispose(): Promise<void>
 }
 
 export function createBrowserSession(open: () => Promise<BrowserLike>): BrowserSession {
   let browser: BrowserLike | null = null
   let pending: Promise<BrowserLike> | null = null
+  let everOpened = false
 
   function dropIfGone(): void {
     if (browser?.isConnected && !browser.isConnected()) {
@@ -103,6 +104,7 @@ export function createBrowserSession(open: () => Promise<BrowserLike>): BrowserS
           throw err
         })
         browser = await pending
+        everOpened = true
       }
       const context = browser.contexts()[0]
       if (!context) throw new Error('bot browser has no context')
@@ -110,14 +112,15 @@ export function createBrowserSession(open: () => Promise<BrowserLike>): BrowserS
       const pages = context.pages()
       return pages[pages.length - 1] ?? (await context.newPage())
     },
-    connected() {
+    state() {
       dropIfGone()
-      return browser !== null
+      return browser ? 'open' : everOpened ? 'gone' : 'idle'
     },
     async dispose() {
       const b = browser
       browser = null
       pending = null
+      everOpened = false
       await b?.close().catch(() => {}) // 断开失败不该拖垮调用方
     },
   }

@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws'
 import { parseA2AAllow } from './a2a.js'
 import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
-import { chooseBackend, createDockerBackend, dockerReachable } from './backend.js'
+import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
 import { openDb } from './db.js'
 import { createLLM } from './llm.js'
@@ -35,14 +35,19 @@ seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
 if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
 const llm = createLLM(config)
-// 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（本机后端随 M6 的 B 片接进来）
+// 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
 const { backend, reason: backendReason } = await chooseBackend(config.computers, {
   docker: () => createDockerBackend(docker, {
     dataDir: config.dataDir,
     containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
   }),
-  local: () => null,
+  local: () => createLocalBackend({
+    dataDir: config.dataDir,
+    browser: config.browser,
+    browserMirror: config.browserMirror,
+    log: (line) => console.log(`[gateway] ${line}`),
+  }),
   dockerReachable: () => dockerReachable(docker),
 })
 console.log(`[gateway] bot computers: ${backend.kind} (${backendReason})`)

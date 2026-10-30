@@ -1,9 +1,12 @@
 import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import type Docker from 'dockerode'
+import { browsersDir, findBrowser, installBrowser } from './browsers.js'
 import type { BotComputer, ComputerKind } from './computer.js'
 import { createDockerComputer } from './computer-docker.js'
+import { createLocalComputer, type LocalLaunch } from './computer-local.js'
 import { ensureContainer, runningBotIds, stopBotContainer, type ContainerOptions } from './containers.js'
-import { workspaceDir } from './screenshots.js'
+import { botDataDir, workspaceDir } from './screenshots.js'
 
 /**
  * 电脑后端：决定一台 bot 电脑是什么做的。pool 只管缓存和探活，网关其它地方只认 BotComputer；
@@ -40,6 +43,72 @@ export function createDockerBackend(
     },
     running: () => runningBotIds(docker, opts.dataDir),
     stop: (botId) => stopBotContainer(docker, botId),
+  }
+}
+
+export type LocalBackendOptions = {
+  dataDir: string
+  /** OPENGROKBOT_BROWSER：操作者指定的浏览器可执行文件 */
+  browser?: string
+  /** OPENGROKBOT_BROWSER_MIRROR：下载浏览器时用的镜像主机 */
+  browserMirror?: string
+  log?: (line: string) => void
+  /** 测试里换掉真正的浏览器启动 */
+  launch?: LocalLaunch
+  /** 测试里换掉找/下载浏览器 */
+  resolveBrowser?: () => Promise<string>
+}
+
+/**
+ * 本机后端：电脑就是宿主上的一个浏览器进程 + 一个文件夹。第一次要电脑时才去找浏览器
+ * （找不到就下载），之后所有同事共用同一个可执行文件、各用各的配置目录。
+ */
+export function createLocalBackend(opts: LocalBackendOptions): ComputerBackend {
+  const log = opts.log ?? (() => {})
+  const live = new Map<string, BotComputer>()
+  let executable: Promise<string> | null = null
+
+  const resolveBrowser = opts.resolveBrowser ?? (async () => {
+    const found = findBrowser({ dataDir: opts.dataDir, env: { OPENGROKBOT_BROWSER: opts.browser } })
+    if (found) {
+      log(`local teammates use the ${found.source} browser at ${found.executablePath}`)
+      return found.executablePath
+    }
+    log('no Chromium-based browser on this machine')
+    return installBrowser(browsersDir(opts.dataDir), { mirror: opts.browserMirror, log })
+  })
+
+  return {
+    kind: 'local',
+    async make(botId) {
+      // 下载失败不留在缓存里，下次再试
+      executable ??= resolveBrowser().catch((err: unknown) => {
+        executable = null
+        throw err
+      })
+      const executablePath = await executable
+      const workspace = workspaceDir(opts.dataDir, botId)
+      // 浏览器配置放网关自己的目录，不在 workspace 里：bot 读写文件时碰不到自己的 cookie 库
+      const profileDir = join(botDataDir(opts.dataDir, botId), 'browser')
+      await mkdir(workspace, { recursive: true })
+      await mkdir(profileDir, { recursive: true })
+      const computer = createLocalComputer({ workspaceDir: workspace, profileDir, executablePath, launch: opts.launch })
+      const tracked: BotComputer = {
+        ...computer,
+        async dispose() {
+          live.delete(botId)
+          await computer.dispose()
+        },
+      }
+      live.set(botId, tracked)
+      return tracked
+    },
+    async running() {
+      return [...live.keys()]
+    },
+    async stop(botId) {
+      await live.get(botId)?.dispose()
+    },
   }
 }
 
