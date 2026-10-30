@@ -16,6 +16,11 @@ updates:
     directory: /docker/bot
     schedule:
       interval: weekly
+    # 只跟 Node 的偶数主版本（LTS 线）：奇数版半年就停更，2026-10 Dependabot 曾把 #6 从 26 改成 25。
+    # 范围写法走 Gem::Requirement（docker 生态的比较器），"25.x" 那种写法它不认。
+    ignore:
+      - dependency-name: node
+        versions: [">= 25, < 26", ">= 27, < 28", ">= 29, < 30", ">= 31, < 32"]
     # 奇数大版本的 node 不是 LTS，半年就停更（#5、#6 都提议过 25）；只让偶数 LTS 线进来
     ignore:
       - dependency-name: node
