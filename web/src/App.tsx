@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
-  fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, stopThread, updateRoutine,
+  fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerShell, setComputerWindow, stopThread,
+  updateRoutine,
 } from './api'
 import { ComputerPanel } from './components/ComputerPanel'
 import { NewBotForm } from './components/NewBotForm'
@@ -219,6 +220,29 @@ export default function App() {
     }
   }
 
+  /** 本机模式：登录完了，把浏览器窗口收回后台，面板跟着刷新 */
+  const onWindowDone = async () => {
+    if (!panel) return
+    try {
+      await setComputerWindow(panel.botId, false)
+      await loadPanel(panel.botId)
+    } catch (err) {
+      guard(err)
+    }
+  }
+
+  /** 本机模式：开关命令行；网关拒了（没沙箱、自检失败）就把原因弹出来 */
+  const onShell = async (enabled: boolean) => {
+    if (!panel) return
+    try {
+      await setComputerShell(panel.botId, enabled)
+    } catch (err) {
+      if (err instanceof SignedOut) { setSignedOut(true); return }
+      window.alert(err instanceof Error ? err.message : String(err))
+    }
+    await loadPanel(panel.botId)
+  }
+
   const hire = async (name: string, role: string) => {
     try {
       const bot = await createBot(name, role)
@@ -271,6 +295,8 @@ export default function App() {
           onRoutine={(id, action) => { void onRoutine(id, action) }}
           onRevokeRule={(id) => { void onRevokeRule(id) }}
           onForgetRule={(rule) => { void onForgetRule(rule) }}
+          onWindowDone={() => { void onWindowDone() }}
+          onShell={(enabled) => { void onShell(enabled) }}
         />
       ) : null}
       {hiring ? (

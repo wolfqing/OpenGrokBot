@@ -87,3 +87,83 @@ describe('POST /api/bots', () => {
     expect(((await dup.json()) as { error: string }).error).toMatch(/already/i)
   })
 })
+
+describe('a local computer in the panel API', () => {
+  const local = (shown: { value: boolean }) => createFakeComputer({
+    kind: 'local',
+    screencast: async () => async () => {},
+    showWindow: async () => { shown.value = true },
+    hideWindow: async () => { shown.value = false },
+    windowShown: () => shown.value,
+  })
+
+  it('reports its kind, a screencast screen instead of a VNC page, and whether its window is up', async () => {
+    const shown = { value: false }
+    const { app } = setup(async () => local(shown))
+    const body = await (await app.request('/api/bots/researcher/computer')).json()
+    expect(body).toMatchObject({ running: true, kind: 'local', vncUrl: null, screen: { kind: 'cdp', url: '/screen/researcher/ws' }, window: false })
+  })
+
+  it('still reports a sealed computer the old way, plus its kind', async () => {
+    const { app } = setup(async () => createFakeComputer({ screen: { base: 'http://127.0.0.1:1', password: 'pw' } }))
+    const body = await (await app.request('/api/bots/researcher/computer')).json()
+    expect(body).toMatchObject({ kind: 'docker', screen: { kind: 'vnc', url: '/vnc/researcher/view.html#password=pw' }, window: false })
+  })
+
+  it('opens and closes the sign-in window on request, and refuses it for a sealed computer', async () => {
+    const shown = { value: false }
+    const { app } = setup(async () => local(shown))
+    expect(await (await post(app, '/api/bots/researcher/computer/window', { shown: true })).json()).toEqual({ ok: true, window: true })
+    expect(shown.value).toBe(true)
+    expect(await (await post(app, '/api/bots/researcher/computer/window', { shown: false })).json()).toEqual({ ok: true, window: false })
+    expect((await post(app, '/api/bots/researcher/computer/window', { shown: 'yes' })).status).toBe(400)
+    expect((await post(app, '/api/bots/nobody/computer/window', { shown: true })).status).toBe(404)
+    const sealed = setup(async () => createFakeComputer())
+    expect((await post(sealed.app, '/api/bots/researcher/computer/window', { shown: true })).status).toBe(409)
+  })
+})
+
+describe('the shell switch of a local computer', () => {
+  const patch = (app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+  function localSetup(computers: NonNullable<Parameters<typeof createApp>[0]['computers']>) {
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    ensureDmThread(db, bot.id)
+    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-m6-'))
+    const pool = createPool({ dataDir, makeComputer: async () => createFakeComputer({ kind: 'local' }) })
+    return { db, ...createApp({ db, llm: okLLM, dataDir, pool, computers }) }
+  }
+
+  it('is off by default, turns on after the sandbox passes its self-check, and off again', async () => {
+    const checks: string[] = []
+    const { app } = localSetup({ kind: 'local', sandbox: { available: true }, checkSandbox: async (id) => { checks.push(id); return { ok: true } } })
+    expect(await (await app.request('/api/bots/researcher/computer')).json()).toMatchObject({ kind: 'local', shell: { enabled: false, available: true } })
+    expect(await (await patch(app, '/api/bots/researcher/computer', { shell: true })).json()).toMatchObject({ ok: true, shell: { enabled: true } })
+    expect(checks).toEqual(['researcher'])
+    expect(await (await app.request('/api/bots/researcher/computer')).json()).toMatchObject({ shell: { enabled: true } })
+    expect(await (await patch(app, '/api/bots/researcher/computer', { shell: false })).json()).toMatchObject({ shell: { enabled: false } })
+    expect((await patch(app, '/api/bots/researcher/computer', { shell: 'on' })).status).toBe(400)
+    expect((await patch(app, '/api/bots/nobody/computer', { shell: true })).status).toBe(404)
+  })
+
+  it('refuses to turn on when there is no sandbox, or when the sandbox fails its check', async () => {
+    const none = localSetup({ kind: 'local', sandbox: { available: false, why: 'Install bubblewrap.' } })
+    const res = await patch(none.app, '/api/bots/researcher/computer', { shell: true })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: string }).error).toMatch(/Install bubblewrap/)
+    expect(await (await none.app.request('/api/bots/researcher/computer')).json()).toMatchObject({ shell: { enabled: false, available: false, why: 'Install bubblewrap.' } })
+    const leaky = localSetup({ kind: 'local', sandbox: { available: true }, checkSandbox: async () => ({ ok: false, why: 'it let a command write outside' }) })
+    const failed = await patch(leaky.app, '/api/bots/researcher/computer', { shell: true })
+    expect(failed.status).toBe(409)
+    expect(((await failed.json()) as { error: string }).error).toMatch(/write outside/)
+    expect(await (await leaky.app.request('/api/bots/researcher/computer')).json()).toMatchObject({ shell: { enabled: false } })
+  })
+
+  it('is not a switch sealed computers have: they always carry a shell', async () => {
+    const { app } = setup(async () => createFakeComputer())
+    expect(await (await app.request('/api/bots/researcher/computer')).json()).toMatchObject({ kind: 'docker', shell: { enabled: true, available: true } })
+    expect((await patch(app, '/api/bots/researcher/computer', { shell: false })).status).toBe(409)
+  })
+})

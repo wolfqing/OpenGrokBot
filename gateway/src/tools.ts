@@ -346,13 +346,21 @@ const RELAY_TOOL: ToolDef = {
   },
 }
 
-export function buildTools(opts: { hasComputer: boolean; canRelay?: boolean; hasSkills?: boolean; watch?: boolean }): ToolDef[] {
+export function buildTools(opts: {
+  hasComputer: boolean
+  canRelay?: boolean
+  hasSkills?: boolean
+  watch?: boolean
+  /** false = 这台电脑没有命令行（本机模式默认）：连工具都不列，模型就不会去试 */
+  shell?: boolean
+}): ToolDef[] {
+  const computerTools = opts.shell === false ? COMPUTER_TOOLS.filter((t) => t.function.name !== 'shell') : COMPUTER_TOOLS
   const tools = [
     MESSAGE_USER_TOOL,
     ...WORKFLOW_TOOLS,
     ...(opts.hasSkills ? [SKILL_TOOL] : []),
     ...(opts.canRelay ? [RELAY_TOOL] : []),
-    ...(opts.hasComputer ? COMPUTER_TOOLS : []),
+    ...(opts.hasComputer ? computerTools : []),
   ]
   return opts.watch ? tools.filter((t) => WATCH_TOOL_NAMES.has(t.function.name)) : tools
 }

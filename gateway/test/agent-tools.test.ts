@@ -118,3 +118,21 @@ describe('runTurn with a computer', () => {
     expect((without.calls[0]!.tools as { function: { name: string } }[]).length).toBe(7)
   })
 })
+
+describe('a computer without a shell', () => {
+  it('does not advertise the shell tool, and the briefing says commands are off', async () => {
+    const names = buildTools({ hasComputer: true, shell: false }).map((t) => t.function.name)
+    expect(names).not.toContain('shell')
+    expect(names).toContain('read_file')
+    expect(names).toContain('browser_goto')
+    const { computerBriefing, COMPUTER_BRIEFING, buildSystemPrompt } = await import('../src/prompts.js')
+    expect(computerBriefing({ kind: 'local', shell: false })).toMatch(/Commands are off on this computer/)
+    expect(computerBriefing({ kind: 'local', shell: false })).not.toMatch(/with shell \//)
+    expect(computerBriefing({ kind: 'local', shell: true })).toMatch(/sandbox confined to that folder/)
+    expect(computerBriefing({ kind: 'local', shell: true })).toMatch(/Do not install software/)
+    expect(COMPUTER_BRIEFING).toMatch(/private container/) // 容器电脑的说法一字不改
+    const bot = { id: 'b', name: 'B', role: '', emoji: '', soul_path: '' }
+    expect(buildSystemPrompt(bot, '', { hasComputer: true, computer: { kind: 'local', shell: false } })).toMatch(/Commands are off/)
+    expect(buildSystemPrompt(bot, '', { hasComputer: true })).toMatch(/private container/)
+  })
+})

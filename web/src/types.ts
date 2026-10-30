@@ -103,8 +103,16 @@ export type UsageTotals = { prompt: number; completion: number; cached: number; 
 export type ComputerInfo = {
   botId: string
   running: boolean
+  /** 这台电脑是什么做的：容器（sealed）还是本机沙箱 */
+  kind?: 'docker' | 'local'
   /** 网关给的 noVNC 页面地址，连接参数（含口令）都已带好 */
   vncUrl: string | null
+  /** 屏幕怎么看：容器是 noVNC 页面，本机是浏览器截屏流 */
+  screen?: { kind: 'vnc'; url: string } | { kind: 'cdp'; url: string } | null
+  /** 本机模式：浏览器此刻以窗口开在桌面上（接管登录中） */
+  window?: boolean
+  /** 命令行：开没开、这台机器有没有沙箱可用（没有就说明为什么） */
+  shell?: { enabled: boolean; available: boolean; why?: string }
   error?: string
   routines: ComputerRoutine[]
   usage?: { today: UsageTotals; budget: number }

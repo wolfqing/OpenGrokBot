@@ -42,6 +42,8 @@ export type AgentDeps = {
   soul: string
   threadId: string
   getComputer?: () => Promise<BotComputer>
+  /** 电脑是什么做的、有没有命令行；不传 = 容器电脑，有 shell */
+  computer?: { kind?: 'docker' | 'local'; shell?: boolean }
   saveShot?: (botId: string, shot: Shot) => Promise<{ url: string; width: number; height: number }>
   memory?: string
   /** AGENTS.md：操作手册（硬边界在这里） */
@@ -143,7 +145,7 @@ export async function runTurn(
       {
         role: 'system',
         content: buildSystemPrompt(bot, soul, {
-          hasComputer, memory: deps.memory, group: deps.group, canRelay, manual: deps.manual, routines: deps.routines,
+          hasComputer, computer: deps.computer, memory: deps.memory, group: deps.group, canRelay, manual: deps.manual, routines: deps.routines,
           skills: deps.onReadSkill ? deps.skills : undefined,
         }),
       },
@@ -155,7 +157,7 @@ export async function runTurn(
     const timeZone = deps.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
     const messages = withTimeNote(history, timeNote(now, timeZone))
     const hasSkills = Boolean(deps.skills?.length && deps.onReadSkill)
-    const tools = buildTools({ hasComputer, canRelay, hasSkills, watch: deps.watch === true })
+    const tools = buildTools({ hasComputer, canRelay, hasSkills, watch: deps.watch === true, shell: deps.computer?.shell })
     const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : DEFAULT_MAX_STEPS
     const turnMs = deps.turnTimeoutMs ?? DEFAULT_TURN_MS
     const startedAt = Date.now()

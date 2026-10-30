@@ -6,6 +6,22 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- **Local computers — no Docker needed.** When Docker is not running (or `OPENGROKBOT_COMPUTERS=local`), each
+  teammate gets a browser of its own on your machine — your Chrome, Edge or Chromium, else a Chrome for Testing
+  downloaded once into the data dir (`OPENGROKBOT_BROWSER`, `OPENGROKBOT_BROWSER_MIRROR`) — with its own profile,
+  and a folder of its own that `read_file`/`write_file` cannot leave. The panel shows which kind of computer a
+  teammate has and streams a local browser's screen over CDP. `ask_for_login` reopens the browser as a real window
+  on the page the teammate was stuck on; *I'm done signing in* (or the next message) puts it back in the background.
+  macOS and Linux; Windows keeps Docker.
+- **Commands on a local computer, off by default.** Each teammate has a switch in its computer panel. On, commands
+  run under Seatbelt (macOS) or bubblewrap (Linux), confined to that teammate's folder and a private tmp, with the
+  data dir and your key folders unreadable; the switch refuses to turn on until the sandbox passes a self-check.
+  Off, the shell tool is not even offered to the model.
+- `pnpm --filter @opengrokbot/gateway run smoke:local` exercises a local computer against a real browser and the
+  real sandbox.
+
 ### Security
 
 - The gateway runs on `@hono/node-server` 2.1.5, which clears GHSA-rmxm-3fg6-px4f (`serveStatic` decoding a

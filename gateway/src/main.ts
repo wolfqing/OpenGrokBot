@@ -6,14 +6,15 @@ import { WebSocketServer } from 'ws'
 import { parseA2AAllow } from './a2a.js'
 import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
+import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
-import { runningBotIds, stopBotContainer } from './containers.js'
-import { openDb } from './db.js'
+import { botShellEnabled, openDb } from './db.js'
 import { createLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
-import { createScreenViewers, mountScreenProxy, screenRelay } from './screen.js'
+import { createScreenViewers, mountScreenProxy, screenRelay, screencastRelay } from './screen.js'
+import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
@@ -35,12 +36,26 @@ seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
 if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
 const llm = createLLM(config)
+// 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
-const pool = createPool({
-  dataDir: config.dataDir,
-  docker,
-  containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
+const sandbox = detectSandbox()
+const { backend, reason: backendReason } = await chooseBackend(config.computers, {
+  docker: () => createDockerBackend(docker, {
+    dataDir: config.dataDir,
+    containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
+  }),
+  local: () => createLocalBackend({
+    dataDir: config.dataDir,
+    browser: config.browser,
+    browserMirror: config.browserMirror,
+    log: (line) => console.log(`[gateway] ${line}`),
+    // 命令行按同事开关（存数据库）；开了也只在系统沙箱里跑，没沙箱就没有命令行
+    shell: { enabled: (botId) => botShellEnabled(db, botId), sandbox },
+  }),
+  dockerReachable: () => dockerReachable(docker),
 })
+console.log(`[gateway] bot computers: ${backend.kind} (${backendReason})`)
+const pool = createPool({ dataDir: config.dataDir, backend })
 // 令牌放在数据目录（0600），不在任何 bot 的 workspace 里：容器里的 bot 拿不到它
 const token = loadOrCreateToken(config.dataDir, config.token)
 
@@ -56,6 +71,13 @@ const schedulerProxy: Scheduler = {
 
 const gateway = createApp({
   db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
+  computers: {
+    kind: backend.kind,
+    sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint() },
+    checkSandbox: (botId) => sandbox
+      ? sandboxSelfCheck(sandbox, { workspace: join(config.dataDir, 'workspaces', botId), tmp: join(config.dataDir, 'bots', botId, 'tmp'), dataDir: config.dataDir })
+      : Promise.resolve({ ok: false as const, why: sandboxHint() }),
+  },
   chiefId: config.chiefId,
   a2aRules: parseA2AAllow(config.a2aAllow, config.chiefId),
   token,
@@ -109,6 +131,13 @@ app.get('/vnc/:botId/websockify', upgradeWebSocket(async (c) => {
     onClose: () => viewers.close(botId),
   })
 }))
+// 本机电脑没有 VNC：屏幕是网关订阅的浏览器截屏流
+app.get('/screen/:botId/ws', upgradeWebSocket(async (c) => {
+  const botId = c.req.param('botId') ?? ''
+  if (!knownBot(botId)) throw new Error(`unknown bot ${botId}`)
+  const computer = await pool.get(botId)
+  return screencastRelay(computer, { onOpen: () => viewers.open(botId), onClose: () => viewers.close(botId) })
+}))
 mountScreenProxy(app, { knownBot })
 
 // pnpm build 之后网关直接托管前端：一个端口、一个进程；dev 下前端走 Vite（5173）
@@ -141,9 +170,9 @@ if (config.idleStopMinutes > 0) {
     reapIdleComputers({
       pool,
       idleMs: config.idleStopMinutes * 60_000,
-      runningBots: () => runningBotIds(docker, config.dataDir),
+      runningBots: () => backend.running(),
       isBusy: (botId) => gateway.isBusy(botId) || viewers.watching(botId),
-      stop: (botId) => stopBotContainer(docker, botId),
+      stop: (botId) => backend.stop(botId),
       now: Date.now(),
       startedAt,
     })

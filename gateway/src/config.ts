@@ -1,7 +1,14 @@
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseComputerChoice, type ComputerChoice } from './backend.js'
 
 export type Config = {
+  /** 同事的电脑是什么做的：auto = 有 Docker 用 Docker，否则本机模式 */
+  computers: ComputerChoice
+  /** 本机模式用的浏览器可执行文件；空 = 自己找（Chrome/Edge/…），找不到就下载 */
+  browser: string
+  /** 下载浏览器时给 playwright 的镜像主机；空 = 官方 */
+  browserMirror: string
   baseURL: string
   apiKey: string
   model: string
@@ -57,6 +64,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     baseURL: env.OPENGROKBOT_API_BASE || 'https://api.x.ai/v1',
     apiKey: env.OPENGROKBOT_API_KEY || '',
     model: env.OPENGROKBOT_MODEL || 'grok-4',
+    computers: parseComputerChoice(env.OPENGROKBOT_COMPUTERS),
+    browser: (env.OPENGROKBOT_BROWSER || '').trim(),
+    browserMirror: (env.OPENGROKBOT_BROWSER_MIRROR || '').trim(),
     host: env.OPENGROKBOT_HOST || '127.0.0.1',
     port: num(env.OPENGROKBOT_PORT, 4747),
     dataDir,
