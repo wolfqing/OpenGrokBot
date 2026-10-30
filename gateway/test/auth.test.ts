@@ -123,10 +123,11 @@ describe('gateway auth', () => {
   })
 })
 
-describe('websocket behind @hono/node-ws', () => {
-  it('uses the Host header, since node-ws rebuilds the upgrade URL without the port', async () => {
+describe('websocket upgrades', () => {
+  it('takes its own address from the Host header, even when the request URL has no port', async () => {
     const { app } = setup()
-    // node-ws 把升级请求的 URL 拼成 http://localhost/ws —— 端口丢了，只有 Host 头是对的
+    // 以前的 @hono/node-ws 把升级请求的 URL 拼成 http://localhost/ws，端口丢了；node-server 2 改用 Host 头来拼。
+    // 网关只认 Host 头，哪个适配器再丢端口，来源检查也不会把自己当成跨站
     const res = await app.request('http://localhost/ws', {
       headers: { Upgrade: 'websocket', Connection: 'Upgrade', ...cookie, Host: 'localhost:4747', Origin: 'http://localhost:4747' },
     })
