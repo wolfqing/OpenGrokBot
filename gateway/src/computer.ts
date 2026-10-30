@@ -5,11 +5,20 @@ export type PageLink = { text: string; href: string }
 /** 哪种电脑：容器里的（sealed），还是本机沙箱里的（local） */
 export type ComputerKind = 'docker' | 'local'
 
+/** 浏览器画面的一帧（JPEG，base64）：本机模式的屏幕就是这个流 */
+export type ScreencastFrame = { data: string; width: number; height: number }
+
 /** 一台 bot 自己的电脑：shell、文件、浏览器。实现见 computer-docker.ts / computer-local.ts。 */
 export interface BotComputer {
   readonly kind: ComputerKind
-  /** 这台电脑的屏幕：noVNC 的地址（只给网关代理用）和 VNC 口令；没有容器就没有屏幕。 */
+  /** 容器电脑的屏幕：noVNC 的地址（只给网关代理用）和 VNC 口令。 */
   readonly screen?: { base: string; password?: string }
+  /** 本机电脑的屏幕：订阅浏览器画面，返回取消订阅。 */
+  screencast?(onFrame: (frame: ScreencastFrame) => void): Promise<() => Promise<void>>
+  /** 接管登录（本机模式）：把浏览器以普通窗口开到桌面上；hideWindow 切回后台。两者都保住当前页面和登录态。 */
+  showWindow?(): Promise<void>
+  hideWindow?(): Promise<void>
+  windowShown?(): boolean
   /** 这台电脑还应答吗？容器一重启端口就全变了，缓存的连接会全废。 */
   ping(): Promise<boolean>
   /** signal：操作者按了停止，立刻放弃这次调用（容器里的 shim 会把命令一起杀掉） */
@@ -60,7 +69,15 @@ export function createFakeComputer(
     async dispose() { calls.push('dispose') },
   }
   type MutableComputer = { -readonly [K in keyof BotComputer]: BotComputer[K] }
-  const wrapped: MutableComputer = { ...base, ...(overrides.screen ? { screen: overrides.screen } : {}) }
+  const wrapped: MutableComputer = {
+    ...base,
+    ...(overrides.screen ? { screen: overrides.screen } : {}),
+    // 本机模式才有的可选能力：给了就原样带上（不记 calls）
+    ...(overrides.screencast ? { screencast: overrides.screencast } : {}),
+    ...(overrides.showWindow ? { showWindow: overrides.showWindow } : {}),
+    ...(overrides.hideWindow ? { hideWindow: overrides.hideWindow } : {}),
+    ...(overrides.windowShown ? { windowShown: overrides.windowShown } : {}),
+  }
   for (const key of Object.keys(base) as (keyof BotComputer)[]) {
     if (key === 'kind') continue
     const override = overrides[key]

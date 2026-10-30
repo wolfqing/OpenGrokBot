@@ -7,7 +7,7 @@ import { createFakeComputer } from '../src/computer.js'
 import { ensureDmThread, openDb, upsertBot } from '../src/db.js'
 import type { LLM } from '../src/llm.js'
 import { createPool } from '../src/pool.js'
-import { createScreenViewers, mountScreenProxy, screenPagePath } from '../src/screen.js'
+import { createScreenViewers, mountScreenProxy, screenPagePath, screencastRelay } from '../src/screen.js'
 import { createApp } from '../src/server.js'
 
 const bot = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
@@ -85,5 +85,55 @@ describe('GET /api/bots/:botId/computer', () => {
     const { app } = createApp({ db, llm: okLLM, pool, dataDir: '/tmp' })
     const body = await (await app.request('/api/bots/researcher/computer')).json()
     expect(body.vncUrl).toBe(screenPagePath('researcher', 'pw'))
+  })
+})
+
+describe('screencastRelay', () => {
+  type Ws = { send(data: string): void; close(): void }
+  const fakeWs = () => {
+    const out: string[] = []
+    let closed = false
+    const ws: Ws = { send: (d) => { out.push(d) }, close: () => { closed = true } }
+    return { ws, out, isClosed: () => closed }
+  }
+
+  it('pushes frames as JSON and unsubscribes when the panel closes', async () => {
+    let onFrame: ((f: { data: string; width: number; height: number }) => void) | null = null
+    let stopped = 0
+    const computer = {
+      screencast: async (cb: typeof onFrame) => { onFrame = cb; return async () => { stopped += 1 } },
+    }
+    const opened: string[] = []
+    const relay = screencastRelay(computer, { onOpen: () => opened.push('open'), onClose: () => opened.push('close') })
+    const { ws, out } = fakeWs()
+    relay.onOpen!(undefined as never, ws as never)
+    await new Promise((r) => setTimeout(r, 0))
+    onFrame!({ data: 'QUJD', width: 1280, height: 800 })
+    expect(JSON.parse(out[0]!)).toEqual({ type: 'frame', data: 'QUJD', width: 1280, height: 800 })
+    relay.onClose!(undefined as never, ws as never)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(stopped).toBe(1)
+    expect(opened).toEqual(['open', 'close'])
+  })
+
+  it('tells the panel when a computer has no screen to stream, and closes', () => {
+    const relay = screencastRelay({})
+    const { ws, out, isClosed } = fakeWs()
+    relay.onOpen!(undefined as never, ws as never)
+    expect(JSON.parse(out[0]!)).toMatchObject({ type: 'error' })
+    expect(isClosed()).toBe(true)
+  })
+
+  it('unsubscribes a stream that only came up after the panel had gone', async () => {
+    let stopped = 0
+    let resolveStart!: (s: () => Promise<void>) => void
+    const computer = { screencast: () => new Promise<() => Promise<void>>((r) => { resolveStart = r }) }
+    const relay = screencastRelay(computer)
+    const { ws } = fakeWs()
+    relay.onOpen!(undefined as never, ws as never)
+    relay.onClose!(undefined as never, ws as never)
+    resolveStart(async () => { stopped += 1 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(stopped).toBe(1)
   })
 })

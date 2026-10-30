@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ActionEntry, ComputerInfo, ComputerRoutine, RoutineAction } from '../types'
 import { untilLabel } from './ApprovalChip'
+import { CdpScreen } from './CdpScreen'
 
 const formatCount = (n: number) => n.toLocaleString('en-US')
 
@@ -29,6 +30,8 @@ type PanelActions = {
   onRevokeRule?: (id: number) => void
   /** 从 MEMORY.md 删掉一条规矩（原句） */
   onForgetRule?: (rule: string) => void
+  /** 本机模式：登录完了，把开在桌面上的浏览器窗口收回后台 */
+  onWindowDone?: () => void
 }
 
 /** webhook 地址带着密钥：给一个「复制」，不把它整串摊在面板上 */
@@ -133,7 +136,7 @@ export function ComputerPanel({ info, botName, onClose, ...actions }: {
   )
 }
 
-function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
+function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWindowDone }: {
   info: ComputerInfo
   botName: string
 } & PanelActions) {
@@ -142,7 +145,9 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
   const skills = info.skills ?? []
   return (
     <>
-      {info.vncUrl ? (
+      {info.screen?.kind === 'cdp' ? (
+        <CdpScreen url={info.screen.url} title={`${botName}'s screen`} />
+      ) : info.vncUrl ? (
         <iframe className="panel-screen" title={`${botName}'s screen`} src={info.vncUrl} />
       ) : (
         <div className="panel-offline">
@@ -150,6 +155,19 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule }: {
           <div className="panel-offline-why">{info.error ?? 'This teammate has no computer attached.'}</div>
         </div>
       )}
+      {info.window ? (
+        <div className="panel-window" role="status">
+          <span>Its browser is open as a window on your desktop — sign in there.</span>
+          {onWindowDone ? <button className="panel-copy" onClick={onWindowDone}>I&apos;m done signing in</button> : null}
+        </div>
+      ) : null}
+      {info.kind ? (
+        <div className="panel-kind">
+          {info.kind === 'local'
+            ? 'Local sandbox: its own browser profile and folder on this machine.'
+            : 'Sealed computer: a container of its own.'}
+        </div>
+      ) : null}
 
       <div className="panel-section">
         <div className="panel-section-title">Routines</div>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
-  fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, stopThread, updateRoutine,
+  fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerWindow, stopThread, updateRoutine,
 } from './api'
 import { ComputerPanel } from './components/ComputerPanel'
 import { NewBotForm } from './components/NewBotForm'
@@ -219,6 +219,17 @@ export default function App() {
     }
   }
 
+  /** 本机模式：登录完了，把浏览器窗口收回后台，面板跟着刷新 */
+  const onWindowDone = async () => {
+    if (!panel) return
+    try {
+      await setComputerWindow(panel.botId, false)
+      await loadPanel(panel.botId)
+    } catch (err) {
+      guard(err)
+    }
+  }
+
   const hire = async (name: string, role: string) => {
     try {
       const bot = await createBot(name, role)
@@ -271,6 +282,7 @@ export default function App() {
           onRoutine={(id, action) => { void onRoutine(id, action) }}
           onRevokeRule={(id) => { void onRevokeRule(id) }}
           onForgetRule={(rule) => { void onForgetRule(rule) }}
+          onWindowDone={() => { void onWindowDone() }}
         />
       ) : null}
       {hiring ? (

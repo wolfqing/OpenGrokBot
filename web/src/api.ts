@@ -78,6 +78,11 @@ export async function forgetMemoryRule(botId: string, rule: string): Promise<voi
   await send('POST', `/api/bots/${encodeURIComponent(botId)}/memory/forget`, { rule })
 }
 
+/** 本机电脑：登录完了把浏览器窗口收回后台（shown=false），或主动开出来（shown=true） */
+export async function setComputerWindow(botId: string, shown: boolean): Promise<void> {
+  await send('POST', `/api/bots/${encodeURIComponent(botId)}/computer/window`, { shown })
+}
+
 export async function updateRoutine(id: number, action: RoutineAction): Promise<void> {
   if (action === 'run') await send('POST', `/api/routines/${id}/run`)
   else if (action === 'delete') await send('DELETE', `/api/routines/${id}`)

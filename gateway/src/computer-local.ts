@@ -81,8 +81,21 @@ const defaultLaunch: LocalLaunch = async ({ profileDir, executablePath, headless
 
 export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
   const launch = opts.launch ?? defaultLaunch
-  const headless = opts.headless ?? true
+  let headless = opts.headless ?? true
   const session = createBrowserSession(() => launch({ profileDir: opts.profileDir, executablePath: opts.executablePath, headless }))
+
+  /**
+   * Chromium 不能在运行中切换有没有窗口：关掉再以另一种方式开同一个配置。
+   * 登录态在配置目录里，两边共享；当前页面也带过去，操作者看到的就是 bot 卡住的那一页。
+   */
+  async function relaunch(nextHeadless: boolean): Promise<void> {
+    let url: string | undefined
+    if (session.state() === 'open') url = await session.page().then((p) => p.url()).catch(() => undefined)
+    await session.dispose()
+    headless = nextHeadless
+    const p = await session.page()
+    if (url && url !== 'about:blank') await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {})
+  }
 
   return {
     kind: 'local',
@@ -90,6 +103,31 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       // 还没开过浏览器也算活着：它随时能开；开过又没了才说明这台电脑坏了，让 pool 换一台
       return session.state() !== 'gone'
     },
+    async screencast(onFrame) {
+      const context = await session.context()
+      if (!context.newCDPSession) throw new Error('this browser cannot stream its screen')
+      const cdp = await context.newCDPSession(await session.page())
+      type Frame = { data: string; sessionId: number; metadata: { deviceWidth: number; deviceHeight: number } }
+      cdp.on('Page.screencastFrame', (frame: Frame) => {
+        onFrame({ data: frame.data, width: frame.metadata.deviceWidth, height: frame.metadata.deviceHeight })
+        // 不确认上一帧，Chromium 就不发下一帧
+        void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {})
+      })
+      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 800, everyNthFrame: 2 })
+      return async () => {
+        await cdp.send('Page.stopScreencast').catch(() => {})
+        await cdp.detach().catch(() => {})
+      }
+    },
+    async showWindow() {
+      if (!headless && session.state() === 'open') return
+      await relaunch(false)
+    },
+    async hideWindow() {
+      if (headless) return // 本来就在后台；不为了「隐藏」去开一个
+      await relaunch(true)
+    },
+    windowShown: () => !headless,
     async shell() {
       throw new Error('Commands are off on this computer. Your operator can turn them on in the computer panel.')
     },

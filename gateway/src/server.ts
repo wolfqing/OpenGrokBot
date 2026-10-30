@@ -24,7 +24,7 @@ import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
   routineForSignature, routineForWebhook, setRoutineEnabled, type RoutineRow,
 } from './routines.js'
-import { screenPagePath } from './screen.js'
+import { screenPagePath, screencastPath } from './screen.js'
 import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
@@ -294,8 +294,10 @@ export function createApp(deps: AppDeps): GatewayApp {
         checkBudget: () => budgetNote(bot),
         onMessageBot: ({ to, content }) => relay(bot, to, content, opts.hop ?? 0),
         // 提前把容器拉起来，用户点开面板时屏幕已经在了
-        ...(pool ? { onAskForLogin: async () => { await pool.get(bot.id) } } : {}),
-        ...(pool ? { getComputer: () => pool.get(bot.id) } : {}),
+        // 容器：提前拉起来，用户点开面板时屏幕已经在了；本机：把浏览器以窗口开到桌面上让人登录
+        ...(pool ? { onAskForLogin: async () => { await (await pool.get(bot.id)).showWindow?.() } } : {}),
+        // 登录接管留下的窗口，在 bot 下一次用电脑时收回后台（本来就在后台时什么都不做）
+        ...(pool ? { getComputer: async () => { const computer = await pool.get(bot.id); await computer.hideWindow?.(); return computer } } : {}),
         ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
         onApproval: async ({ action, detail, kind, target, rulesAllowed, items }) => {
           const at = now().getTime()
@@ -556,11 +558,26 @@ export function createApp(deps: AppDeps): GatewayApp {
     try {
       const computer = await pool.get(botId)
       const vncUrl = computer.screen ? screenPagePath(botId, computer.screen.password) : null
-      return c.json({ ...base, running: true, vncUrl })
+      // 两种屏幕：容器给 noVNC 页面，本机给浏览器截屏流；面板按 kind 选怎么看
+      const screen = vncUrl ? { kind: 'vnc', url: vncUrl } : computer.screencast ? { kind: 'cdp', url: screencastPath(botId) } : null
+      return c.json({ ...base, running: true, kind: computer.kind, vncUrl, screen, window: computer.windowShown?.() ?? false })
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
       return c.json({ ...base, running: false, vncUrl: null, error: err instanceof Error ? err.message : String(err) })
     }
+  })
+
+  /** 本机电脑的浏览器窗口：登录接管时开到桌面上，登录完收回后台 */
+  app.post('/api/bots/:botId/computer/window', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    if (!pool) return c.json({ error: 'no computers on this gateway' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { shown?: unknown } | null
+    if (typeof body?.shown !== 'boolean') return c.json({ error: 'shown (true/false) required' }, 400)
+    const computer = await pool.get(botId)
+    if (!computer.showWindow || !computer.hideWindow) return c.json({ error: 'this computer has no window to show' }, 409)
+    await (body.shown ? computer.showWindow() : computer.hideWindow())
+    return c.json({ ok: true, window: computer.windowShown?.() ?? body.shown })
   })
 
   /** 动作日志：最新的在前，最多 500 条 */

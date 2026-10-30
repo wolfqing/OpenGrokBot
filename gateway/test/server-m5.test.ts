@@ -87,3 +87,38 @@ describe('POST /api/bots', () => {
     expect(((await dup.json()) as { error: string }).error).toMatch(/already/i)
   })
 })
+
+describe('a local computer in the panel API', () => {
+  const local = (shown: { value: boolean }) => createFakeComputer({
+    kind: 'local',
+    screencast: async () => async () => {},
+    showWindow: async () => { shown.value = true },
+    hideWindow: async () => { shown.value = false },
+    windowShown: () => shown.value,
+  })
+
+  it('reports its kind, a screencast screen instead of a VNC page, and whether its window is up', async () => {
+    const shown = { value: false }
+    const { app } = setup(async () => local(shown))
+    const body = await (await app.request('/api/bots/researcher/computer')).json()
+    expect(body).toMatchObject({ running: true, kind: 'local', vncUrl: null, screen: { kind: 'cdp', url: '/screen/researcher/ws' }, window: false })
+  })
+
+  it('still reports a sealed computer the old way, plus its kind', async () => {
+    const { app } = setup(async () => createFakeComputer({ screen: { base: 'http://127.0.0.1:1', password: 'pw' } }))
+    const body = await (await app.request('/api/bots/researcher/computer')).json()
+    expect(body).toMatchObject({ kind: 'docker', screen: { kind: 'vnc', url: '/vnc/researcher/view.html#password=pw' }, window: false })
+  })
+
+  it('opens and closes the sign-in window on request, and refuses it for a sealed computer', async () => {
+    const shown = { value: false }
+    const { app } = setup(async () => local(shown))
+    expect(await (await post(app, '/api/bots/researcher/computer/window', { shown: true })).json()).toEqual({ ok: true, window: true })
+    expect(shown.value).toBe(true)
+    expect(await (await post(app, '/api/bots/researcher/computer/window', { shown: false })).json()).toEqual({ ok: true, window: false })
+    expect((await post(app, '/api/bots/researcher/computer/window', { shown: 'yes' })).status).toBe(400)
+    expect((await post(app, '/api/bots/nobody/computer/window', { shown: true })).status).toBe(404)
+    const sealed = setup(async () => createFakeComputer())
+    expect((await post(sealed.app, '/api/bots/researcher/computer/window', { shown: true })).status).toBe(409)
+  })
+})

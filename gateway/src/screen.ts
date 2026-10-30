@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { dirname, extname, resolve, sep } from 'node:path'
 import type { Hono } from 'hono'
 import type { WSEvents } from 'hono/ws'
+import type { BotComputer } from './computer.js'
 
 /**
  * 屏幕：查看页和 noVNC 库都由网关自己提供（npm 装的那份），只把 websockify 的数据流转发给容器。
@@ -57,6 +58,47 @@ const VIEWER = `<!doctype html>
 </body>
 </html>
 `
+
+/** 本机电脑的屏幕流地址（WebSocket，同源、同一个登录） */
+export function screencastPath(botId: string): string {
+  return `/screen/${encodeURIComponent(botId)}/ws`
+}
+
+/**
+ * 本机模式的屏幕：没有 VNC，网关直接订阅浏览器的截屏流，一帧一条 JSON 推给面板。
+ * 面板关了就退订；浏览器没了帧自然停，面板那头按断线重连。
+ */
+export function screencastRelay(
+  computer: Pick<BotComputer, 'screencast'>,
+  hooks: { onOpen?: () => void; onClose?: () => void } = {},
+): WSEvents {
+  let stop: (() => Promise<void>) | null = null
+  let closed = false
+  return {
+    onOpen: (_evt, ws) => {
+      hooks.onOpen?.()
+      if (!computer.screencast) {
+        ws.send(JSON.stringify({ type: 'error', error: 'this computer has no screen to stream' }))
+        ws.close()
+        return
+      }
+      computer.screencast((frame) => { if (!closed) ws.send(JSON.stringify({ type: 'frame', ...frame })) })
+        .then((s) => {
+          if (closed) void s() // 订阅成功前面板就关了
+          else stop = s
+        })
+        .catch((err: unknown) => {
+          ws.send(JSON.stringify({ type: 'error', error: err instanceof Error ? err.message : String(err) }))
+          ws.close()
+        })
+    },
+    onClose: () => {
+      closed = true
+      hooks.onClose?.()
+      void stop?.()
+    },
+  }
+}
 
 /** 谁的屏幕正开着：有人在看（比如正在接管登录）就别把那台电脑当成闲置停掉 */
 export type ScreenViewers = { open(botId: string): void; close(botId: string): void; watching(botId: string): boolean }

@@ -13,7 +13,7 @@ import { createLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
-import { createScreenViewers, mountScreenProxy, screenRelay } from './screen.js'
+import { createScreenViewers, mountScreenProxy, screenRelay, screencastRelay } from './screen.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
@@ -119,6 +119,13 @@ app.get('/vnc/:botId/websockify', upgradeWebSocket(async (c) => {
     onOpen: () => viewers.open(botId),
     onClose: () => viewers.close(botId),
   })
+}))
+// 本机电脑没有 VNC：屏幕是网关订阅的浏览器截屏流
+app.get('/screen/:botId/ws', upgradeWebSocket(async (c) => {
+  const botId = c.req.param('botId') ?? ''
+  if (!knownBot(botId)) throw new Error(`unknown bot ${botId}`)
+  const computer = await pool.get(botId)
+  return screencastRelay(computer, { onOpen: () => viewers.open(botId), onClose: () => viewers.close(botId) })
 }))
 mountScreenProxy(app, { knownBot })
 

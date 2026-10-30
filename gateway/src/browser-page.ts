@@ -26,7 +26,18 @@ export type PageLike = {
   viewportSize(): { width: number; height: number } | null
 }
 
-export type ContextLike = { pages(): PageLike[]; newPage(): Promise<PageLike> }
+/** 够用就好的 CDP 会话：本机模式用它拿浏览器画面 */
+export type CdpSessionLike = {
+  send(method: string, params?: Record<string, unknown>): Promise<unknown>
+  on(event: string, listener: (params: never) => void): unknown
+  detach(): Promise<void>
+}
+
+export type ContextLike = {
+  pages(): PageLike[]
+  newPage(): Promise<PageLike>
+  newCDPSession?(page: PageLike): Promise<CdpSessionLike>
+}
 
 export type BrowserLike = {
   contexts(): ContextLike[]
@@ -78,6 +89,7 @@ function missing(what: string): never {
  */
 export type BrowserSession = {
   page(): Promise<PageLike>
+  context(): Promise<ContextLike>
   /** idle = 还没开过；open = 连着；gone = 开过但浏览器没了（下次 page() 会重开）。不会去开新的。 */
   state(): 'idle' | 'open' | 'gone'
   dispose(): Promise<void>
@@ -95,22 +107,28 @@ export function createBrowserSession(open: () => Promise<BrowserLike>): BrowserS
     }
   }
 
+  async function context(): Promise<ContextLike> {
+    dropIfGone()
+    if (!browser) {
+      pending ??= open().catch((err: unknown) => {
+        pending = null
+        throw err
+      })
+      browser = await pending
+      everOpened = true
+    }
+    const ctx = browser.contexts()[0]
+    if (!ctx) throw new Error('bot browser has no context')
+    return ctx
+  }
+
   return {
+    context,
     async page() {
-      dropIfGone()
-      if (!browser) {
-        pending ??= open().catch((err: unknown) => {
-          pending = null
-          throw err
-        })
-        browser = await pending
-        everOpened = true
-      }
-      const context = browser.contexts()[0]
-      if (!context) throw new Error('bot browser has no context')
+      const ctx = await context()
       // 点开新标签页之后，用户（和 bot）要接着看的就是最新的那个
-      const pages = context.pages()
-      return pages[pages.length - 1] ?? (await context.newPage())
+      const pages = ctx.pages()
+      return pages[pages.length - 1] ?? (await ctx.newPage())
     },
     state() {
       dropIfGone()

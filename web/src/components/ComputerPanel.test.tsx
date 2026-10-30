@@ -176,3 +176,30 @@ describe('ComputerPanel', () => {
     expect(screen.getByText('Nothing yet. Every step it takes is logged here.')).toBeInTheDocument()
   })
 })
+
+describe('a local computer', () => {
+  const local: ComputerInfo = {
+    ...running, kind: 'local', vncUrl: null, screen: { kind: 'cdp', url: '/screen/researcher/ws' },
+  }
+
+  it('shows the screencast view and says what kind of computer it is', () => {
+    const sockets: string[] = []
+    vi.stubGlobal('WebSocket', class { constructor(url: string) { sockets.push(url) } close() {} })
+    const { container } = render(<ComputerPanel info={local} botName="Scout" onClose={() => {}} />)
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(screen.getByRole('img', { name: "Scout's screen" })).toBeInTheDocument()
+    expect(sockets[0]).toMatch(/\/screen\/researcher\/ws$/)
+    expect(screen.getByText(/Local sandbox/)).toBeInTheDocument()
+    vi.unstubAllGlobals()
+  })
+
+  it('tells the operator the browser window is open for signing in, and reports when they are done', async () => {
+    vi.stubGlobal('WebSocket', class { close() {} })
+    const done = vi.fn()
+    render(<ComputerPanel info={{ ...local, window: true }} botName="Scout" onClose={() => {}} onWindowDone={done} />)
+    expect(screen.getByRole('status')).toHaveTextContent(/open as a window on your desktop/)
+    await userEvent.click(screen.getByRole('button', { name: "I'm done signing in" }))
+    expect(done).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+})

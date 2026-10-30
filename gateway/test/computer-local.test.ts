@@ -133,3 +133,83 @@ describe('createLocalBackend', () => {
     await expect(backend.make('bob')).resolves.toBeTruthy()
   })
 })
+
+/** 带 CDP 的假浏览器：记下 send 过什么，能自己吐一帧 */
+function fakeCdpBrowser() {
+  const sent: { method: string; params?: Record<string, unknown> }[] = []
+  const listeners = new Map<string, (p: never) => void>()
+  const launches: { headless: boolean }[] = []
+  const state = { url: 'about:blank', open: true, detached: 0 }
+  const page = {
+    async goto(url: string) { state.url = url },
+    async title() { return 'T' },
+    url: () => state.url,
+    async innerText() { return '' },
+    async screenshot() { return Buffer.from('PNG') },
+    async click() {},
+    viewportSize: () => ({ width: 1280, height: 800 }),
+  }
+  const cdp = {
+    async send(method: string, params?: Record<string, unknown>) { sent.push({ method, params }); return {} },
+    on(event: string, listener: (p: never) => void) { listeners.set(event, listener) },
+    async detach() { state.detached += 1 },
+  }
+  const browser: BrowserLike = {
+    contexts: () => [{ pages: () => [page], newPage: async () => page, newCDPSession: async () => cdp }],
+    close: async () => { state.open = false },
+    isConnected: () => state.open,
+  }
+  const launch: LocalLaunch = async (opts) => { launches.push({ headless: opts.headless }); state.open = true; state.url = 'about:blank'; return browser }
+  const emitFrame = (data: string) => listeners.get('Page.screencastFrame')!({ data, sessionId: 7, metadata: { deviceWidth: 1280, deviceHeight: 800 } } as never)
+  return { launch, sent, state, launches, emitFrame }
+}
+
+describe('LocalComputer screen', () => {
+  it('streams JPEG frames over CDP and acks each one, until unsubscribed', async () => {
+    const { launch, sent, state, emitFrame } = fakeCdpBrowser()
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    const frames: unknown[] = []
+    const stop = await c.screencast!((f) => frames.push(f))
+    expect(sent.map((s) => s.method)).toEqual(['Page.startScreencast'])
+    expect(sent[0]!.params).toMatchObject({ format: 'jpeg' })
+    emitFrame('AAAA')
+    expect(frames).toEqual([{ data: 'AAAA', width: 1280, height: 800 }])
+    expect(sent.at(-1)).toEqual({ method: 'Page.screencastFrameAck', params: { sessionId: 7 } })
+    await stop()
+    expect(sent.at(-1)!.method).toBe('Page.stopScreencast')
+    expect(state.detached).toBe(1)
+  })
+})
+
+describe('LocalComputer window for signing in', () => {
+  it('reopens the same profile with a window on the page it was on, then goes back to headless when asked', async () => {
+    const { launch, launches, state } = fakeCdpBrowser()
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    await c.goto('https://mail.example.com/login')
+    expect(c.windowShown!()).toBe(false)
+    await c.showWindow!()
+    expect(c.windowShown!()).toBe(true)
+    expect(launches.map((l) => l.headless)).toEqual([true, false])
+    expect(state.url).toBe('https://mail.example.com/login') // 操作者看到的就是 bot 卡住的那一页
+    await c.showWindow!() // 已经开着窗口：不折腾
+    expect(launches).toHaveLength(2)
+    await c.hideWindow!()
+    expect(c.windowShown!()).toBe(false)
+    expect(launches.map((l) => l.headless)).toEqual([true, false, true])
+    expect(state.url).toBe('https://mail.example.com/login')
+  })
+
+  it('hiding a browser that is already headless does not launch one', async () => {
+    const { launch, launches } = fakeCdpBrowser()
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    await c.hideWindow!()
+    expect(launches).toHaveLength(0)
+  })
+
+  it('shows a window even before the browser was ever opened', async () => {
+    const { launch, launches } = fakeCdpBrowser()
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    await c.showWindow!()
+    expect(launches.map((l) => l.headless)).toEqual([false])
+  })
+})
