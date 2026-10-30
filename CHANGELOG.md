@@ -6,6 +6,11 @@ still change behaviour.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-30
+
+Fixes from a second review of 0.3.0 — mostly webhooks: redeliveries that were dropped, signed requests that
+could be replayed, and bodies buffered before they were refused — plus a Node 26 bot image and steadier tests.
+
 ### Security
 
 - A webhook delivery refused because the last run was still going is no longer remembered as "seen", so
@@ -225,7 +230,8 @@ A self-hosted Grok Bot alternative assembled from OpenClaw: three preconfigured 
 Ticker) with strict boundaries, agent-to-agent handoffs, any model provider, a one-command setup that never
 overwrites an existing OpenClaw config, a Docker/VPS path and an honest comparison with Grok Bot.
 
-[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.1.0...v0.2.0

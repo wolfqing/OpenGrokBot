@@ -16,3 +16,7 @@ updates:
     directory: /docker/bot
     schedule:
       interval: weekly
+    # 奇数大版本的 node 不是 LTS，半年就停更（#5、#6 都提议过 25）；只让偶数 LTS 线进来
+    ignore:
+      - dependency-name: node
+        versions: [">=25.0.0 <26.0.0", ">=27.0.0 <28.0.0", ">=29.0.0 <30.0.0", ">=31.0.0 <32.0.0"]
