@@ -13,12 +13,12 @@ import { canMessage, denyReason, type A2ARules } from './a2a.js'
 import { authMiddleware, loginHandler } from './auth.js'
 import { createBot } from './bots.js'
 import {
-  ensureDmThread, getMessage, insertMessage, listBotsWithLastMessage, listConversations, listMessages, recordUsage,
-  threadMembers, updateMessagePayload, usageSince, waitsOnOperator, type BotRow, type Db, type MessageRow,
+  type BotRow, type Db, ensureDmThread, getMessage, insertMessage, listBotsWithLastMessage, listConversations, listMessages, type MessageRow, recordUsage, setBotShell, threadMembers, updateMessagePayload, usageSince, waitsOnOperator,
 } from './db.js'
 import { createHub, type GatewayEvent, type Hub, type Presence } from './hub.js'
 import type { LLM } from './llm.js'
 import { appendMemoryRule, listMemoryRules, readMemory, removeMemoryRule } from './memory.js'
+import type { ComputerKind } from './computer.js'
 import type { Pool } from './pool.js'
 import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
@@ -30,10 +30,19 @@ import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
 import { createTurnQueue } from './turns.js'
 
+/** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
+export type ComputersInfo = {
+  kind: ComputerKind
+  sandbox?: { available: boolean; why?: string }
+  /** 打开命令行前实测一次沙箱；不传就只看 available */
+  checkSandbox?: (botId: string) => Promise<{ ok: true } | { ok: false; why: string }>
+}
+
 export type AppDeps = {
   db: Db
   llm: LLM
   pool?: Pool
+  computers?: ComputersInfo
   dataDir?: string
   scheduler?: Scheduler
   chiefId?: string
@@ -181,6 +190,15 @@ export function createApp(deps: AppDeps): GatewayApp {
   app.get('/api/session', (c) => c.json({ ok: true }))
 
   const botById = (id: string) => db.prepare('SELECT * FROM bots WHERE id = ?').get(id) as BotRow | undefined
+  const computerKind: ComputerKind = deps.computers?.kind ?? 'docker'
+  /** 容器电脑永远有 shell；本机电脑看操作者开没开 */
+  const shellEnabledFor = (bot: BotRow) => computerKind !== 'local' || bot.shell_enabled === 1
+  const shellView = (bot: BotRow) => {
+    const sandbox = deps.computers?.sandbox
+    return computerKind === 'local'
+      ? { enabled: bot.shell_enabled === 1, available: sandbox?.available ?? false, ...(sandbox?.why ? { why: sandbox.why } : {}) }
+      : { enabled: true, available: true }
+  }
 
   function presenceOf(botId: string): Presence {
     if (turns.isBusy(botId)) return 'thinking'
@@ -298,6 +316,7 @@ export function createApp(deps: AppDeps): GatewayApp {
         ...(pool ? { onAskForLogin: async () => { await (await pool.get(bot.id)).showWindow?.() } } : {}),
         // 登录接管留下的窗口，在 bot 下一次用电脑时收回后台（本来就在后台时什么都不做）
         ...(pool ? { getComputer: async () => { const computer = await pool.get(bot.id); await computer.hideWindow?.(); return computer } } : {}),
+        computer: { kind: computerKind, shell: shellEnabledFor(bot) },
         ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
         onApproval: async ({ action, detail, kind, target, rulesAllowed, items }) => {
           const at = now().getTime()
@@ -560,11 +579,31 @@ export function createApp(deps: AppDeps): GatewayApp {
       const vncUrl = computer.screen ? screenPagePath(botId, computer.screen.password) : null
       // 两种屏幕：容器给 noVNC 页面，本机给浏览器截屏流；面板按 kind 选怎么看
       const screen = vncUrl ? { kind: 'vnc', url: vncUrl } : computer.screencast ? { kind: 'cdp', url: screencastPath(botId) } : null
-      return c.json({ ...base, running: true, kind: computer.kind, vncUrl, screen, window: computer.windowShown?.() ?? false })
+      return c.json({
+        ...base, running: true, kind: computer.kind, vncUrl, screen, window: computer.windowShown?.() ?? false,
+        shell: shellView(botById(botId)!),
+      })
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
       return c.json({ ...base, running: false, vncUrl: null, error: err instanceof Error ? err.message : String(err) })
     }
+  })
+
+  /** 本机电脑的命令行开关：开之前先实测沙箱拦得住；容器电脑本来就有 shell，不接受这个开关 */
+  app.patch('/api/bots/:botId/computer', async (c) => {
+    const bot = botById(c.req.param('botId'))
+    if (!bot) return c.json({ error: 'unknown bot' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { shell?: unknown } | null
+    if (typeof body?.shell !== 'boolean') return c.json({ error: 'shell (true/false) required' }, 400)
+    if (computerKind !== 'local') return c.json({ error: 'a sealed computer always has a shell; this switch is for local computers' }, 409)
+    if (body.shell) {
+      const sandbox = deps.computers?.sandbox
+      if (!sandbox?.available) return c.json({ error: `no sandbox for commands on this machine. ${sandbox?.why ?? ''}`.trim() }, 409)
+      const checked = await deps.computers?.checkSandbox?.(bot.id)
+      if (checked && !checked.ok) return c.json({ error: `the sandbox failed its self-check: ${checked.why}` }, 409)
+    }
+    setBotShell(db, bot.id, body.shell)
+    return c.json({ ok: true, shell: shellView(botById(bot.id)!) })
   })
 
   /** 本机电脑的浏览器窗口：登录接管时开到桌面上，登录完收回后台 */

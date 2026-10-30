@@ -190,3 +190,19 @@ describe('schema migrations', () => {
     expect(() => openDb(path)).toThrow(/newer OpenGrokBot/)
   })
 })
+
+describe('the per-teammate shell switch (schema v4)', () => {
+  it('is off until the operator turns it on, and flips back', async () => {
+    const { openDb, setBotShell, botShellEnabled, upsertBot, SCHEMA_VERSION } = await import('../src/db.js')
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(4)
+    const db = openDb(':memory:')
+    upsertBot(db, { id: 'bob', name: 'Bob', role: '', emoji: '', soul_path: '' })
+    expect(botShellEnabled(db, 'bob')).toBe(false)
+    expect(setBotShell(db, 'bob', true)).toBe(true)
+    expect(botShellEnabled(db, 'bob')).toBe(true)
+    expect((db.prepare('SELECT * FROM bots WHERE id = ?').get('bob') as { shell_enabled: number }).shell_enabled).toBe(1)
+    expect(setBotShell(db, 'bob', false)).toBe(true)
+    expect(botShellEnabled(db, 'bob')).toBe(false)
+    expect(setBotShell(db, 'nobody', true)).toBe(false)
+  })
+})

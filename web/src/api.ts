@@ -78,6 +78,11 @@ export async function forgetMemoryRule(botId: string, rule: string): Promise<voi
   await send('POST', `/api/bots/${encodeURIComponent(botId)}/memory/forget`, { rule })
 }
 
+/** 本机电脑：开关这位同事的命令行（开了也在沙箱里，只能写它自己的文件夹） */
+export async function setComputerShell(botId: string, enabled: boolean): Promise<void> {
+  await send('PATCH', `/api/bots/${encodeURIComponent(botId)}/computer`, { shell: enabled })
+}
+
 /** 本机电脑：登录完了把浏览器窗口收回后台（shown=false），或主动开出来（shown=true） */
 export async function setComputerWindow(botId: string, shown: boolean): Promise<void> {
   await send('POST', `/api/bots/${encodeURIComponent(botId)}/computer/window`, { shown })

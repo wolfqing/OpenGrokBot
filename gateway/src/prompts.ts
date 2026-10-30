@@ -12,11 +12,29 @@ Call the message_user tool with kind "report":
 
 For conversation, questions, and anything that is not a work report, reply with plain text and no tool call.`
 
-export const COMPUTER_BRIEFING = `## Your computer
+export type ComputerBriefingOptions = { kind?: 'docker' | 'local'; shell?: boolean }
 
-You have your own computer: a private container with a persistent /workspace, a bash shell, and a real browser
-whose logins persist between sessions. Nobody else uses it.
-- Do the work yourself with shell / read_file / write_file / browser_* instead of asking your operator to.
+/** 电脑那一段：容器电脑和本机电脑说法不同，本机电脑没开命令行时还要讲清楚没有 shell */
+export function computerBriefing(opts: ComputerBriefingOptions = {}): string {
+  const local = opts.kind === 'local'
+  const shell = opts.shell !== false
+  const intro = local
+    ? `You have your own computer: a private browser profile and a persistent /workspace folder on your operator's
+machine${shell ? ', plus a bash shell that runs in a sandbox confined to that folder' : ''}. Your browser logins persist between sessions. Nobody else uses it.`
+    : `You have your own computer: a private container with a persistent /workspace, a bash shell, and a real browser
+whose logins persist between sessions. Nobody else uses it.`
+  const tools = shell ? 'shell / read_file / write_file / browser_*' : 'read_file / write_file / browser_*'
+  const shellNotes = !shell
+    ? `
+- Commands are off on this computer: there is no shell tool. If a job truly needs one, say so plainly; your operator can turn commands on in your computer panel.`
+    : local
+      ? `
+- The shell runs on your operator's own machine, confined to /workspace. Do not install software or change anything outside it.`
+      : ''
+  return `## Your computer
+
+${intro}
+- Do the work yourself with ${tools} instead of asking your operator to.${shellNotes}
 - In the browser: browser_goto, then browser_extract to read (it lists the page's links; long pages come in slices),
   and browser_click / browser_type / browser_press / browser_scroll / browser_back to act.
 - When you looked at something on screen, prove it: call browser_screenshot so the image lands in the thread.
@@ -24,6 +42,9 @@ whose logins persist between sessions. Nobody else uses it.
 - Never invent what a page or command said. If a tool fails, say so plainly and report what you saw.
 - You never have your operator's passwords and never ask for them in chat. At a login wall, call ask_for_login:
   they take over your screen, sign in once, and the session persists in your browser from then on.`
+}
+
+export const COMPUTER_BRIEFING = computerBriefing()
 
 export const NO_COMPUTER_NOTE = `You have no shell, browser, or file tools right now. Never pretend you ran one; say plainly when you cannot do something.`
 
@@ -92,6 +113,8 @@ export function buildSystemPrompt(
     manual?: string
     routines?: PromptRoutine[]
     skills?: { name: string; description: string }[]
+    /** 电脑是什么做的、有没有命令行 */
+    computer?: ComputerBriefingOptions
   } = {},
 ): string {
   const memory = opts.memory?.trim()
@@ -103,7 +126,7 @@ export function buildSystemPrompt(
     REPORT_GRAMMAR,
     APPROVAL_DISCIPLINE,
     opts.canRelay ? RELAY_NOTE : '',
-    opts.hasComputer ? COMPUTER_BRIEFING : NO_COMPUTER_NOTE,
+    opts.hasComputer ? computerBriefing(opts.computer) : NO_COMPUTER_NOTE,
     parseSoul(soul).body.trim(),
     manual ? `## Operating manual\n\n${manual}` : '',
     skillsSection(opts.skills ?? []),

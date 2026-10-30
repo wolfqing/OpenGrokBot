@@ -213,3 +213,20 @@ describe('LocalComputer window for signing in', () => {
     expect(launches.map((l) => l.headless)).toEqual([false])
   })
 })
+
+describe('LocalComputer shell', () => {
+  it('runs commands through the sandboxed runner only while the switch is on', async () => {
+    let on = false
+    const ran: string[] = []
+    const c = createLocalComputer({
+      workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch: fakeBrowser().launch,
+      shell: { enabled: () => on, run: async (cmd) => { ran.push(cmd); return { stdout: 'ok\n', stderr: '', exitCode: 0 } } },
+    })
+    await expect(c.shell('ls')).rejects.toThrow(/Commands are off/)
+    on = true
+    expect(await c.shell('ls')).toEqual({ stdout: 'ok\n', stderr: '', exitCode: 0 })
+    on = false // 面板上一关，下一条命令就不跑了
+    await expect(c.shell('ls')).rejects.toThrow(/Commands are off/)
+    expect(ran).toEqual(['ls'])
+  })
+})

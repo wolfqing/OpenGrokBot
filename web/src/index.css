@@ -534,3 +534,6 @@ button.question-option:hover { background: var(--bg-hover); }
   display: flex; gap: 10px; align-items: center; justify-content: space-between;
   padding: 10px 14px; font-size: 13px; background: #1a1708; border-bottom: 1px solid var(--border);
 }
+.panel-switch { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 13px; line-height: 1.4; cursor: pointer; }
+.panel-switch input { margin-top: 3px; flex: none; }
+.panel-switch input:disabled + span { color: #8f8f8f; }

@@ -2,7 +2,7 @@ import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createBrowserSession, pageOperations, type BrowserLike, type ContextLike } from './browser-page.js'
-import type { BotComputer } from './computer.js'
+import type { BotComputer, ShellResult } from './computer.js'
 
 /**
  * 本机模式的电脑：浏览器是宿主上直接拉起来的 Chromium（一位同事一个配置目录，登录态留在里面），
@@ -17,12 +17,20 @@ const VIRTUAL_ROOT = '/workspace'
 
 export type LocalLaunch = (opts: { profileDir: string; executablePath: string; headless: boolean }) => Promise<BrowserLike>
 
+export type LocalShell = {
+  /** 操作者此刻开着这位同事的命令行吗（每次调用都问，面板上一关立刻生效） */
+  enabled: () => boolean
+  run: (cmd: string, timeoutMs?: number, signal?: AbortSignal) => Promise<ShellResult>
+}
+
 export type LocalComputerOptions = {
   workspaceDir: string
   profileDir: string
   executablePath: string
   headless?: boolean
   launch?: LocalLaunch
+  /** 不传 = 这台电脑没有命令行 */
+  shell?: LocalShell
 }
 
 /**
@@ -128,8 +136,11 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       await relaunch(true)
     },
     windowShown: () => !headless,
-    async shell() {
-      throw new Error('Commands are off on this computer. Your operator can turn them on in the computer panel.')
+    async shell(cmd, timeoutMs, signal) {
+      if (!opts.shell?.enabled()) {
+        throw new Error('Commands are off on this computer. Your operator can turn them on in the computer panel.')
+      }
+      return opts.shell.run(cmd, timeoutMs, signal)
     },
     async readFile(path) {
       const full = await confined(opts.workspaceDir, path)

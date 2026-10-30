@@ -23,6 +23,8 @@ export type BotRow = {
   role: string
   emoji: string
   soul_path: string
+  /** 本机电脑上允许跑命令（1）；容器电脑不看这个字段 */
+  shell_enabled?: number
 }
 
 export type MessageRow = {
@@ -152,6 +154,8 @@ const MIGRATIONS: Migration[] = [
     CREATE INDEX IF NOT EXISTS idx_actions_bot ON actions(bot_id, id);
     CREATE INDEX IF NOT EXISTS idx_actions_time ON actions(created_at);
   `),
+  // v4：本机电脑的命令行开关，按同事存（操作者在面板上做的决定，要看得见、能撤）
+  (db) => db.exec(`ALTER TABLE bots ADD COLUMN shell_enabled INTEGER NOT NULL DEFAULT 0;`),
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length
@@ -241,6 +245,16 @@ export function upsertBot(db: Db, bot: BotRow): void {
        emoji = CASE WHEN @emoji <> '' THEN @emoji ELSE bots.emoji END,
        soul_path = @soul_path`,
   ).run({ ...bot, created_at: Date.now() })
+}
+
+/** 本机电脑的命令行：开或关。不存在的同事返回 false。 */
+export function setBotShell(db: Db, botId: string, enabled: boolean): boolean {
+  return db.prepare('UPDATE bots SET shell_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, botId).changes > 0
+}
+
+export function botShellEnabled(db: Db, botId: string): boolean {
+  const row = db.prepare('SELECT shell_enabled FROM bots WHERE id = ?').get(botId) as { shell_enabled: number } | undefined
+  return row?.shell_enabled === 1
 }
 
 export function ensureDmThread(db: Db, botId: string): string {

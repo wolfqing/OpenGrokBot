@@ -203,3 +203,27 @@ describe('a local computer', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('the commands switch', () => {
+  const local: ComputerInfo = { ...running, kind: 'local', vncUrl: null, screen: null }
+
+  it('turns commands on and off for a local computer', async () => {
+    const onShell = vi.fn()
+    render(<ComputerPanel info={{ ...local, shell: { enabled: false, available: true } }} botName="Scout" onClose={() => {}} onShell={onShell} />)
+    const box = screen.getByRole('checkbox', { name: 'Allow commands' })
+    expect(box).not.toBeChecked()
+    await userEvent.click(box)
+    expect(onShell).toHaveBeenCalledWith(true)
+  })
+
+  it('explains when no sandbox is available, and keeps the switch off', () => {
+    render(<ComputerPanel info={{ ...local, shell: { enabled: false, available: false, why: 'Install bubblewrap.' } }} botName="Scout" onClose={() => {}} onShell={() => {}} />)
+    expect(screen.getByRole('checkbox', { name: 'Allow commands' })).toBeDisabled()
+    expect(screen.getByText(/Install bubblewrap/)).toBeInTheDocument()
+  })
+
+  it('is not offered for a sealed computer', () => {
+    render(<ComputerPanel info={{ ...running, kind: 'docker', shell: { enabled: true, available: true } }} botName="Scout" onClose={() => {}} onShell={() => {}} />)
+    expect(screen.queryByRole('checkbox', { name: 'Allow commands' })).toBeNull()
+  })
+})

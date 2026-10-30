@@ -111,6 +111,8 @@ export type ComputerInfo = {
   screen?: { kind: 'vnc'; url: string } | { kind: 'cdp'; url: string } | null
   /** 本机模式：浏览器此刻以窗口开在桌面上（接管登录中） */
   window?: boolean
+  /** 命令行：开没开、这台机器有没有沙箱可用（没有就说明为什么） */
+  shell?: { enabled: boolean; available: boolean; why?: string }
   error?: string
   routines: ComputerRoutine[]
   usage?: { today: UsageTotals; budget: number }

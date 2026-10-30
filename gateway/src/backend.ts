@@ -6,6 +6,7 @@ import type { BotComputer, ComputerKind } from './computer.js'
 import { createDockerComputer } from './computer-docker.js'
 import { createLocalComputer, type LocalLaunch } from './computer-local.js'
 import { ensureContainer, runningBotIds, stopBotContainer, type ContainerOptions } from './containers.js'
+import { runSandboxed, type Sandbox } from './sandbox.js'
 import { botDataDir, workspaceDir } from './screenshots.js'
 
 /**
@@ -57,6 +58,8 @@ export type LocalBackendOptions = {
   launch?: LocalLaunch
   /** 测试里换掉找/下载浏览器 */
   resolveBrowser?: () => Promise<string>
+  /** 命令行：按同事问「开了吗」，开了就在系统沙箱里跑。没有沙箱 = 没有命令行。 */
+  shell?: { enabled: (botId: string) => boolean; sandbox: Sandbox | null }
 }
 
 /**
@@ -90,9 +93,17 @@ export function createLocalBackend(opts: LocalBackendOptions): ComputerBackend {
       const workspace = workspaceDir(opts.dataDir, botId)
       // 浏览器配置放网关自己的目录，不在 workspace 里：bot 读写文件时碰不到自己的 cookie 库
       const profileDir = join(botDataDir(opts.dataDir, botId), 'browser')
+      const tmp = join(botDataDir(opts.dataDir, botId), 'tmp')
       await mkdir(workspace, { recursive: true })
       await mkdir(profileDir, { recursive: true })
-      const computer = createLocalComputer({ workspaceDir: workspace, profileDir, executablePath, launch: opts.launch })
+      await mkdir(tmp, { recursive: true })
+      const sandbox = opts.shell?.sandbox ?? null
+      const shell = opts.shell && sandbox ? {
+        enabled: () => opts.shell!.enabled(botId),
+        run: (cmd: string, timeoutMs?: number, signal?: AbortSignal) =>
+          runSandboxed(cmd, { sandbox, confinement: { workspace, tmp, dataDir: opts.dataDir }, timeoutMs, signal }),
+      } : undefined
+      const computer = createLocalComputer({ workspaceDir: workspace, profileDir, executablePath, launch: opts.launch, shell })
       const tracked: BotComputer = {
         ...computer,
         async dispose() {

@@ -8,12 +8,13 @@ import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
 import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
-import { openDb } from './db.js'
+import { botShellEnabled, openDb } from './db.js'
 import { createLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
 import { createScreenViewers, mountScreenProxy, screenRelay, screencastRelay } from './screen.js'
+import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
@@ -37,6 +38,7 @@ if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the work
 const llm = createLLM(config)
 // 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
+const sandbox = detectSandbox()
 const { backend, reason: backendReason } = await chooseBackend(config.computers, {
   docker: () => createDockerBackend(docker, {
     dataDir: config.dataDir,
@@ -47,6 +49,8 @@ const { backend, reason: backendReason } = await chooseBackend(config.computers,
     browser: config.browser,
     browserMirror: config.browserMirror,
     log: (line) => console.log(`[gateway] ${line}`),
+    // 命令行按同事开关（存数据库）；开了也只在系统沙箱里跑，没沙箱就没有命令行
+    shell: { enabled: (botId) => botShellEnabled(db, botId), sandbox },
   }),
   dockerReachable: () => dockerReachable(docker),
 })
@@ -67,6 +71,13 @@ const schedulerProxy: Scheduler = {
 
 const gateway = createApp({
   db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
+  computers: {
+    kind: backend.kind,
+    sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint() },
+    checkSandbox: (botId) => sandbox
+      ? sandboxSelfCheck(sandbox, { workspace: join(config.dataDir, 'workspaces', botId), tmp: join(config.dataDir, 'bots', botId, 'tmp'), dataDir: config.dataDir })
+      : Promise.resolve({ ok: false as const, why: sandboxHint() }),
+  },
   chiefId: config.chiefId,
   a2aRules: parseA2AAllow(config.a2aAllow, config.chiefId),
   token,
