@@ -93,13 +93,14 @@ xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云�
 
 ## 快速开始
 
-需要 Node 22+、pnpm，以及 Docker（给 bot 的电脑用）。
+需要 Node 22+ 和 pnpm。**Docker 可选。** 不装 Docker，每位同事得到一台「本机电脑」：在你机器上有它自己的浏览器
+（有 Chrome / Edge / Chromium 就直接用，没有就自动下载一次）和自己的文件夹；Docker 开着时，每位同事得到一个
+封闭的容器。本机电脑支持 macOS 和 Linux；Windows 请用 Docker。
 
 ```bash
 git clone https://github.com/wolfqing/OpenGrokBot.git
 cd OpenGrokBot
 pnpm install
-docker build -t opengrokbot/bot:dev docker/bot
 ```
 
 不用任何 API key 就能试——内置的脚本化假模型能把每条链路都跑通：
@@ -117,6 +118,11 @@ gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?to
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 ```
 
+gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答就用 Docker，否则用本机模式
+（`OPENGROKBOT_COMPUTERS=docker|local` 可以强制）。用 Docker 要先建镜像：`docker build -t opengrokbot/bot:dev docker/bot`。
+本机电脑上**命令行默认关着**，在那位同事的电脑面板里按需打开；打开后命令跑在系统沙箱里（macOS 用 Seatbelt，
+Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [docs/local-computers.md](docs/local-computers.md)。
+
 想让它常驻——一个进程、一个端口、开机自启、经隧道远程访问——用 `pnpm build && pnpm start`，以及
 [docs/always-on.md](docs/always-on.md) 里的 launchd / systemd 模板。
 
@@ -126,6 +132,9 @@ OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 | `OPENGROKBOT_API_KEY` | — | 你的 key，本仓库不会把它写进任何文件 |
 | `OPENGROKBOT_MODEL` | `grok-4` | 填 `stub` 可离线零 key 运行 |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite、bot 数据、工作区、gateway 令牌 |
+| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`、`local`，或 `auto`（Docker 在跑就用 Docker，否则本机） |
+| `OPENGROKBOT_BROWSER` | *(自动找)* | 本机电脑用的浏览器；不填就找 Chrome / Edge / Chromium，都没有就下载一个 |
+| `OPENGROKBOT_BROWSER_MIRROR` | *(官方)* | 下载那个浏览器用的镜像主机，国内网络用 |
 | `OPENGROKBOT_A2A_ALLOW` | *(空)* | 同级交接，如 `researcher>market-watch` |
 | `OPENGROKBOT_DAILY_TOKENS` | `0`（不限） | 每位同事每天的 token 预算 |
 | `OPENGROKBOT_VISION` | *(关)* | 把截图喂回给模型看 |
@@ -133,8 +142,9 @@ OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 其余设置——监听地址、闲置停机、单台电脑的资源上限、超时——见
 [docs/always-on.md](docs/always-on.md#configuration)。
 
-国内网络建议挂镜像源构建：`docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`（某个源不稳就换
-`mirrors.huaweicloud.com` 或 `mirrors.tuna.tsinghua.edu.cn`；apt 会自动重试，单个包最多等 5 分钟）。
+国内网络：用 Docker 的话挂镜像源构建——`docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`（某个源不稳就换
+`mirrors.huaweicloud.com` 或 `mirrors.tuna.tsinghua.edu.cn`；apt 会自动重试，单个包最多等 5 分钟）；本机电脑需要
+下载浏览器的话，设 `OPENGROKBOT_BROWSER_MIRROR=https://cdn.npmmirror.com/binaries/playwright`。
 
 ## 安全不是脚注，是全部理由
 

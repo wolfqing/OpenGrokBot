@@ -18,7 +18,9 @@ injection — that follows an agent wherever it runs. This page is precise about
 | A payload stays inside its fence | What a webhook delivered reaches the model between two lines that carry the payload's own SHA-256 fingerprint, with every payload line prefixed by `│`. Writing a convincing end-of-payload line from inside would mean finding a text that contains its own hash. |
 | An upgrade keeps a way back | Before a schema upgrade the gateway writes a complete copy of the database next to it and keeps the three most recent. It refuses to upgrade if the copy fails. |
 | Bots cannot reach each other | All bot computers share one Docker network with container-to-container traffic switched off. And because on Docker Desktop a container can still reach ports published on the host, everything a computer publishes wants that computer's own secret: its shell/file shim and its browser control port (CDP) a per-container token, its screen a per-container VNC password. |
-| Each computer is a cage | Its own container with memory, CPU and process limits, `no-new-privileges`, and only its own workspace mounted. Every port is published to `127.0.0.1` only. |
+| Each Docker computer is a cage | Its own container with memory, CPU and process limits, `no-new-privileges`, and only its own workspace mounted. Every port is published to `127.0.0.1` only. |
+| A local computer's files stay in its folder | `read_file` and `write_file` resolve inside that teammate's folder — `/workspace` maps to it — and a path that leaves it by name or through a symlink is refused. Its browser profile lives outside that folder, so the teammate cannot read its own cookie store through the file tools. |
+| A local computer's commands are off, then caged | Commands are off until you turn them on for that teammate in its panel. On, they run under Seatbelt (macOS) or bubblewrap (Linux): they can write only the teammate's folder and a private tmp; the data dir (gateway token, other teammates' folders and profiles) and your key folders (`~/.ssh`, `~/.aws`, `~/.gnupg`, the GitHub CLI, your own Chrome profile) are unreadable; `HOME` points at the folder and the environment is a short whitelist. The switch refuses to turn on until a self-check shows the sandbox blocks a write outside the folder and a read of the gateway token. A command that outlives its timeout, or that you stop, is killed with its whole process group. |
 | A bot cannot put code in front of you | The screen page and its noVNC code are served by the gateway from its own copy; only the raw VNC stream comes from the bot's computer. Nothing a bot changes inside its container reaches your browser as a page. |
 | Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only ways to change it are `save_memory`, `forget_memory` and the remove button in the computer panel, and each of them posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
 | Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENGROKBOT_A2A_ALLOW`, and relays stop after two hops. |
@@ -72,9 +74,27 @@ because of something the bot read shows up there.
 |---|---|
 | Model API key | The `OPENGROKBOT_API_KEY` environment variable. The gateway never writes it to disk. |
 | Gateway token | `gateway/data/auth-token` (`0600`), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
-| Bot logins | Each bot's browser profile, inside its own workspace. The gateway never sees a password. |
+| Bot logins | Each bot's browser profile: inside its container (Docker), or under `<data>/bots/<id>/browser` (local). The gateway never sees a password. |
 | Shim token, VNC password | Generated per container at creation, kept in that container's environment. |
 | Webhook keys | One per webhook routine, in the gateway's SQLite database. Shown only in the computer panel — inside the address, and on its own as the *Secret* for GitHub — and in the token-guarded routine listing the panel reads. |
+
+## Local computers
+
+A local computer is weaker than a container in ways you should know before you give one an account that matters:
+
+- **It runs as you.** The browser and any command run as your user on your machine. The sandbox confines the file
+  system, not the network: a command can reach anything your machine can, including services on `localhost`. It
+  cannot read the gateway token, so it cannot drive the gateway — but a service of yours that trusts localhost
+  without a password is reachable.
+- **No resource limits.** Nothing caps a local teammate's memory or CPU; a runaway command is killed only by its
+  timeout (ten minutes at most) or the stop button.
+- **The profile is a file.** The teammate's cookies live under `<data>/bots/<id>/browser`, readable by any program
+  running as your user — the same standing as your own browser profile, no better.
+- **Chromium's own sandbox stays on**, which it cannot inside a container. Pages the teammate visits get the
+  protection your own browser gives you.
+- **Windows has no local computer** yet, because it has no sandbox as mature as the two above.
+
+If a job needs a Linux of its own, software installed, or stronger isolation, give that teammate a Docker computer.
 
 ## What self-hosting buys you
 

@@ -104,13 +104,15 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 
 ## Quickstart
 
-Needs Node 22+, pnpm, and Docker (for the bot computers).
+Needs Node 22+ and pnpm. **Docker is optional.** Without it, each teammate gets a *local computer*: a browser of
+its own on your machine (your Chrome, Edge or Chromium if you have one — otherwise one is downloaded once) and a
+folder of its own. With Docker running, each gets a sealed container instead. macOS and Linux for local
+computers; on Windows, use Docker.
 
 ```bash
 git clone https://github.com/wolfqing/OpenGrokBot.git
 cd OpenGrokBot
 pnpm install
-docker build -t opengrokbot/bot:dev docker/bot
 ```
 
 Try it with no API key at all — a scripted stub model drives every path end to end:
@@ -128,6 +130,12 @@ Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a 
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 ```
 
+The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers,
+local otherwise (`OPENGROKBOT_COMPUTERS=docker|local` forces one). For Docker, build the image first:
+`docker build -t opengrokbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
+for that teammate in its computer panel; then they run in an OS sandbox (Seatbelt on macOS, bubblewrap on Linux)
+that can write only that teammate's folder. Details in [docs/local-computers.md](docs/local-computers.md).
+
 To keep it running — one process, one port, started at boot, reachable through a tunnel — `pnpm build &&
 pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/always-on.md).
 
@@ -137,6 +145,9 @@ pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/alwa
 | `OPENGROKBOT_API_KEY` | — | Your key. Never written to disk by this repo |
 | `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
+| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running, else local) |
+| `OPENGROKBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome/Edge/Chromium are looked for, then one is downloaded |
+| `OPENGROKBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser, for slow-network regions |
 | `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
 | `OPENGROKBOT_DAILY_TOKENS` | `0` (off) | Per-teammate daily token budget |
 | `OPENGROKBOT_VISION` | *(off)* | Show the model its own screenshots |
@@ -144,7 +155,7 @@ pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/alwa
 Every other setting — listen address, idle stop, per-computer limits, timeouts — is in
 [docs/always-on.md](docs/always-on.md#configuration).
 
-In a slow-network region, build with a mirror: `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …` (or `mirrors.huaweicloud.com`, `mirrors.tuna.tsinghua.edu.cn`)
+In a slow-network region: for Docker, build with a mirror — `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …` (or `mirrors.huaweicloud.com`, `mirrors.tuna.tsinghua.edu.cn`); for a local computer that has to download its browser, set `OPENGROKBOT_BROWSER_MIRROR=https://cdn.npmmirror.com/binaries/playwright`.
 
 ## Security is the point, not a footnote
 

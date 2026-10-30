@@ -11,7 +11,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "smoke:docker": "tsx scripts/smoke-docker.ts"
+    "smoke:docker": "tsx scripts/smoke-docker.ts",
+    "smoke:local": "tsx scripts/smoke-local.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

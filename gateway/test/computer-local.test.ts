@@ -172,8 +172,11 @@ describe('LocalComputer screen', () => {
     const stop = await c.screencast!((f) => frames.push(f))
     expect(sent.map((s) => s.method)).toEqual(['Page.startScreencast'])
     expect(sent[0]!.params).toMatchObject({ format: 'jpeg' })
+    // 第一帧是现状截图（无头浏览器静止时不出帧），之后才是流
+    expect(frames).toEqual([{ data: Buffer.from('PNG').toString('base64'), width: 1280, height: 800 }])
     emitFrame('AAAA')
-    expect(frames).toEqual([{ data: 'AAAA', width: 1280, height: 800 }])
+    expect(frames[1]).toEqual({ data: 'AAAA', width: 1280, height: 800 })
+    await new Promise((r) => setTimeout(r, 150)) // 确认帧有意延后，压帧率
     expect(sent.at(-1)).toEqual({ method: 'Page.screencastFrameAck', params: { sessionId: 7 } })
     await stop()
     expect(sent.at(-1)!.method).toBe('Page.stopScreencast')

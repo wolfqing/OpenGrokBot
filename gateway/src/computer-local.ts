@@ -114,15 +114,23 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
     async screencast(onFrame) {
       const context = await session.context()
       if (!context.newCDPSession) throw new Error('this browser cannot stream its screen')
-      const cdp = await context.newCDPSession(await session.page())
+      const page = await session.page()
+      const cdp = await context.newCDPSession(page)
       type Frame = { data: string; sessionId: number; metadata: { deviceWidth: number; deviceHeight: number } }
+      let stopped = false
       cdp.on('Page.screencastFrame', (frame: Frame) => {
+        if (stopped) return
         onFrame({ data: frame.data, width: frame.metadata.deviceWidth, height: frame.metadata.deviceHeight })
-        // 不确认上一帧，Chromium 就不发下一帧
-        void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {})
+        // 不确认上一帧，Chromium 就不发下一帧——借这一点把帧率压在 10 帧/秒上下，面板和网关都轻松
+        setTimeout(() => { void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {}) }, 100)
       })
-      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 800, everyNthFrame: 2 })
+      // 无头浏览器只在画面变化时出帧；静止的页面要先给面板一张现状，别让人对着黑屏等
+      const size = page.viewportSize() ?? { width: 1280, height: 800 }
+      const first = await page.screenshot({ type: 'jpeg', quality: 60 }).catch(() => null)
+      if (first) onFrame({ data: first.toString('base64'), width: size.width, height: size.height })
+      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 })
       return async () => {
+        stopped = true
         await cdp.send('Page.stopScreencast').catch(() => {})
         await cdp.detach().catch(() => {})
       }

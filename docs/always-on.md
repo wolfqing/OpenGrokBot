@@ -102,13 +102,16 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
 | `OPENGROKBOT_TURN_MINUTES` | `20` | Pause a turn that has run this long (checked between steps); `0` never |
 | `OPENGROKBOT_VISION` | *(off)* | Show the model its own screenshots (vision models only) |
 | `OPENGROKBOT_IDLE_STOP_MINUTES` | `60` | Stop idle computers; `0` never |
-| `OPENGROKBOT_BOT_MEMORY_MB` / `OPENGROKBOT_BOT_CPUS` | `2048` / `2` | Per-computer limits |
+| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto`: Docker when the daemon answers, else a local computer (see [local-computers.md](local-computers.md)) |
+| `OPENGROKBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome, Edge, Chromium or Brave are looked for, then a Chrome for Testing is downloaded into `<data>/browsers` |
+| `OPENGROKBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser; `https://cdn.npmmirror.com/binaries/playwright` works from China |
+| `OPENGROKBOT_BOT_MEMORY_MB` / `OPENGROKBOT_BOT_CPUS` | `2048` / `2` | Per-computer limits (Docker computers only) |
 
 ## Upgrading
 
 ```bash
 git pull && pnpm install && pnpm build
-docker build -t opengrokbot/bot:dev docker/bot
+docker build -t opengrokbot/bot:dev docker/bot   # only if your teammates use Docker computers
 # restart the service (launchctl kickstart -k gui/$(id -u)/ai.opengrokbot.gateway, or systemctl restart opengrokbot)
 ```
 
