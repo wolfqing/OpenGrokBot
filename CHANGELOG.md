@@ -6,6 +6,12 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- Routines are scheduled with croner 11. Around daylight-saving changes this follows cron's usual behaviour: a
+  routine set for a time that the clocks skip runs at the first valid time after the jump, and one that repeats
+  through the day keeps running through the repeated hour.
+
 ## [0.3.1] - 2026-10-30
 
 Fixes from a second review of 0.3.0 — mostly webhooks: redeliveries that were dropped, signed requests that
