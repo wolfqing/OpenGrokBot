@@ -2,8 +2,12 @@ export type ShellResult = { stdout: string; stderr: string; exitCode: number }
 export type Shot = { buffer: Buffer; width: number; height: number }
 export type PageLink = { text: string; href: string }
 
-/** 一台 bot 自己的电脑：shell、文件、浏览器。实现见 computer-docker.ts。 */
+/** 哪种电脑：容器里的（sealed），还是本机沙箱里的（local） */
+export type ComputerKind = 'docker' | 'local'
+
+/** 一台 bot 自己的电脑：shell、文件、浏览器。实现见 computer-docker.ts / computer-local.ts。 */
 export interface BotComputer {
+  readonly kind: ComputerKind
   /** 这台电脑的屏幕：noVNC 的地址（只给网关代理用）和 VNC 口令；没有容器就没有屏幕。 */
   readonly screen?: { base: string; password?: string }
   /** 这台电脑还应答吗？容器一重启端口就全变了，缓存的连接会全废。 */
@@ -39,6 +43,7 @@ export function createFakeComputer(
   const pageText = overrides.pageText ?? 'Example Domain — this domain is for use in examples.'
   const pageLinks = overrides.pageLinks ?? []
   const base: BotComputer = {
+    kind: overrides.kind ?? 'docker',
     async ping() { return true },
     async shell(cmd) { calls.push(`shell:${cmd}`); return { stdout: 'hi\n', stderr: '', exitCode: 0 } },
     async readFile(path) { calls.push(`read:${path}`); return 'file contents' },
@@ -57,6 +62,7 @@ export function createFakeComputer(
   type MutableComputer = { -readonly [K in keyof BotComputer]: BotComputer[K] }
   const wrapped: MutableComputer = { ...base, ...(overrides.screen ? { screen: overrides.screen } : {}) }
   for (const key of Object.keys(base) as (keyof BotComputer)[]) {
+    if (key === 'kind') continue
     const override = overrides[key]
     if (typeof override === 'function') {
       wrapped[key] = (async (...args: unknown[]) => {
