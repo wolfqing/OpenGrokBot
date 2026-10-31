@@ -69,6 +69,10 @@ Every line below is implemented and covered by tests — nothing here is a roadm
   routine a secret webhook address instead, for GitHub, a form or any script to call. "Keep an eye on the status
   page" makes a watch routine: read-only tools, and silence unless something needs you. Pause, run or delete them
   from the computer panel — or tell the bot to stop one.
+- **Recorded workflow traces (first slice).** The gateway can start and stop a typed recording on a teammate's
+  existing browser page and save it with that teammate. Password, one-time-code and other sensitive-looking fields
+  are redacted before a trace is written. Replay and routine scheduling are not part of this slice. See
+  [docs/workflows.md](docs/workflows.md).
 - **Shared skills.** Drop a Markdown playbook into `<data>/skills/` and every teammate sees it and reads it
   before work it covers. Memory and routines stay with each teammate; skills are shared.
 - **See the work, stop the work.** Every step on its computer — the command, the page, the click — shows live
@@ -222,7 +226,8 @@ a private computer per teammate pulls against OpenClaw's shared-host model. The 
 group dispatch — runs without it; bots simply report that they have no computer attached.
 
 More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
-[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)
+[docs/security.md](docs/security.md) · [docs/workflows.md](docs/workflows.md) · [docs/comparison.md](docs/comparison.md) ·
+[CHANGELOG.md](CHANGELOG.md)
 
 ## Disclaimer
 

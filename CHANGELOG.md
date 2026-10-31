@@ -6,6 +6,11 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- First teach-mode slice: record semantic browser actions on the teammate's existing page, redact sensitive input,
+  and persist a typed workflow trace through the gateway API. Replay and routines remain out of scope.
+
 ## [0.4.0] - 2026-10-30
 
 Teammates' computers without Docker: on macOS and Linux each teammate can get a browser and a folder of its

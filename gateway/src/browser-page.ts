@@ -6,6 +6,7 @@ import type { BotComputer, PageLink, Shot } from './computer.js'
  */
 
 type Fillable = { first(): { fill(text: string, opts?: unknown): Promise<void> } }
+type BindingDisposable = { dispose(): Promise<void> }
 
 export type PageLike = {
   goto(url: string, opts?: unknown): Promise<unknown>
@@ -23,6 +24,9 @@ export type PageLike = {
   goBack?(opts?: unknown): Promise<unknown>
   waitForLoadState?(state?: string, opts?: unknown): Promise<void>
   evaluate?(script: string): Promise<unknown>
+  exposeBinding?(name: string, callback: (source: unknown, event: unknown) => void | Promise<void>): Promise<BindingDisposable>
+  on?(event: 'framenavigated' | 'close', listener: (value?: unknown) => void): void
+  off?(event: 'framenavigated' | 'close', listener: (value?: unknown) => void): void
   viewportSize(): { width: number; height: number } | null
 }
 

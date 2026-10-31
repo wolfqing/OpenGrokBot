@@ -18,7 +18,7 @@ import {
 import { createHub, type GatewayEvent, type Hub, type Presence } from './hub.js'
 import type { LLM } from './llm.js'
 import { appendMemoryRule, listMemoryRules, readMemory, removeMemoryRule } from './memory.js'
-import type { ComputerKind } from './computer.js'
+import type { BotComputer, ComputerKind } from './computer.js'
 import type { Pool } from './pool.js'
 import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
@@ -29,6 +29,8 @@ import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
 import { createTurnQueue } from './turns.js'
+import type { WorkflowRecording } from './workflow-recorder.js'
+import { listWorkflowTraces, readWorkflowTrace, saveWorkflowTrace, type SavedWorkflowTrace } from './workflows.js'
 
 /** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
 export type ComputersInfo = {
@@ -71,6 +73,10 @@ export type GatewayApp = {
 }
 
 type QuestionPayload = { question: string; options: string[]; multi: boolean; status: string; answer?: string[] }
+type ActiveWorkflowRecording = {
+  recorder: WorkflowRecording | null
+  stopping: Promise<SavedWorkflowTrace> | null
+}
 
 /** 每条 routine 记住最近这么多个投递编号 */
 const MAX_DELIVERIES = 500
@@ -182,6 +188,7 @@ export function createApp(deps: AppDeps): GatewayApp {
   const routinesInFlight = new Set<number>()
   /** 已落库、还没交给某个回合去回答的用户消息（按线程） */
   const waiting = new Map<string, Set<number>>()
+  const workflowRecordings = new Map<string, ActiveWorkflowRecording>()
 
   if (deps.token) {
     app.use('*', authMiddleware(deps.token, deps.allowedOrigins))
@@ -572,7 +579,7 @@ export function createApp(deps: AppDeps): GatewayApp {
     const memory = dataDir ? await listMemoryRules(dataDir, botId) : []
     const skills = dataDir ? await listSkills(skillsDir(dataDir)) : []
     const actions = listActions(db, botId, 30)
-    const base = { botId, routines, usage, rules, memory, skills, actions }
+    const base = { botId, routines, usage, rules, memory, skills, actions, workflowRecording: workflowRecordings.has(botId) }
     if (!pool) return c.json({ ...base, running: false, vncUrl: null })
     try {
       const computer = await pool.get(botId)
@@ -586,6 +593,80 @@ export function createApp(deps: AppDeps): GatewayApp {
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
       return c.json({ ...base, running: false, vncUrl: null, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/api/bots/:botId/workflows/recording', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    if (!pool || !dataDir) return c.json({ error: 'workflow recording is unavailable' }, 409)
+    if (workflowRecordings.has(botId)) return c.json({ error: 'a workflow is already being recorded' }, 409)
+    const body = (await c.req.json().catch(() => null)) as { title?: unknown } | null
+    const title = typeof body?.title === 'string' ? body.title.trim() : ''
+    if (!title || title.length > 120) return c.json({ error: 'title must be 1 to 120 characters' }, 400)
+    const active: ActiveWorkflowRecording = { recorder: null, stopping: null }
+    workflowRecordings.set(botId, active)
+    let computer: BotComputer
+    try {
+      computer = await pool.get(botId)
+    } catch {
+      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      return c.json({ error: 'the bot browser is unavailable' }, 503)
+    }
+    if (!computer.startWorkflowRecording) {
+      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      return c.json({ error: 'this computer cannot record workflows' }, 409)
+    }
+    try {
+      const recorder = await computer.startWorkflowRecording(title)
+      active.recorder = recorder
+      return c.json({ ok: true, recording: true }, 202)
+    } catch (error) {
+      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      return c.json({ error: error instanceof Error ? error.message : 'could not start workflow recording' }, 409)
+    }
+  })
+
+  app.post('/api/bots/:botId/workflows/recording/stop', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    if (!dataDir) return c.json({ error: 'workflow storage is unavailable' }, 409)
+    const active = workflowRecordings.get(botId)
+    if (!active) return c.json({ error: 'no workflow is being recorded' }, 409)
+    const recorder = active.recorder
+    if (!recorder) return c.json({ error: 'workflow recording is still starting' }, 409)
+    active.stopping ??= (async () => {
+      const trace = await recorder.stop()
+      return saveWorkflowTrace(dataDir, botId, trace)
+    })()
+    try {
+      const saved = await active.stopping
+      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      return c.json(saved)
+    } catch (error) {
+      active.stopping = null
+      return c.json({ error: error instanceof Error ? error.message : 'could not save workflow trace' }, 500)
+    }
+  })
+
+  app.get('/api/bots/:botId/workflows', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId) || !dataDir) return c.json({ error: 'unknown bot' }, 404)
+    try {
+      return c.json(await listWorkflowTraces(dataDir, botId))
+    } catch {
+      return c.json({ error: 'could not read workflow traces' }, 500)
+    }
+  })
+
+  app.get('/api/bots/:botId/workflows/:workflowId', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId) || !dataDir) return c.json({ error: 'unknown bot' }, 404)
+    try {
+      const trace = await readWorkflowTrace(dataDir, botId, c.req.param('workflowId'))
+      return trace ? c.json(trace) : c.json({ error: 'unknown workflow' }, 404)
+    } catch {
+      return c.json({ error: 'could not read workflow trace' }, 400)
     }
   })
 
@@ -858,6 +939,6 @@ export function createApp(deps: AppDeps): GatewayApp {
     hub,
     hello: () => ({ type: 'hello', statuses: presenceSnapshot() }),
     runRoutine,
-    isBusy: (botId) => turns.isBusy(botId),
+    isBusy: (botId) => turns.isBusy(botId) || workflowRecordings.has(botId),
   }
 }

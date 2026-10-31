@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createBrowserSession, pageOperations, type BrowserLike, type ContextLike } from './browser-page.js'
 import type { BotComputer, ShellResult } from './computer.js'
+import { createWorkflowRecorder } from './workflow-recorder.js'
 
 /**
  * 本机模式的电脑：浏览器是宿主上直接拉起来的 Chromium（一位同事一个配置目录，登录态留在里面），
@@ -162,6 +163,9 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       const full = await confined(opts.workspaceDir, path)
       await mkdir(dirname(full), { recursive: true })
       await writeFile(full, content, 'utf8')
+    },
+    async startWorkflowRecording(title) {
+      return createWorkflowRecorder(await session.page(), title)
     },
     ...pageOperations(() => session.page()),
     dispose: () => session.dispose(),

@@ -1,3 +1,5 @@
+import type { WorkflowRecording } from './workflow-recorder.js'
+
 export type ShellResult = { stdout: string; stderr: string; exitCode: number }
 export type Shot = { buffer: Buffer; width: number; height: number }
 export type PageLink = { text: string; href: string }
@@ -36,6 +38,8 @@ export interface BotComputer {
   scroll(direction: 'up' | 'down'): Promise<void>
   back(): Promise<{ url: string; title: string }>
   screenshot(): Promise<Shot>
+  /** Starts event capture on this computer's existing persistent browser page. */
+  startWorkflowRecording?(title: string): Promise<WorkflowRecording>
   dispose(): Promise<void>
 }
 
@@ -53,6 +57,7 @@ export function createFakeComputer(
   const pageLinks = overrides.pageLinks ?? []
   const base: BotComputer = {
     kind: overrides.kind ?? 'docker',
+    ...(overrides.startWorkflowRecording ? { startWorkflowRecording: overrides.startWorkflowRecording } : {}),
     async ping() { return true },
     async shell(cmd) { calls.push(`shell:${cmd}`); return { stdout: 'hi\n', stderr: '', exitCode: 0 } },
     async readFile(path) { calls.push(`read:${path}`); return 'file contents' },
