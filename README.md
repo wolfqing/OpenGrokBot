@@ -7,15 +7,13 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-blue?style=flat-square)](../../pulls)
 
-> 🖥️ **Also from this author: [Grok Desktop](https://github.com/wolfqing/GrokDesktop)** — a native macOS window
-> for Grok Chat and the official `grok` CLI. Chat embeds grok.com; Build picks up your `~/.grok` sessions over ACP.
-
 xAI's Grok Bot sells always-on teammates that each get a cloud computer — browser, filesystem, terminal — with
 persistent memory, bot-to-bot handoffs, and an iMessage-shaped app to manage them. It comes with paid Grok and
 Cursor plans and **meters its own usage on top**, and every bot runs on xAI's cloud **with your logins inside it**.
 
-This is the same shape, self-hosted. One gateway process on your machine, one Docker container per bot, a dense
-web client that reads like a workbench, and any OpenAI-compatible model behind it.
+This is the same shape, self-hosted. One gateway process on your machine, a computer of its own for every bot (a
+Docker container, or without Docker a browser and a folder on your Mac or Linux box), a dense web client that reads
+like a workbench, and any OpenAI-compatible model behind it.
 
 ![A teammate's thread: it reports what it did, holds what would go out, and shows you what it saw](assets/screenshot-thread.png)
 
@@ -33,12 +31,13 @@ web client that reads like a workbench, and any OpenAI-compatible model behind i
 ## What a teammate actually is here
 
 A folder with a `SOUL.md` (who it is) and an `AGENTS.md` (how it works, with its hard boundaries), a thread in
-the sidebar, and a container of its own:
+the sidebar, and a computer of its own. With Docker, that computer is a container:
 
 ![Architecture: your browser talks to one gateway process, which drives one Docker container per teammate — each with a headed Chromium, a noVNC screen you can take over, a shell/file shim, and a persistent workspace](assets/architecture.svg)
 
-The bot's credentials live in **its** browser profile, in **its** container. The gateway never sees a password,
-and neither does your config file.
+Without Docker, a *local computer* takes the container's place: a background browser with its own profile and a
+folder of its own, on your machine ([docs/local-computers.md](docs/local-computers.md)). Either way, the bot's
+credentials live in **its** browser profile. The gateway never sees a password, and neither does your config file.
 
 ## What it does today
 
@@ -79,18 +78,21 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 
 **The computer**
 
-- `shell`, `read_file`, `write_file` inside the container; long files and pages come back in slices instead of
+- `read_file`, `write_file` and `shell` in its own workspace: the container, or on a local computer a folder that
+  no path can leave. A local computer's commands are off until you turn them on for that teammate, and then run
+  in an OS sandbox (Seatbelt on macOS, bubblewrap on Linux). Long files and pages come back in slices instead of
   being cut off.
 - `browser_goto` / `browser_extract` (with the page's links) / `browser_click` / `browser_type` /
-  `browser_press` / `browser_scroll` / `browser_back` against a real headed Chromium — so login-walled sites and
-  forms work, which pure API/MCP setups cannot do. CJK and emoji fonts included.
+  `browser_press` / `browser_scroll` / `browser_back` against a real Chromium — so login-walled sites and forms
+  work, which pure API/MCP setups cannot do. The container image ships CJK and emoji fonts.
 - `browser_screenshot` posts what the bot saw into the thread as evidence — and, with `OPENGROKBOT_VISION=1`,
   shows it to a vision model too.
-- **Takeover login.** At a login wall the bot calls `ask_for_login` instead of asking for a password. You open
-  its screen from the thread, sign in once in *its* browser, and the session persists in its profile — across
-  container restarts.
-- Computers start on demand, stop after an hour without use, and come back with their logins. Each one is
-  capped (memory, CPU, processes) and cannot reach any other bot's computer.
+- **Takeover login.** At a login wall the bot calls `ask_for_login` instead of asking for a password. You sign
+  in once in *its* browser — through its screen in the thread for a container, or in a normal window that opens
+  on your desktop for a local computer — and the session persists in its profile, across restarts.
+- Computers start on demand, stop after an hour without use, and come back with their logins. A container is
+  capped (memory, CPU, processes) and cannot reach any other bot's computer; a local computer has no resource
+  caps ([what that means](docs/security.md#local-computers)).
 
 **The crew**
 
@@ -162,12 +164,14 @@ In a slow-network region: for Docker, build with a mirror — `docker build --bu
 The loudest objection to hosted always-on agents: an agent that never sleeps, holding all your credentials, on
 someone else's infrastructure, exposed to prompt injection. The self-hosted answers:
 
-- **Credentials never leave your machine.** They live in the bot's browser profile, inside its workspace.
+- **Credentials never leave your machine.** They live in the bot's own browser profile.
 - **The bot never asks for a password in chat.** It asks you to take over its screen instead.
 - **Nothing reaches the gateway without its token.** It listens on `127.0.0.1`, each browser signs in once, and
   only its own pages may change state. A website you visit cannot approve a hold — and neither can the bot.
 - **Every bot is in its own cage** — a separate container with its own workspace and resource limits, and no
-  route to any other bot's computer.
+  route to any other bot's computer. A local computer's cage is thinner: its files stay in its folder and its
+  commands are off unless you turn them on, but nothing caps its memory or CPU, and commands it runs can reach your
+  network. [docs/security.md](docs/security.md#local-computers) spells out the difference.
 - **Rules change only through the memory chip.** A bot cannot quietly rewrite what you told it.
 - **Outward actions are held for your approval.** That is an instruction every teammate follows, not a sandbox
   rule — so give bots their own accounts rather than yours.
@@ -183,7 +187,7 @@ on you.
 | Software | with a paid SuperGrok or Cursor plan, plus metered usage | $0 (MIT all the way down) |
 | Compute | included (xAI's cloud) | your Mac / mini PC / ~$5 VPS |
 | Model | included (Grok only) | your key, any provider — or local at $0 |
-| Your logins | on xAI's cloud | in a container on your machine |
+| Your logins | on xAI's cloud | in each bot's own browser profile, on your machine |
 
 Honest note: Grok Bot's zero-setup polish, iOS app, and teach-by-demonstration are real advantages. If you are
 happy putting your accounts on xAI's cloud and paying for the convenience, buy it. This repo is for everyone who
@@ -199,12 +203,14 @@ official xAI product. [Download the latest release](https://github.com/wolfqing/
 
 ## Roadmap
 
-- [ ] **teach-mode** — record a browser demonstration, compile it into a reusable routine. The one Grok Bot
-      feature with no open equivalent; design discussion in [#1](../../issues/1)
+- [ ] **teach-mode** — record a browser demonstration once and keep it as a workflow the teammate can run again,
+      by hand or from a routine. The one Grok Bot feature with no open equivalent; a contributor has taken the
+      first slice (the recorder and its trace format) in [#1](../../issues/1)
+- [x] **Computers without Docker** on macOS and Linux — a browser profile and a folder per teammate, commands
+      off by default and sandboxed when on (v0.4.0)
+- [ ] A desktop app with a first-run wizard, so trying it needs no Docker, Node or terminal; then an Apple
+      container backend on macOS 26. Plan in [docs/local-computers.md](docs/local-computers.md)
 - [ ] Telegram as a notification / approval surface for when you are away from the desk
-- [ ] **Computers without Docker** — a local mode (separate browser profile per teammate, sandboxed commands)
-      plus a desktop app with a first-run wizard, so trying it needs no Docker, Node or terminal. Plan in
-      [docs/local-computers.md](docs/local-computers.md)
 - [ ] One-command VPS image (cloud-init)
 
 ## FAQ
@@ -217,9 +223,10 @@ even run on the same brain: point it at the Grok API.
 a private computer per teammate pulls against OpenClaw's shared-host model. The old recipe is kept in
 [docs/openclaw-recipe/](docs/openclaw-recipe/README.md). Not an official OpenClaw project.
 
-**Do I have to use Docker?** For the computers, today yes — a Docker-free local mode is planned
-([docs/local-computers.md](docs/local-computers.md)). Everything else — threads, approvals, memory, routines,
-group dispatch — runs without it; bots simply report that they have no computer attached.
+**Do I have to use Docker?** No. On macOS and Linux, a teammate without Docker gets a local computer: a browser
+and a folder of its own on your machine. Docker buys stronger isolation (a container per teammate, with resource
+limits), and on Windows it is still the only way to give teammates a computer. See
+[docs/local-computers.md](docs/local-computers.md).
 
 More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
 [docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)
@@ -231,4 +238,4 @@ trademark of xAI — the name is used here only to identify the product this sta
 
 ## License
 
-[MIT](LICENSE). Star it if it saved you $300/month. ⭐
+[MIT](LICENSE). Star it if it is useful to you. ⭐

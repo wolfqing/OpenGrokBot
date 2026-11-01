@@ -7,15 +7,13 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-blue?style=flat-square)](../../pulls)
 
-> 🖥️ **同一作者的另一个项目：[Grok Desktop](https://github.com/wolfqing/GrokDesktop)**——Grok Chat 与官方 `grok`
-> 命令行的原生 macOS 客户端。Chat 内嵌 grok.com，Build 经 ACP 接着跑你 `~/.grok` 里的会话。
-
 xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云电脑（浏览器、文件系统、终端），有持久记忆，彼此
 能交接工作，还有一个 iMessage 形状的 app 来管他们。它跟着 Grok 和 Cursor 的付费订阅走，**用量另外计费**，而且
 每个 bot 都跑在 xAI 的云上，**你的登录态也一起在里面**。
 
-这个仓库是同样的形状，自托管版：你机器上一个 gateway 进程、每个 bot 一个 Docker 容器、一个信息密度很高、更像
-工作台的网页客户端，后面接任何 OpenAI 兼容的模型。
+这个仓库是同样的形状，自托管版：你机器上一个 gateway 进程、每个 bot 一台自己的电脑（一个 Docker 容器；没有
+Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹）、一个信息密度很高、更像工作台的网页客户端，后面接
+任何 OpenAI 兼容的模型。
 
 ![同事的线程：它汇报干了什么、把要出门的动作扣住、把看到的画面贴回来](assets/screenshot-thread.png)
 
@@ -32,11 +30,14 @@ xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云�
 
 ## 这里的「同事」到底是什么
 
-一个文件夹（`SOUL.md` 写它是谁，`AGENTS.md` 写它怎么干活、硬边界在哪）、侧栏里的一条线程，外加一台自己的电脑：
+一个文件夹（`SOUL.md` 写它是谁，`AGENTS.md` 写它怎么干活、硬边界在哪）、侧栏里的一条线程，外加一台自己的电脑。
+用 Docker 时，这台电脑是一个容器：
 
 ![架构图：浏览器连一个 gateway 进程，它驱动每个同事各自的 Docker 容器——里面是有头 Chromium、可被你接管的 noVNC 屏幕、shell/文件 shim，以及一个持久化的工作区](assets/architecture.svg)
 
-凭证只存在**它的**浏览器 profile、**它的**容器里。gateway 看不到密码，配置文件里也不会有。
+不用 Docker 时，换成一台「本机电脑」：你机器上一个在后台运行、有独立 profile 的浏览器，加上它自己的文件夹（见
+[docs/local-computers.md](docs/local-computers.md)）。两种情况下，凭证都只存在**它的**浏览器 profile 里。gateway
+看不到密码，配置文件里也不会有。
 
 ## 现在已经能做什么
 
@@ -72,15 +73,17 @@ xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云�
 
 **电脑**
 
-- 容器里的 `shell`、`read_file`、`write_file`；长文件、长网页分片读，不再被悄悄截断。
+- 在它自己的工作区里 `read_file`、`write_file`、`shell`：容器里，或者本机电脑上一个任何路径都出不去的文件夹。
+  本机电脑的命令行默认关着，你给那位同事打开后，命令跑在系统沙箱里（macOS 用 Seatbelt，Linux 用 bubblewrap）。
+  长文件、长网页分片读，不再被悄悄截断。
 - `browser_goto` / `browser_extract`（附页面上的链接）/ `browser_click` / `browser_type` / `browser_press` /
-  `browser_scroll` / `browser_back` 操作真正的有头 Chromium——登录墙后面的站点和表单都能干，这是纯 API/MCP
-  方案做不到的。中文和 emoji 字体都装好了。
+  `browser_scroll` / `browser_back` 操作真正的 Chromium——登录墙后面的站点和表单都能干，这是纯 API/MCP
+  方案做不到的。容器镜像里装好了中文和 emoji 字体。
 - `browser_screenshot` 把它看到的画面贴进聊天当证据；开 `OPENGROKBOT_VISION=1` 后也会给支持看图的模型看。
-- **接管登录。** 撞上登录墙时，bot 调 `ask_for_login` 而不是问你要密码。你从线程里打开它的屏幕，在**它的**浏览器
-  里登录一次，会话就留在它的 profile 里——容器重启也还在。
-- 电脑按需启动，闲置一小时自动停机，下次用时连同登录态原样回来。每台都有内存 / CPU / 进程数上限，也碰不到别的
-  同事的电脑。
+- **接管登录。** 撞上登录墙时，bot 调 `ask_for_login` 而不是问你要密码。你在**它的**浏览器里登录一次——容器的话
+  从线程里打开它的屏幕；本机电脑的话，它的浏览器会以普通窗口弹到你桌面上——会话就留在它的 profile 里，重启也还在。
+- 电脑按需启动，闲置一小时自动停机，下次用时连同登录态原样回来。容器有内存 / CPU / 进程数上限，也碰不到别的同事
+  的电脑；本机电脑没有资源上限（[这意味着什么](docs/security.md#local-computers)）。
 
 **这支班子**
 
@@ -151,11 +154,13 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [d
 对「托管式常驻 agent」最响的反对声：一个永不休眠、手握你全部凭证的 agent，跑在别人的基础设施上，还暴露在提示词
 注入面前。自托管的回答是：
 
-- **凭证不出你的机器。** 它们在 bot 的浏览器 profile 里，在它自己的工作区里。
+- **凭证不出你的机器。** 它们在 bot 自己的浏览器 profile 里。
 - **bot 不会在聊天里问密码。** 它只会请你接管它的屏幕。
 - **没有令牌，什么都连不上 gateway。** 它只听 `127.0.0.1`，每个浏览器登录一次，且只有它自己的页面能改状态。你随手
   打开的网页放行不了审批——bot 自己也放行不了。
-- **每个 bot 各在各的笼子里**——独立容器、独立工作区、资源上限，而且没有通往别的同事电脑的路。
+- **每个 bot 各在各的笼子里**——独立容器、独立工作区、资源上限，而且没有通往别的同事电脑的路。本机电脑的笼子
+  薄一些：文件出不了它的文件夹，命令行要你打开才有，但内存和 CPU 没有上限，它跑的命令也能访问你的网络。差别在
+  [docs/security.md](docs/security.md#local-computers) 里写清楚了。
 - **规矩只能经记忆 chip 改。** bot 没法悄悄改写你交代过的话。
 - **对外动作会扣住等你批准。** 这是每位同事都遵守的指令，而不是沙箱规则——所以给 bot 配它们自己的账号，别用你的。
 - **bot 之间默认不能互发消息**，要你显式放行方向。
@@ -169,7 +174,7 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [d
 | 软件 | 需要 SuperGrok 或 Cursor 付费订阅，用量另计 | $0（一路 MIT） |
 | 算力 | 含（xAI 的云） | 你现有的 Mac / 小主机 / ~$5 VPS |
 | 模型 | 含（只有 Grok） | 你自己的 key，任意厂商——本地模型则 $0 |
-| 你的登录态 | 在 xAI 云上 | 在你机器上的容器里 |
+| 你的登录态 | 在 xAI 云上 | 在你机器上、每个 bot 自己的浏览器 profile 里 |
 
 说句公道话：Grok Bot 的开箱即用、iOS app、看着你操作就学会，这三样是真优势。如果你不介意把账号放在 xAI 云上，
 也愿意为省事付钱，那就买它。这个仓库是给那些对「你能接受吗？」回答**不能**的人准备的。
@@ -183,11 +188,13 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 
 ## 路线图
 
-- [ ] **teach-mode**——录一遍浏览器操作，编译成可复用的 routine。这是 Grok Bot 唯一没有开源等价物的能力，设计
-      讨论在 [#1](../../issues/1)
+- [ ] **teach-mode**——录一遍浏览器操作，存成一个同事能反复执行的 workflow，手动跑或由 routine 定时跑。这是
+      Grok Bot 唯一没有开源等价物的能力；已有贡献者接下第一步（录制器和录制格式），在 [#1](../../issues/1)
+- [x] **不用 Docker 的电脑**（macOS 和 Linux）——每位同事独立的浏览器 profile 和文件夹，命令行默认关、打开后跑在
+      系统沙箱里（v0.4.0）
+- [ ] 带首次启动向导的桌面 App，试用时不需要 Docker、Node 和终端；之后是 macOS 26 上的 Apple container 后端。
+      计划见 [docs/local-computers.md](docs/local-computers.md)
 - [ ] Telegram 作为离开电脑时的通知 / 审批补位渠道
-- [ ] **不用 Docker 的电脑**——本机模式（每位同事独立的浏览器配置、命令行在系统沙箱里）加上带首次启动向导的
-      桌面 App，试用时不需要 Docker、Node 和终端。计划见 [docs/local-computers.md](docs/local-computers.md)
 - [ ] 一条命令起 VPS 镜像（cloud-init）
 
 ## 常见问题
@@ -199,9 +206,9 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 自己的电脑」和 OpenClaw 的共享主机模型是拧着的。旧配方保留在
 [docs/openclaw-recipe/](docs/openclaw-recipe/README.md)。本项目不是 OpenClaw 官方项目。
 
-**必须用 Docker 吗？** 电脑那部分目前必须，不用 Docker 的本机模式在计划中（见
-[docs/local-computers.md](docs/local-computers.md)）。其余能力——线程、审批、记忆、routine、群分派——没有 Docker
-也照常运转，bot 只会如实说自己现在没有电脑。
+**必须用 Docker 吗？** 不必。在 macOS 和 Linux 上，没有 Docker 时每位同事得到一台本机电脑：你机器上它自己的
+浏览器和文件夹。Docker 换来的是更强的隔离（每位同事一个容器，带资源上限）；在 Windows 上，目前仍然只有 Docker
+能给同事配电脑。见 [docs/local-computers.md](docs/local-computers.md)。
 
 更多见 [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
 [docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)
@@ -213,4 +220,4 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 
 ## License
 
-[MIT](LICENSE)。如果它帮你省下每月 $300，点个 star。⭐
+[MIT](LICENSE)。觉得有用就点个 star。⭐
