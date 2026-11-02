@@ -8,8 +8,9 @@ still change behaviour.
 
 ### Added
 
-- First teach-mode slice: record semantic browser actions on the teammate's existing page, redact sensitive input,
-  and persist a typed workflow trace through the gateway API. Replay and routines remain out of scope.
+- First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
+  saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
+  and routines remain out of scope.
 
 ## [0.4.0] - 2026-10-30
 

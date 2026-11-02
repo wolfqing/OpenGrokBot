@@ -156,6 +156,17 @@ const MIGRATIONS: Migration[] = [
   `),
   // v4：本机电脑的命令行开关，按同事存（操作者在面板上做的决定，要看得见、能撤）
   (db) => db.exec(`ALTER TABLE bots ADD COLUMN shell_enabled INTEGER NOT NULL DEFAULT 0;`),
+  // v5：recorded workflows belong beside routines and actions in the teammate database, not as loose files.
+  (db) => db.exec(`
+    CREATE TABLE IF NOT EXISTS workflows (
+      id TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      trace_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_workflows_bot ON workflows(bot_id, created_at DESC, id DESC);
+  `),
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

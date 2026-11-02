@@ -39,7 +39,7 @@ export interface BotComputer {
   back(): Promise<{ url: string; title: string }>
   screenshot(): Promise<Shot>
   /** Starts event capture on this computer's existing persistent browser page. */
-  startWorkflowRecording?(title: string): Promise<WorkflowRecording>
+  startWorkflowRecording?(title: string, intent?: string): Promise<WorkflowRecording>
   dispose(): Promise<void>
 }
 

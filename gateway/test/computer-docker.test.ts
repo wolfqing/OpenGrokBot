@@ -5,15 +5,31 @@ const endpoints = { shim: 'http://127.0.0.1:7717', cdp: 'http://127.0.0.1:9222',
 
 function fakePage(overrides: Record<string, unknown> = {}) {
   const state = { url: 'about:blank', clicked: [] as string[], goneTo: [] as string[] }
+  const bindings = new Map<string, (source: unknown, event: unknown) => void | Promise<void>>()
+  const listeners = new Map<'framenavigated' | 'close', Set<(value?: unknown) => void>>([
+    ['framenavigated', new Set()], ['close', new Set()],
+  ])
   return {
     state,
+    bindings,
     page: {
-      async goto(url: string) { state.goneTo.push(url); state.url = url },
+      async goto(url: string) {
+        state.goneTo.push(url)
+        state.url = url
+        for (const listener of listeners.get('framenavigated') ?? []) listener()
+      },
       async title() { return 'Example Domain' },
       url: () => state.url,
       async innerText() { return 'Example Domain\nMore information...' },
       async screenshot() { return Buffer.from('PNGDATA') },
       async click(sel: string) { state.clicked.push(sel) },
+      async evaluate() { return undefined },
+      async exposeBinding(name: string, callback: (source: unknown, event: unknown) => void | Promise<void>) {
+        bindings.set(name, callback)
+        return { async dispose() { bindings.delete(name) } }
+      },
+      on(event: 'framenavigated' | 'close', listener: (value?: unknown) => void) { listeners.get(event)?.add(listener) },
+      off(event: 'framenavigated' | 'close', listener: (value?: unknown) => void) { listeners.get(event)?.delete(listener) },
       viewportSize: () => ({ width: 1280, height: 800 }),
       ...overrides,
     },
@@ -22,10 +38,12 @@ function fakePage(overrides: Record<string, unknown> = {}) {
 
 function fakeConnect<P>(page: P) {
   let closed = false
+  let newPages = 0
   const browser = {
-    contexts: () => [{ pages: () => [page], newPage: async () => page }],
+    contexts: () => [{ pages: () => [page], newPage: async () => { newPages += 1; return page } }],
     close: async () => { closed = true },
     get closed() { return closed },
+    get newPages() { return newPages },
   }
   return { browser, connect: async (_cdpUrl?: string) => browser }
 }
@@ -90,6 +108,29 @@ describe('DockerComputer browser over CDP', () => {
     const c = createDockerComputer(endpoints, { connect: fakeConnect(page).connect })
     expect(await c.goto('https://example.com')).toEqual({ url: 'https://example.com', title: 'Example Domain' })
     expect(state.goneTo).toEqual(['https://example.com'])
+  })
+
+  it('records on the existing CDP page and stops with a safe typed trace', async () => {
+    const { page, state, bindings } = fakePage()
+    const connection = fakeConnect(page)
+    const c = createDockerComputer(endpoints, { connect: connection.connect })
+    await c.goto('https://example.com/start')
+    const recording = await c.startWorkflowRecording!('Docker workflow', 'Check the current status')
+    const binding = bindings.values().next().value
+    expect(binding).toBeDefined()
+    await binding!({}, { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Refresh' } }, { css: 'button:nth-of-type(1)' }] } })
+    await c.goto('https://example.com/status?ticket=private#details')
+    const trace = await recording.stop()
+
+    expect(connection.browser.newPages).toBe(0)
+    expect(trace.intent).toBe('Check the current status')
+    expect(trace.steps).toEqual([
+      { type: 'navigate', url: 'https://example.com/start' },
+      { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Refresh' } }, { css: 'button:nth-of-type(1)' }] } },
+      { type: 'navigate', url: 'https://example.com/status?ticket=' },
+    ])
+    expect(state.goneTo).toEqual(['https://example.com/start', 'https://example.com/status?ticket=private#details'])
+    expect(bindings.size).toBe(0)
   })
 
   it('extracts body text and truncates', async () => {

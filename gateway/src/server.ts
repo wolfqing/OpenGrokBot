@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { Hono } from 'hono'
 import { listActions, recordAction, type ActionTrigger } from './actions.js'
@@ -30,7 +31,7 @@ import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
 import { createTurnQueue } from './turns.js'
 import type { WorkflowRecording } from './workflow-recorder.js'
-import { listWorkflowTraces, readWorkflowTrace, saveWorkflowTrace, type SavedWorkflowTrace } from './workflows.js'
+import { listWorkflowTraces, parseWorkflowTrace, readWorkflowTrace, saveWorkflowTrace, type WorkflowTrace } from './workflows.js'
 
 /** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
 export type ComputersInfo = {
@@ -73,9 +74,11 @@ export type GatewayApp = {
 }
 
 type QuestionPayload = { question: string; options: string[]; multi: boolean; status: string; answer?: string[] }
+type WorkflowDraft = { id: string; trace: WorkflowTrace }
 type ActiveWorkflowRecording = {
   recorder: WorkflowRecording | null
-  stopping: Promise<SavedWorkflowTrace> | null
+  stopping: Promise<WorkflowTrace> | null
+  draft: WorkflowDraft | null
 }
 
 /** 每条 routine 记住最近这么多个投递编号 */
@@ -189,6 +192,7 @@ export function createApp(deps: AppDeps): GatewayApp {
   /** 已落库、还没交给某个回合去回答的用户消息（按线程） */
   const waiting = new Map<string, Set<number>>()
   const workflowRecordings = new Map<string, ActiveWorkflowRecording>()
+  const workflowDrafts = new Map<string, WorkflowDraft>()
 
   if (deps.token) {
     app.use('*', authMiddleware(deps.token, deps.allowedOrigins))
@@ -579,7 +583,10 @@ export function createApp(deps: AppDeps): GatewayApp {
     const memory = dataDir ? await listMemoryRules(dataDir, botId) : []
     const skills = dataDir ? await listSkills(skillsDir(dataDir)) : []
     const actions = listActions(db, botId, 30)
-    const base = { botId, routines, usage, rules, memory, skills, actions, workflowRecording: workflowRecordings.has(botId) }
+    const base = {
+      botId, routines, usage, rules, memory, skills, actions,
+      workflowRecording: workflowRecordings.has(botId), workflowDraft: workflowDrafts.has(botId),
+    }
     if (!pool) return c.json({ ...base, running: false, vncUrl: null })
     try {
       const computer = await pool.get(botId)
@@ -599,12 +606,28 @@ export function createApp(deps: AppDeps): GatewayApp {
   app.post('/api/bots/:botId/workflows/recording', async (c) => {
     const botId = c.req.param('botId')
     if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
-    if (!pool || !dataDir) return c.json({ error: 'workflow recording is unavailable' }, 409)
+    if (!pool) return c.json({ error: 'workflow recording is unavailable' }, 409)
+    if (workflowDrafts.has(botId)) return c.json({ error: 'review or discard the pending workflow draft first' }, 409)
     if (workflowRecordings.has(botId)) return c.json({ error: 'a workflow is already being recorded' }, 409)
-    const body = (await c.req.json().catch(() => null)) as { title?: unknown } | null
-    const title = typeof body?.title === 'string' ? body.title.trim() : ''
+    const body = (await c.req.json().catch(() => null)) as { title?: unknown; intent?: unknown } | null
+    let title = typeof body?.title === 'string' ? body.title.trim() : ''
     if (!title || title.length > 120) return c.json({ error: 'title must be 1 to 120 characters' }, 400)
-    const active: ActiveWorkflowRecording = { recorder: null, stopping: null }
+    if (body?.intent !== undefined && (typeof body.intent !== 'string' || body.intent.length > 500)) {
+      return c.json({ error: 'intent must be at most 500 characters' }, 400)
+    }
+    let intent: string | undefined
+    try {
+      const validated = parseWorkflowTrace({
+        format: 'opengrokbot.workflow', version: 1, title,
+        ...(typeof body?.intent === 'string' && body.intent.trim() ? { intent: body.intent.trim() } : {}),
+        steps: [],
+      })
+      title = validated.title
+      intent = validated.intent
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : 'invalid workflow metadata' }, 400)
+    }
+    const active: ActiveWorkflowRecording = { recorder: null, stopping: null, draft: null }
     workflowRecordings.set(botId, active)
     let computer: BotComputer
     try {
@@ -618,7 +641,7 @@ export function createApp(deps: AppDeps): GatewayApp {
       return c.json({ error: 'this computer cannot record workflows' }, 409)
     }
     try {
-      const recorder = await computer.startWorkflowRecording(title)
+      const recorder = await computer.startWorkflowRecording(title, intent)
       active.recorder = recorder
       return c.json({ ok: true, recording: true }, 202)
     } catch (error) {
@@ -630,30 +653,62 @@ export function createApp(deps: AppDeps): GatewayApp {
   app.post('/api/bots/:botId/workflows/recording/stop', async (c) => {
     const botId = c.req.param('botId')
     if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
-    if (!dataDir) return c.json({ error: 'workflow storage is unavailable' }, 409)
+    const pending = workflowDrafts.get(botId)
+    if (pending) return c.json(pending)
     const active = workflowRecordings.get(botId)
     if (!active) return c.json({ error: 'no workflow is being recorded' }, 409)
     const recorder = active.recorder
     if (!recorder) return c.json({ error: 'workflow recording is still starting' }, 409)
-    active.stopping ??= (async () => {
-      const trace = await recorder.stop()
-      return saveWorkflowTrace(dataDir, botId, trace)
-    })()
+    active.stopping ??= recorder.stop()
     try {
-      const saved = await active.stopping
+      const trace = await active.stopping
+      active.draft ??= { id: randomUUID(), trace }
+      workflowDrafts.set(botId, active.draft)
       if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
-      return c.json(saved)
+      return c.json(active.draft)
     } catch (error) {
       active.stopping = null
-      return c.json({ error: error instanceof Error ? error.message : 'could not save workflow trace' }, 500)
+      return c.json({ error: error instanceof Error ? error.message : 'could not stop workflow recording' }, 500)
     }
+  })
+
+  app.post('/api/bots/:botId/workflows', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { draftId?: unknown; trace?: unknown } | null
+    if (typeof body?.draftId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.draftId)) {
+      return c.json({ error: 'a workflow draft id is required' }, 400)
+    }
+    const draftId = body.draftId.toLowerCase()
+    const pending = workflowDrafts.get(botId)
+    if (!pending || pending.id !== draftId) {
+      const existing = readWorkflowTrace(db, botId, draftId)
+      return existing ? c.json({ id: draftId, trace: existing }) : c.json({ error: 'unknown workflow draft' }, 409)
+    }
+    try {
+      const saved = saveWorkflowTrace(db, botId, body.trace, pending.id)
+      if (workflowDrafts.get(botId) === pending) workflowDrafts.delete(botId)
+      return c.json(saved, 201)
+    } catch (error) {
+      const status = error instanceof TypeError ? 400 : 500
+      return c.json({ error: error instanceof Error ? error.message : 'could not save workflow trace' }, status)
+    }
+  })
+
+  app.delete('/api/bots/:botId/workflows/drafts/:draftId', (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const draft = workflowDrafts.get(botId)
+    if (!draft || draft.id !== c.req.param('draftId')) return c.json({ error: 'unknown workflow draft' }, 404)
+    workflowDrafts.delete(botId)
+    return c.body(null, 204)
   })
 
   app.get('/api/bots/:botId/workflows', async (c) => {
     const botId = c.req.param('botId')
-    if (!botById(botId) || !dataDir) return c.json({ error: 'unknown bot' }, 404)
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
     try {
-      return c.json(await listWorkflowTraces(dataDir, botId))
+      return c.json(listWorkflowTraces(db, botId))
     } catch {
       return c.json({ error: 'could not read workflow traces' }, 500)
     }
@@ -661,9 +716,9 @@ export function createApp(deps: AppDeps): GatewayApp {
 
   app.get('/api/bots/:botId/workflows/:workflowId', async (c) => {
     const botId = c.req.param('botId')
-    if (!botById(botId) || !dataDir) return c.json({ error: 'unknown bot' }, 404)
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
     try {
-      const trace = await readWorkflowTrace(dataDir, botId, c.req.param('workflowId'))
+      const trace = readWorkflowTrace(db, botId, c.req.param('workflowId'))
       return trace ? c.json(trace) : c.json({ error: 'unknown workflow' }, 404)
     } catch {
       return c.json({ error: 'could not read workflow trace' }, 400)

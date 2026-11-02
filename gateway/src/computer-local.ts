@@ -4,6 +4,7 @@ import { chromium } from 'playwright-core'
 import { createBrowserSession, pageOperations, type BrowserLike, type ContextLike } from './browser-page.js'
 import type { BotComputer, ShellResult } from './computer.js'
 import { createWorkflowRecorder } from './workflow-recorder.js'
+import type { WorkflowRecording } from './workflow-recorder.js'
 
 /**
  * 本机模式的电脑：浏览器是宿主上直接拉起来的 Chromium（一位同事一个配置目录，登录态留在里面），
@@ -92,6 +93,7 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
   const launch = opts.launch ?? defaultLaunch
   let headless = opts.headless ?? true
   const session = createBrowserSession(() => launch({ profileDir: opts.profileDir, executablePath: opts.executablePath, headless }))
+  let activeWorkflowRecording: WorkflowRecording | null = null
 
   /**
    * Chromium 不能在运行中切换有没有窗口：关掉再以另一种方式开同一个配置。
@@ -103,6 +105,7 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
     await session.dispose()
     headless = nextHeadless
     const p = await session.page()
+    await activeWorkflowRecording?.reattach(p)
     if (url && url !== 'about:blank') await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {})
   }
 
@@ -164,8 +167,20 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       await mkdir(dirname(full), { recursive: true })
       await writeFile(full, content, 'utf8')
     },
-    async startWorkflowRecording(title) {
-      return createWorkflowRecorder(await session.page(), title)
+    async startWorkflowRecording(title, intent) {
+      const recorder = await createWorkflowRecorder(await session.page(), title, intent)
+      const active: WorkflowRecording = {
+        reattach: (page) => recorder.reattach(page),
+        async stop() {
+          try {
+            return await recorder.stop()
+          } finally {
+            if (activeWorkflowRecording === active) activeWorkflowRecording = null
+          }
+        },
+      }
+      activeWorkflowRecording = active
+      return active
     },
     ...pageOperations(() => session.page()),
     dispose: () => session.dispose(),

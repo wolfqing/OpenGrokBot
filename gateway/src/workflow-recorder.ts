@@ -5,12 +5,22 @@ import {
   type WorkflowTrace,
 } from './workflows.js'
 
-export type WorkflowRecording = { stop(): Promise<WorkflowTrace> }
+export type WorkflowRecording = {
+  reattach(page: PageLike): Promise<void>
+  stop(): Promise<WorkflowTrace>
+}
 
-type RecordablePage = PageLike & Required<Pick<
-  PageLike,
-  'evaluate' | 'exposeBinding' | 'on' | 'off'
->>
+type RecordablePage = PageLike & Required<Pick<PageLike, 'evaluate' | 'exposeBinding' | 'on' | 'off'>>
+type PageEvent = 'framenavigated' | 'close'
+type PageListener = (value?: unknown) => void
+
+type Attachment = {
+  page: RecordablePage
+  binding: { dispose(): Promise<void> }
+  closed: boolean
+  onNavigate: PageListener
+  onClose: PageListener
+}
 
 function canRecord(page: PageLike): page is RecordablePage {
   return typeof page.evaluate === 'function'
@@ -67,23 +77,23 @@ function captureScript(bindingName: string, marker: string): string {
       return parts.join(' > ').slice(0, 256);
     };
     const locatorFor = (element) => {
-      const locator = {};
+      const candidates = [];
       const role = roleOf(element);
       const name = accessibleName(element);
-      if (role && name) locator.role = { role, name };
+      if (role && name) candidates.push({ role: { role, name } });
       const labels = labelsOf(element);
-      if (labels.length) locator.label = labels[0];
+      if (labels.length) candidates.push({ label: labels[0] });
       const placeholder = clean(element.getAttribute('placeholder'));
-      if (placeholder) locator.placeholder = placeholder;
+      if (placeholder) candidates.push({ placeholder });
       const testId = clean(element.getAttribute('data-testid'));
-      if (testId) locator.testId = testId;
+      if (testId) candidates.push({ testId });
       if (['a', 'button', 'summary'].includes(element.tagName.toLowerCase()) || role === 'button' || role === 'link') {
         const text = textOf(element);
-        if (text) locator.text = text;
+        if (text) candidates.push({ text });
       }
       const css = cssPath(element);
-      if (css) locator.css = css;
-      return locator;
+      if (css) candidates.push({ css });
+      return { candidates };
     };
     const sensitiveName = /(?:^|[^a-z0-9])(?:pass(?:word|code)?|secret|token|credential|api[\\s_-]*key|otp|totp|mfa|private[\\s_-]*key|credit[\\s_-]*card|card[\\s_-]*number|cc[\\s_-]*(?:number|exp|csc)|(?:one[\\s_-]*)?time[\\s_-]*(?:password|code|pin|token)|(?:security|verification) code|auth(?:entication|orization)? code)(?=$|[^a-z0-9])/i;
     const sensitiveAutocomplete = /\\b(?:current-password|new-password|one-time-code|cc-(?:number|exp|exp-month|exp-year|csc|name|type))\\b/i;
@@ -169,66 +179,89 @@ function removeCaptureScript(marker: string): string {
   return `(() => { const state = window[${JSON.stringify(marker)}]; if (state && typeof state.cleanup === 'function') state.cleanup(); })()`
 }
 
-/** Attach to the already-open shared Page; this never creates or replaces a browser context. */
-export async function createWorkflowRecorder(page: PageLike, title: string): Promise<WorkflowRecording> {
-  if (!canRecord(page)) throw new Error('the bot browser cannot record workflow events')
-  const trace: WorkflowTrace = parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, steps: [] })
-  const recordingId = randomUUID()
-  const bindingName = `__opengrokbot_workflow_${recordingId.replace(/-/g, '')}`
-  const marker = `__opengrokbot_workflow_state_${recordingId.replace(/-/g, '')}`
+/** Attach to the teammate's existing page; reattach is used when local show/hide relaunches Chromium. */
+export async function createWorkflowRecorder(page: PageLike, title: string, intent?: string): Promise<WorkflowRecording> {
+  const trace: WorkflowTrace = parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, ...(intent ? { intent } : {}), steps: [] })
+  const recordingId = randomUUID().replace(/-/g, '')
+  const bindingName = `__opengrokbot_workflow_${recordingId}`
+  const marker = `__opengrokbot_workflow_state_${recordingId}`
   let active = true
-  let closed = false
+  let current: Attachment | null = null
   let stopped: WorkflowTrace | null = null
   let stopPromise: Promise<WorkflowTrace> | null = null
 
-  const append = (value: unknown) => {
+  const append = (step: unknown) => {
     if (!active || trace.steps.length >= MAX_WORKFLOW_STEPS) return
     try {
-      const step = parseWorkflowStep(value)
-      if (step.type === 'navigate') {
+      const parsed = parseWorkflowStep(step)
+      if (parsed.type === 'navigate') {
         const last = trace.steps.at(-1)
-        if (last?.type === 'navigate' && last.url === step.url) return
+        if (last?.type === 'navigate' && last.url === parsed.url) return
       }
-      trace.steps.push(step)
+      trace.steps.push(parsed)
     } catch {
-      // Browser events are untrusted input; an incomplete or unknown event is skipped.
+      // Browser events are untrusted input; incomplete or unknown events are skipped.
     }
   }
 
-  const onNavigate = () => {
+  const detach = async (attachment: Attachment) => {
+    attachment.page.off('framenavigated', attachment.onNavigate)
+    attachment.page.off('close', attachment.onClose)
+    if (current === attachment) current = null
+    if (!attachment.closed) await attachment.page.evaluate(removeCaptureScript(marker)).catch(() => {})
+    await attachment.binding.dispose().catch(() => {})
+  }
+
+  const attach = async (candidate: PageLike) => {
     if (!active) return
+    if (!canRecord(candidate)) throw new Error('the bot browser cannot record workflow events')
+    if (current?.page === candidate) return
+    if (current) await detach(current)
+
+    let attachment: Attachment | null = null
+    const binding = await candidate.exposeBinding(bindingName, async (_source, event) => {
+      if (active && attachment && current === attachment) append(event)
+    })
+    const page = candidate
+    const onNavigate: PageListener = () => {
+      if (!active || !attachment || current !== attachment) return
+      const url = sanitizeWorkflowUrl(page.url())
+      if (url) append({ type: 'navigate', url })
+      void page.evaluate(captureScript(bindingName, marker))
+        .then(async () => { if (!active || current !== attachment) await page.evaluate(removeCaptureScript(marker)).catch(() => {}) })
+        .catch(() => {})
+    }
+    const onClose: PageListener = () => {
+      if (!attachment) return
+      attachment.closed = true
+      page.off('framenavigated', onNavigate)
+      page.off('close', onClose)
+      if (current === attachment) current = null
+      void binding.dispose().catch(() => {})
+    }
+    attachment = { page, binding, closed: false, onNavigate, onClose }
+    current = attachment
+    page.on('framenavigated', onNavigate)
+    page.on('close', onClose)
     const url = sanitizeWorkflowUrl(page.url())
     if (url) append({ type: 'navigate', url })
-    void page.evaluate(captureScript(bindingName, marker))
-      .then(async () => { if (!active) await page.evaluate(removeCaptureScript(marker)).catch(() => {}) })
-      .catch(() => {})
+    try {
+      await page.evaluate(captureScript(bindingName, marker))
+    } catch (error) {
+      await detach(attachment)
+      throw error
+    }
   }
-  const onClose = () => { closed = true }
 
-  const binding = await page.exposeBinding(bindingName, async (_source, event) => { append(event) })
-  page.on('framenavigated', onNavigate)
-  page.on('close', onClose)
-  try {
-    const initialUrl = sanitizeWorkflowUrl(page.url())
-    if (initialUrl) append({ type: 'navigate', url: initialUrl })
-    await page.evaluate(captureScript(bindingName, marker))
-  } catch (error) {
-    active = false
-    page.off('framenavigated', onNavigate)
-    page.off('close', onClose)
-    await binding.dispose().catch(() => {})
-    throw error
-  }
+  await attach(page)
 
   return {
+    reattach: attach,
     stop() {
       if (stopped) return Promise.resolve(stopped)
       stopPromise ??= (async () => {
         active = false
-        page.off('framenavigated', onNavigate)
-        page.off('close', onClose)
-        if (!closed) await page.evaluate(removeCaptureScript(marker)).catch(() => {})
-        await binding.dispose().catch(() => {})
+        if (current) await detach(current)
         stopped = parseWorkflowTrace(trace)
         return stopped
       })()

@@ -79,7 +79,7 @@ describe('schema', () => {
     const db = openDb(':memory:')
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
       .map((r) => r.name)
-    expect(names).toEqual(expect.arrayContaining(['bots', 'threads', 'messages', 'approvals', 'routines']))
+    expect(names).toEqual(expect.arrayContaining(['bots', 'threads', 'messages', 'approvals', 'routines', 'workflows']))
   })
 })
 

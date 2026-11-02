@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLocalBackend } from '../src/backend.js'
-import type { BrowserLike } from '../src/browser-page.js'
+import type { BrowserLike, PageLike } from '../src/browser-page.js'
 import { createLocalComputer, workspacePath, type LocalLaunch } from '../src/computer-local.js'
 
 let dir: string
@@ -200,6 +200,82 @@ describe('LocalComputer window for signing in', () => {
     expect(c.windowShown!()).toBe(false)
     expect(launches.map((l) => l.headless)).toEqual([true, false, true])
     expect(state.url).toBe('https://mail.example.com/login')
+  })
+
+  it('keeps workflow capture attached through show and hide relaunches', async () => {
+    type PageHarness = {
+      page: PageLike
+      bindings: Map<string, (source: unknown, event: unknown) => void | Promise<void>>
+      close(): void
+    }
+    const state = { url: 'about:blank', open: false, launches: 0 }
+    let current: PageHarness | null = null
+    const makePage = (): PageHarness => {
+      const listeners = new Map<'framenavigated' | 'close', Set<(value?: unknown) => void>>([
+        ['framenavigated', new Set()], ['close', new Set()],
+      ])
+      const bindings = new Map<string, (source: unknown, event: unknown) => void | Promise<void>>()
+      const page: PageLike = {
+        async goto(url) { state.url = url; for (const listener of listeners.get('framenavigated') ?? []) listener() },
+        async title() { return 'Example' },
+        url: () => state.url,
+        async innerText() { return '' },
+        async screenshot() { return Buffer.from('PNG') },
+        async click() {},
+        async evaluate() { return undefined },
+        async exposeBinding(name, callback) {
+          bindings.set(name, callback)
+          return { async dispose() { bindings.delete(name) } }
+        },
+        on(event, listener) { listeners.get(event)?.add(listener) },
+        off(event, listener) { listeners.get(event)?.delete(listener) },
+        viewportSize: () => ({ width: 1280, height: 800 }),
+      }
+      return { page, bindings, close: () => { for (const listener of listeners.get('close') ?? []) listener() } }
+    }
+    const browser: BrowserLike = {
+      contexts: () => [{ pages: () => current ? [current.page] : [], newPage: async () => current!.page }],
+      async close() {
+        state.open = false
+        // A page close invalidates its listeners just as the local Chromium relaunch does.
+        current?.close()
+      },
+      isConnected: () => state.open,
+    }
+    const launch: LocalLaunch = async () => {
+      state.open = true
+      state.launches += 1
+      current = makePage()
+      return browser
+    }
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    try {
+      await c.goto('https://example.test/start')
+      const recorder = await c.startWorkflowRecording!('Window transitions')
+      const initial = current!
+      await initial.bindings.values().next().value!({}, { type: 'click', target: { candidates: [{ text: 'Before show' }] } })
+
+      await c.showWindow!()
+      const shown = current!
+      expect(shown).not.toBe(initial)
+      await shown.bindings.values().next().value!({}, { type: 'click', target: { candidates: [{ text: 'While shown' }] } })
+
+      await c.hideWindow!()
+      const hidden = current!
+      expect(hidden).not.toBe(shown)
+      await initial.bindings.values().next().value?.({}, { type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
+      await hidden.bindings.values().next().value!({}, { type: 'click', target: { candidates: [{ text: 'After hide' }] } })
+
+      const trace = await recorder.stop()
+      expect(state.launches).toBe(3)
+      expect(trace.steps.filter((step) => step.type === 'click')).toEqual([
+        { type: 'click', target: { candidates: [{ text: 'Before show' }] } },
+        { type: 'click', target: { candidates: [{ text: 'While shown' }] } },
+        { type: 'click', target: { candidates: [{ text: 'After hide' }] } },
+      ])
+    } finally {
+      await c.dispose()
+    }
   })
 
   it('hiding a browser that is already headless does not launch one', async () => {

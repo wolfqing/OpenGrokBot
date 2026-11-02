@@ -42,33 +42,34 @@ function fakePage() {
 describe('workflow recorder', () => {
   it('captures typed semantic actions on the current page and stops cleanly', async () => {
     const test = fakePage()
-    const recorder = await createWorkflowRecorder(test.page, 'Sign in')
+    const recorder = await createWorkflowRecorder(test.page, 'Sign in', 'Complete a secure sign-in')
     const binding = test.bindings.values().next().value
     expect(binding).toBeDefined()
     if (!binding) throw new Error('recorder did not expose its event binding')
 
-    await binding({}, { type: 'click', target: { role: { role: 'button', name: 'Continue' }, text: 'Continue' } })
+    await binding({}, { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Continue' } }, { text: 'Continue' }] } })
     await binding({}, {
-      type: 'fill', target: { role: { role: 'textbox', name: 'Password' }, label: 'Password' },
+      type: 'fill', target: { candidates: [{ role: { role: 'textbox', name: 'Password' } }, { label: 'Password' }] },
       value: { kind: 'literal', text: 'do-not-store-this-password' },
     })
     await binding({}, {
-      type: 'fill', target: { label: 'Street address' }, value: { kind: 'literal', text: '14 Example Road' },
+      type: 'fill', target: { candidates: [{ label: 'Street address' }] }, value: { kind: 'literal', text: '14 Example Road' },
     })
     await binding({}, {
-      type: 'select', target: { label: 'One-time code' }, value: { kind: 'literal', text: '654321' },
+      type: 'select', target: { candidates: [{ label: 'One-time code' }] }, value: { kind: 'literal', text: '654321' },
     })
 
     test.setUrl('https://operator:second-secret@example.test/done?ticket=private-value#complete')
     for (const listener of test.listeners.get('framenavigated') ?? []) listener()
     const trace = await recorder.stop()
     expect(await recorder.stop()).toBe(trace)
+    expect(trace.intent).toBe('Complete a secure sign-in')
     expect(trace.steps).toEqual([
       { type: 'navigate', url: 'https://example.test/start?session=' },
-      { type: 'click', target: { role: { role: 'button', name: 'Continue' }, text: 'Continue' } },
-      { type: 'fill', target: { role: { role: 'textbox', name: 'Password' }, label: 'Password' }, value: { kind: 'redacted', reason: 'sensitive-input' } },
-      { type: 'fill', target: { label: 'Street address' }, value: { kind: 'literal', text: '14 Example Road' } },
-      { type: 'select', target: { label: 'One-time code' }, value: { kind: 'redacted', reason: 'sensitive-input' } },
+      { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Continue' } }, { text: 'Continue' }] } },
+      { type: 'fill', target: { candidates: [{ role: { role: 'textbox', name: 'Password' } }, { label: 'Password' }] }, value: { kind: 'redacted', reason: 'sensitive-input' } },
+      { type: 'fill', target: { candidates: [{ label: 'Street address' }] }, value: { kind: 'literal', text: '14 Example Road' } },
+      { type: 'select', target: { candidates: [{ label: 'One-time code' }] }, value: { kind: 'redacted', reason: 'sensitive-input' } },
       { type: 'navigate', url: 'https://example.test/done?ticket=' },
     ])
     expect(JSON.stringify(trace)).not.toContain('secret')
@@ -88,5 +89,25 @@ describe('workflow recorder', () => {
       async screenshot() { return Buffer.alloc(0) }, async click() {}, viewportSize: () => null,
     }
     await expect(createWorkflowRecorder(page, 'A workflow')).rejects.toThrow(/cannot record workflow events/)
+  })
+
+  it('reattaches to a replacement page and ignores events from the old page', async () => {
+    const first = fakePage()
+    const next = fakePage()
+    const recorder = await createWorkflowRecorder(first.page, 'Reattach')
+    const firstBinding = first.bindings.values().next().value!
+    await firstBinding({}, { type: 'click', target: { candidates: [{ text: 'Before relaunch' }] } })
+
+    await recorder.reattach(next.page)
+    const nextBinding = next.bindings.values().next().value!
+    await firstBinding({}, { type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
+    await nextBinding({}, { type: 'click', target: { candidates: [{ text: 'After relaunch' }] } })
+
+    expect((await recorder.stop()).steps).toEqual([
+      { type: 'navigate', url: 'https://example.test/start?session=' },
+      { type: 'click', target: { candidates: [{ text: 'Before relaunch' }] } },
+      { type: 'navigate', url: 'https://example.test/start?session=' },
+      { type: 'click', target: { candidates: [{ text: 'After relaunch' }] } },
+    ])
   })
 })

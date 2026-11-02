@@ -1,87 +1,116 @@
 # Recorded workflow traces
 
-The first teach-mode slice records a browser trace for a later deterministic workflow runner. It does not replay,
-schedule, or hand steps to the agent when a page changes.
+This first teach-mode slice records a browser trace for a later deterministic workflow runner. It does not replay,
+schedule, or hand steps to the agent when a page changes. The slice exposes API controls only; it adds no start/stop
+buttons or workflow editor to the product UI.
 
 Recordings attach to the page already owned by the teammate's shared `BrowserSession`. They do not launch a second
-browser or replace its logged-in context. The recorder captures navigation, clicks, text entry, and selection as
-typed steps with semantic locator candidates. It does not store screenshots, cookies, arbitrary page dumps, or
-generated JavaScript.
+browser or replace its logged-in context. In v0.4.0 local-computer mode, `showWindow()` and `hideWindow()` relaunch
+Chromium; the recorder reattaches to the replacement page and continues recording. Docker recording also attaches
+to the current page. The recorder captures navigation, clicks, text entry, and selection as typed steps. It does not
+store screenshots, cookies, arbitrary page dumps, or generated JavaScript.
 
-## Start, stop, and inspect a recording
+## Start, stop, review, and save
 
 All endpoints require the gateway's normal authentication token. Drive the teammate's current page through its
-computer screen while the recording is active.
+computer screen while recording is active.
 
 ```http
 POST /api/bots/{botId}/workflows/recording
 Content-Type: application/json
 
-{"title":"Open the project dashboard"}
+{"title":"Open the project dashboard","intent":"Find the current project status"}
 ```
 
-The gateway responds with `202` and starts recording. Only one recording can run per teammate at a time. Stop and
-save it with:
+`intent` is optional. The gateway responds with `202` and starts recording. Only one recording or unsaved draft can
+exist per teammate. Stop capture to receive a review draft:
 
 ```http
 POST /api/bots/{botId}/workflows/recording/stop
 ```
 
-The response contains a UUID `id` and the saved trace. List and read traces with:
+Stopping does not save anything to SQLite. Review the returned trace, remove steps that should not be retained,
+replace literal values with `{ "kind": "placeholder", "key": "customerEmail" }`, and then save the edited trace:
+
+```http
+POST /api/bots/{botId}/workflows
+Content-Type: application/json
+
+{"draftId":"<id returned by stop>","trace":{"format":"opengrokbot.workflow","version":1,"title":"...","steps":[]}}
+```
+
+The submitted trace is validated and sensitive fields are redacted again before persistence. To discard a draft:
+
+```http
+DELETE /api/bots/{botId}/workflows/drafts/{draftId}
+```
+
+Drafts are held in gateway memory until saved or discarded. Restarting the gateway discards pending drafts. Saved
+traces are stored as rows in the gateway SQLite database, alongside routines. List and read saved traces with:
 
 ```http
 GET /api/bots/{botId}/workflows
 GET /api/bots/{botId}/workflows/{workflowId}
 ```
 
-Traces live in the gateway-owned data directory at `bots/{botId}/workflows/{workflowId}.json`, outside the
-teammate's writable workspace. The computer status response includes `workflowRecording` while capture is active.
-An active recording prevents idle computer cleanup until it is stopped.
+The computer status response includes `workflowRecording` during capture and `workflowDraft` while review is
+pending. An active recording prevents idle computer cleanup until it is stopped.
 
 ## Trace format v1
 
-The trace is JSON and uses a discriminated union for each action:
+The trace is JSON. Each locator candidate uses exactly one strategy; the ordered array preserves preference from
+stable semantic locator to structural CSS fallback.
 
 ```ts
 type WorkflowTrace = {
   format: 'opengrokbot.workflow'
   version: 1
   title: string
+  intent?: string
   steps: WorkflowStep[]
 }
 
-type WorkflowStep =
-  | { type: 'navigate'; url: string }
-  | { type: 'click'; target: Locator }
-  | { type: 'fill'; target: Locator; value: WorkflowValue }
-  | { type: 'select'; target: Locator; value: WorkflowValue }
-
-type Locator = {
-  role?: { role: string; name: string }
-  label?: string
-  placeholder?: string
-  text?: string
-  testId?: string
-  css?: string
+type WorkflowStepContext = {
+  intent?: string
+  page?: string
+  frame?: string
 }
+
+type WorkflowStep = WorkflowStepContext & (
+  | { type: 'navigate'; url: string }
+  | { type: 'click'; target: { candidates: Locator[] } }
+  | { type: 'fill'; target: { candidates: Locator[] }; value: WorkflowValue }
+  | { type: 'select'; target: { candidates: Locator[] }; value: WorkflowValue }
+)
+
+type Locator =
+  | { role: { role: string; name: string } }
+  | { label: string }
+  | { placeholder: string }
+  | { testId: string }
+  | { text: string }
+  | { css: string }
 
 type WorkflowValue =
   | { kind: 'literal'; text: string }
+  | { kind: 'placeholder'; key: string }
   | { kind: 'redacted'; reason: 'sensitive-input' }
 ```
 
-Locator fields are candidate strategies, ordered for future replay as role/name, label, placeholder, test ID, text,
-then CSS. CSS uses a positional fallback and does not copy element IDs or class names.
+`page`, `frame`, and `intent` are optional on every step so recorder metadata can grow while the trace remains v1.
+The current recorder emits one locator candidate for each recognized strategy, ordered as role/name, label,
+placeholder, test ID, text, then CSS. CSS fallbacks are positional paths and do not copy element IDs or classes.
 
 ## Redaction and limits
 
 The browser checks input type, autocomplete, labels, accessible names, placeholders, and field names before sending
 values to the gateway. Password and one-time-code fields, credit-card autocomplete fields, fields marked with
 sensitive terms such as `secret`, `token`, or `api key`, known credential formats, and high-entropy strings are
-stored as a redacted value without the text. The gateway validates every event again and re-applies field-name
-and credential-pattern checks before persistence. URL user info and fragments are removed; query keys are retained
-with empty values. Only HTTP and HTTPS navigation is recorded.
+stored as redacted values without their text. The gateway validates every event again and re-applies field-name and
+credential-pattern checks before a draft is returned or a saved trace is written. URL user info and fragments are
+removed; query keys are retained with empty values. Only HTTP and HTTPS navigation is recorded.
 
-V1 is bounded to 1,000 steps, 120 title characters, 2,000 input characters per step, and 5 MB per saved trace.
-Secret detection relies on field metadata and credential-pattern checks; avoid entering secrets into fields that
-are not marked or named as sensitive.
+V1 is bounded to 1,000 steps, 120 title characters, 500 intent characters, 2,000 input characters per step, and
+5 MB per trace. Secret detection relies on field metadata and credential-pattern checks; avoid entering secrets
+into fields that are not marked or named as sensitive. The operator review before saving lets the operator remove
+personal values that do not match these automatic checks.
