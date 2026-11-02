@@ -211,8 +211,8 @@ function parseActionContext(context: WorkflowStepContext, value: unknown): Workf
 
 export function parseWorkflowStep(value: unknown): WorkflowStep {
   if (!isRecord(value)) throw new TypeError('invalid workflow step')
-  if (value.type === 'unrecorded-popup') return { type: 'unrecorded-popup' }
   const context = parseStepContext(value)
+  if (value.type === 'unrecorded-popup') return { ...context, type: 'unrecorded-popup' }
   switch (value.type) {
     case 'navigate': {
       const url = sanitizeWorkflowUrl(readString(value.url, 'URL', MAX_URL_LENGTH))

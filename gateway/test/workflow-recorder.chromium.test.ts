@@ -18,6 +18,7 @@ describe('workflow recorder in Chromium', () => {
         <label for="plan">Plan</label><select id="plan" name="plan"><option value="basic">Basic</option><option value="plus">Plus</option></select>
         <button type="submit">Submit</button>
       </form>
+      <a href="/popup" target="_blank">Open a popup</a>
       <iframe id="child" title="Child frame" src="/frame-start"></iframe>
     </body></html>`
     const server = createServer((request, response) => {
@@ -27,6 +28,8 @@ describe('workflow recorder in Chromium', () => {
         response.end('<a href="/frame-next">Navigate iframe</a>')
       } else if (url.pathname === '/frame-next') {
         response.end('<p>Iframe destination</p>')
+      } else if (url.pathname === '/popup') {
+        response.end('<p>Popup destination</p>')
       } else if (url.pathname === '/results') {
         response.end('<p>Search results</p>')
       } else {
@@ -55,6 +58,11 @@ describe('workflow recorder in Chromium', () => {
       await page.getByText('Agree to terms', { exact: true }).click()
       const checkboxChecked = await page.locator('#agree').isChecked()
       await page.frameLocator('#child').getByText('Navigate iframe', { exact: true }).click()
+      const popupPromise = page.waitForEvent('popup')
+      await page.getByText('Open a popup', { exact: true }).click()
+      const popup = await popupPromise
+      await popup.waitForLoadState('domcontentloaded')
+      await popup.close()
       await page.getByLabel('Password').fill('never-store-this-password')
       await page.getByLabel('Plan').selectOption('plus')
       await page.getByLabel('Search').fill('OpenGrok workflow')
@@ -74,10 +82,12 @@ describe('workflow recorder in Chromium', () => {
       expect(JSON.stringify(trace)).not.toContain('never-store-this-password')
 
       expect(trace.steps.find((step) => step.type === 'select')).toMatchObject({ value: { kind: 'literal', text: 'Plus' } })
-      expect(trace.steps.some((step) => step.type === 'press' && step.key === 'Enter')).toBe(true)
+      expect(trace.steps.find((step) => step.type === 'press' && step.key === 'Enter'))
+        .toMatchObject({ expect: { url: `${baseUrl}/results?q=&plan=` } })
+      expect(trace.steps.some((step) => step.type === 'click'
+        && step.target.candidates.some((candidate) => 'text' in candidate && candidate.text === 'Submit'))).toBe(false)
+      expect(trace.steps.some((step) => step.type === 'unrecorded-popup')).toBe(true)
       expect(trace.steps.filter((step) => step.type === 'navigate')).toHaveLength(1)
-      expect(trace.steps.some((step) => step.type !== 'navigate' && step.type !== 'unrecorded-popup'
-        && step.expect?.url === `${baseUrl}/results?q=&plan=`)).toBe(true)
       expect(trace.steps.some((step) => step.type === 'navigate' && step.url.includes('/frame-next'))).toBe(false)
     } finally {
       await browser?.close()

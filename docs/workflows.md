@@ -6,9 +6,11 @@ buttons or workflow editor to the product UI.
 
 Recordings attach to the page already owned by the teammate's shared `BrowserSession`. They do not launch a second
 browser or replace its logged-in context. In v0.4.0 local-computer mode, `showWindow()` and `hideWindow()` relaunch
-Chromium; the recorder reattaches to the replacement page and continues recording. Docker recording also attaches
-to the current page. The recorder captures navigation, clicks, text entry, and selection as typed steps. It does not
-store screenshots, cookies, arbitrary page dumps, or generated JavaScript.
+Chromium; the recorder reattaches to the replacement page and continues recording. Show the local browser window
+before recording: its panel screencast is view-only, so the operator drives the real window. Docker recording also
+attaches to the current page. The recorder captures navigation, clicks, text entry, selection, checkbox state, and
+Enter presses as typed steps. A navigation caused by an action is recorded as that action's expected URL, and a
+popup is marked as unrecorded. It does not store screenshots, cookies, arbitrary page dumps, or generated JavaScript.
 
 ## Start, stop, review, and save
 
@@ -76,11 +78,16 @@ type WorkflowStepContext = {
   frame?: string
 }
 
+type WorkflowActionContext = WorkflowStepContext & { expect?: { url: string } }
+
 type WorkflowStep = WorkflowStepContext & (
   | { type: 'navigate'; url: string }
-  | { type: 'click'; target: { candidates: Locator[] } }
-  | { type: 'fill'; target: { candidates: Locator[] }; value: WorkflowValue }
-  | { type: 'select'; target: { candidates: Locator[] }; value: WorkflowValue }
+  | (WorkflowActionContext & { type: 'click'; target: { candidates: Locator[] } })
+  | (WorkflowActionContext & { type: 'fill'; target: { candidates: Locator[] }; value: WorkflowValue })
+  | (WorkflowActionContext & { type: 'select'; target: { candidates: Locator[] }; value: WorkflowValue })
+  | (WorkflowActionContext & { type: 'check' | 'uncheck'; target: { candidates: Locator[] } })
+  | (WorkflowActionContext & { type: 'press'; key: 'Enter'; target: { candidates: Locator[] } })
+  | { type: 'unrecorded-popup' }
 )
 
 type Locator =

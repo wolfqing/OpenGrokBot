@@ -129,6 +129,8 @@ function captureScript(bindingName: string, marker: string): string {
     };
     const actionable = 'a[href],button,input[type=button],input[type=submit],input[type=reset],input[type=checkbox],input[type=radio],[role=button],[role=link],summary,label,[onclick]';
     const timers = new Map();
+    let enterSubmitForm = null;
+    let enterSubmitAt = 0;
     const editable = (element) => {
       if (element instanceof HTMLTextAreaElement) return true;
       if (element instanceof HTMLInputElement) return !['hidden', 'button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio'].includes(element.type.toLowerCase());
@@ -161,6 +163,13 @@ function captureScript(bindingName: string, marker: string): string {
       const element = event.target instanceof Element ? event.target.closest(actionable) : null;
       if (!element) return;
       if (element instanceof HTMLLabelElement && element.control) return;
+      const submitForm = element instanceof HTMLButtonElement && element.type === 'submit'
+        ? element.form
+        : element instanceof HTMLInputElement && element.type === 'submit' ? element.form : null;
+      if (submitForm && event.detail === 0 && submitForm === enterSubmitForm && Date.now() - enterSubmitAt < 1_000) {
+        enterSubmitForm = null;
+        return;
+      }
       if (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio')) {
         emit({ type: element.checked ? 'check' : 'uncheck', target: locatorFor(element) });
         return;
@@ -170,6 +179,11 @@ function captureScript(bindingName: string, marker: string): string {
     const onKeyDown = (event) => {
       const element = event.target;
       if (event.key === 'Enter' && element instanceof Element && editable(element)) {
+        if (element instanceof HTMLInputElement && element.form) {
+          enterSubmitForm = element.form;
+          enterSubmitAt = Date.now();
+        }
+        flush(element);
         emit({ type: 'press', key: 'Enter', target: locatorFor(element) });
       }
     };

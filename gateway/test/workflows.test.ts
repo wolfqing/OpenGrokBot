@@ -62,6 +62,8 @@ describe('workflow trace schema', () => {
     expect(parseWorkflowStep({ type: 'uncheck', target })).toEqual({ type: 'uncheck', target })
     expect(parseWorkflowStep({ type: 'press', key: 'Enter', target })).toEqual({ type: 'press', key: 'Enter', target })
     expect(parseWorkflowStep({ type: 'unrecorded-popup' })).toEqual({ type: 'unrecorded-popup' })
+    expect(parseWorkflowStep({ type: 'unrecorded-popup', intent: 'Continue in the new tab', page: 'main' }))
+      .toEqual({ type: 'unrecorded-popup', intent: 'Continue in the new tab', page: 'main' })
     expect(() => parseWorkflowStep({ type: 'press', key: 'Control+A', target })).toThrow(/unsupported workflow key/)
     expect(() => parseWorkflowStep({
       type: 'click', target, expect: { url: 'javascript:alert(1)' },

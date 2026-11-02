@@ -118,7 +118,7 @@ describe('workflow recording API', () => {
     }
   })
 
-  it('refuses a recording while busy and holds turns and watch routines until it stops', async () => {
+  it('refuses a recording while busy and holds turns, cron, watch, and webhook runs until it stops', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-gate-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
@@ -143,18 +143,33 @@ describe('workflow recording API', () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Please check this' }),
       })
       expect(directTurn.status).toBe(202)
+      const cron = createRoutine(db, {
+        botId: 'researcher', name: 'Daily digest', cron: '0 9 * * *', instructions: 'Summarise the inbox',
+      })
       const watch = createRoutine(db, {
         botId: 'researcher', name: 'Status watch', cron: '', instructions: 'Check the status page', mode: 'watch',
       })
+      const webhook = createRoutine(db, {
+        botId: 'researcher', name: 'Issue triage', cron: '', instructions: 'Triage the issue', webhook: true,
+      })
+      const cronRun = runRoutine(cron, { force: true })
       const watchRun = runRoutine(watch, { force: true })
+      const webhookResponse = await app.request(`/hooks/routines/${webhook.id}?key=${webhook.webhook_key}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issue: 'New bug report' }),
+      })
+      expect(webhookResponse.status).toBe(202)
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(chat).not.toHaveBeenCalled()
       expect(isBusy('researcher')).toBe(true)
+      const heldMessages = await (await app.request('/api/threads/dm:researcher/messages')).json() as { kind: string }[]
+      expect(heldMessages.some((message) => message.kind === 'webhook')).toBe(false)
 
       const stop = await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })
       expect(stop.status).toBe(200)
-      await watchRun
-      await vi.waitFor(() => expect(chat).toHaveBeenCalledTimes(2))
+      await Promise.all([cronRun, watchRun])
+      await vi.waitFor(() => expect(chat).toHaveBeenCalledTimes(4))
+      const resumedMessages = await (await app.request('/api/threads/dm:researcher/messages')).json() as { kind: string }[]
+      expect(resumedMessages.filter((message) => message.kind === 'webhook')).toHaveLength(1)
       expect(isBusy('researcher')).toBe(false)
     } finally {
       await pool.disposeAll()
