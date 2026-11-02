@@ -6,9 +6,10 @@ const endpoints = { shim: 'http://127.0.0.1:7717', cdp: 'http://127.0.0.1:9222',
 function fakePage(overrides: Record<string, unknown> = {}) {
   const state = { url: 'about:blank', clicked: [] as string[], goneTo: [] as string[] }
   const bindings = new Map<string, (source: unknown, event: unknown) => void | Promise<void>>()
-  const listeners = new Map<'framenavigated' | 'close', Set<(value?: unknown) => void>>([
-    ['framenavigated', new Set()], ['close', new Set()],
+  const listeners = new Map<'framenavigated' | 'close' | 'popup', Set<(value?: unknown) => void>>([
+    ['framenavigated', new Set()], ['close', new Set()], ['popup', new Set()],
   ])
+  const mainFrame = {}
   return {
     state,
     bindings,
@@ -16,7 +17,7 @@ function fakePage(overrides: Record<string, unknown> = {}) {
       async goto(url: string) {
         state.goneTo.push(url)
         state.url = url
-        for (const listener of listeners.get('framenavigated') ?? []) listener()
+        for (const listener of listeners.get('framenavigated') ?? []) listener(mainFrame)
       },
       async title() { return 'Example Domain' },
       url: () => state.url,
@@ -28,8 +29,9 @@ function fakePage(overrides: Record<string, unknown> = {}) {
         bindings.set(name, callback)
         return { async dispose() { bindings.delete(name) } }
       },
-      on(event: 'framenavigated' | 'close', listener: (value?: unknown) => void) { listeners.get(event)?.add(listener) },
-      off(event: 'framenavigated' | 'close', listener: (value?: unknown) => void) { listeners.get(event)?.delete(listener) },
+      on(event: 'framenavigated' | 'close' | 'popup', listener: (value?: unknown) => void) { listeners.get(event)?.add(listener) },
+      off(event: 'framenavigated' | 'close' | 'popup', listener: (value?: unknown) => void) { listeners.get(event)?.delete(listener) },
+      mainFrame: () => mainFrame,
       viewportSize: () => ({ width: 1280, height: 800 }),
       ...overrides,
     },
@@ -126,8 +128,7 @@ describe('DockerComputer browser over CDP', () => {
     expect(trace.intent).toBe('Check the current status')
     expect(trace.steps).toEqual([
       { type: 'navigate', url: 'https://example.com/start' },
-      { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Refresh' } }, { css: 'button:nth-of-type(1)' }] } },
-      { type: 'navigate', url: 'https://example.com/status?ticket=' },
+      { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Refresh' } }, { css: 'button:nth-of-type(1)' }] }, expect: { url: 'https://example.com/status?ticket=' } },
     ])
     expect(state.goneTo).toEqual(['https://example.com/start', 'https://example.com/status?ticket=private#details'])
     expect(bindings.size).toBe(0)

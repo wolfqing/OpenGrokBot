@@ -10,8 +10,8 @@ export type WorkflowRecording = {
   stop(): Promise<WorkflowTrace>
 }
 
-type RecordablePage = PageLike & Required<Pick<PageLike, 'evaluate' | 'exposeBinding' | 'on' | 'off'>>
-type PageEvent = 'framenavigated' | 'close'
+type RecordablePage = PageLike & Required<Pick<PageLike, 'evaluate' | 'exposeBinding' | 'on' | 'off' | 'mainFrame'>>
+type PageEvent = 'framenavigated' | 'close' | 'popup'
 type PageListener = (value?: unknown) => void
 
 type Attachment = {
@@ -20,6 +20,7 @@ type Attachment = {
   closed: boolean
   onNavigate: PageListener
   onClose: PageListener
+  onPopup: PageListener
 }
 
 function canRecord(page: PageLike): page is RecordablePage {
@@ -27,6 +28,7 @@ function canRecord(page: PageLike): page is RecordablePage {
     && typeof page.exposeBinding === 'function'
     && typeof page.on === 'function'
     && typeof page.off === 'function'
+    && typeof page.mainFrame === 'function'
 }
 
 function captureScript(bindingName: string, marker: string): string {
@@ -157,12 +159,25 @@ function captureScript(bindingName: string, marker: string): string {
     };
     const onClick = (event) => {
       const element = event.target instanceof Element ? event.target.closest(actionable) : null;
-      if (element) emit({ type: 'click', target: locatorFor(element) });
+      if (!element) return;
+      if (element instanceof HTMLLabelElement && element.control) return;
+      if (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio')) {
+        emit({ type: element.checked ? 'check' : 'uncheck', target: locatorFor(element) });
+        return;
+      }
+      emit({ type: 'click', target: locatorFor(element) });
+    };
+    const onKeyDown = (event) => {
+      const element = event.target;
+      if (event.key === 'Enter' && element instanceof Element && editable(element)) {
+        emit({ type: 'press', key: 'Enter', target: locatorFor(element) });
+      }
     };
     document.addEventListener('input', onInput, true);
     document.addEventListener('change', onChange, true);
     document.addEventListener('blur', onBlur, true);
     document.addEventListener('click', onClick, true);
+    document.addEventListener('keydown', onKeyDown, true);
     window[marker] = { cleanup() {
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
@@ -170,6 +185,7 @@ function captureScript(bindingName: string, marker: string): string {
       document.removeEventListener('change', onChange, true);
       document.removeEventListener('blur', onBlur, true);
       document.removeEventListener('click', onClick, true);
+      document.removeEventListener('keydown', onKeyDown, true);
       delete window[marker];
     } };
   })()`
@@ -189,14 +205,30 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
   let current: Attachment | null = null
   let stopped: WorkflowTrace | null = null
   let stopPromise: Promise<WorkflowTrace> | null = null
+  let lastAction: { index: number; at: number } | null = null
+  const NAVIGATION_EXPECTATION_WINDOW_MS = 5_000
 
   const append = (step: unknown) => {
     if (!active || trace.steps.length >= MAX_WORKFLOW_STEPS) return
     try {
       const parsed = parseWorkflowStep(step)
       if (parsed.type === 'navigate') {
+        const action = lastAction
+        if (action && Date.now() - action.at <= NAVIGATION_EXPECTATION_WINDOW_MS) {
+          const previous = trace.steps[action.index]
+          if (previous && previous.type !== 'navigate' && previous.type !== 'unrecorded-popup') {
+            trace.steps[action.index] = parseWorkflowStep({ ...previous, expect: { url: parsed.url } })
+            lastAction = null
+            return
+          }
+        }
+        lastAction = null
         const last = trace.steps.at(-1)
         if (last?.type === 'navigate' && last.url === parsed.url) return
+      } else if (parsed.type === 'unrecorded-popup') {
+        lastAction = null
+      } else {
+        lastAction = { index: trace.steps.length, at: Date.now() }
       }
       trace.steps.push(parsed)
     } catch {
@@ -207,6 +239,7 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
   const detach = async (attachment: Attachment) => {
     attachment.page.off('framenavigated', attachment.onNavigate)
     attachment.page.off('close', attachment.onClose)
+    attachment.page.off('popup', attachment.onPopup)
     if (current === attachment) current = null
     if (!attachment.closed) await attachment.page.evaluate(removeCaptureScript(marker)).catch(() => {})
     await attachment.binding.dispose().catch(() => {})
@@ -216,6 +249,7 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     if (!active) return
     if (!canRecord(candidate)) throw new Error('the bot browser cannot record workflow events')
     if (current?.page === candidate) return
+    lastAction = null
     if (current) await detach(current)
 
     let attachment: Attachment | null = null
@@ -223,8 +257,9 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
       if (active && attachment && current === attachment) append(event)
     })
     const page = candidate
-    const onNavigate: PageListener = () => {
+    const onNavigate: PageListener = (frame) => {
       if (!active || !attachment || current !== attachment) return
+      if (frame !== page.mainFrame()) return
       const url = sanitizeWorkflowUrl(page.url())
       if (url) append({ type: 'navigate', url })
       void page.evaluate(captureScript(bindingName, marker))
@@ -234,15 +269,22 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     const onClose: PageListener = () => {
       if (!attachment) return
       attachment.closed = true
+      lastAction = null
       page.off('framenavigated', onNavigate)
       page.off('close', onClose)
+      page.off('popup', onPopup)
       if (current === attachment) current = null
       void binding.dispose().catch(() => {})
     }
-    attachment = { page, binding, closed: false, onNavigate, onClose }
+    const onPopup: PageListener = () => {
+      if (!active || !attachment || current !== attachment) return
+      append({ type: 'unrecorded-popup' })
+    }
+    attachment = { page, binding, closed: false, onNavigate, onClose, onPopup }
     current = attachment
     page.on('framenavigated', onNavigate)
     page.on('close', onClose)
+    page.on('popup', onPopup)
     const url = sanitizeWorkflowUrl(page.url())
     if (url) append({ type: 'navigate', url })
     try {

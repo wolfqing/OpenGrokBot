@@ -3,7 +3,7 @@ import type { PageLike } from '../src/browser-page.js'
 import { createWorkflowRecorder } from '../src/workflow-recorder.js'
 
 type Binding = (source: unknown, event: unknown) => void | Promise<void>
-type PageEvent = 'framenavigated' | 'close'
+type PageEvent = 'framenavigated' | 'close' | 'popup'
 type Listener = (value?: unknown) => void
 
 function fakePage() {
@@ -12,8 +12,10 @@ function fakePage() {
   const listeners = new Map<PageEvent, Set<Listener>>([
     ['framenavigated', new Set()],
     ['close', new Set()],
+    ['popup', new Set()],
   ])
   const scripts: string[] = []
+  const mainFrame = { name: 'main' }
   const page: PageLike = {
     async goto() {},
     async title() { return 'Example' },
@@ -28,6 +30,7 @@ function fakePage() {
     },
     on(event, listener) { listeners.get(event)?.add(listener) },
     off(event, listener) { listeners.get(event)?.delete(listener) },
+    mainFrame: () => mainFrame,
     viewportSize: () => ({ width: 1280, height: 800 }),
   }
   return {
@@ -35,6 +38,8 @@ function fakePage() {
     bindings,
     listeners,
     scripts,
+    mainFrame,
+    subFrame: { name: 'child' },
     setUrl(url: string) { currentUrl = url },
   }
 }
@@ -60,7 +65,7 @@ describe('workflow recorder', () => {
     })
 
     test.setUrl('https://operator:second-secret@example.test/done?ticket=private-value#complete')
-    for (const listener of test.listeners.get('framenavigated') ?? []) listener()
+    for (const listener of test.listeners.get('framenavigated') ?? []) listener(test.mainFrame)
     const trace = await recorder.stop()
     expect(await recorder.stop()).toBe(trace)
     expect(trace.intent).toBe('Complete a secure sign-in')
@@ -69,8 +74,7 @@ describe('workflow recorder', () => {
       { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Continue' } }, { text: 'Continue' }] } },
       { type: 'fill', target: { candidates: [{ role: { role: 'textbox', name: 'Password' } }, { label: 'Password' }] }, value: { kind: 'redacted', reason: 'sensitive-input' } },
       { type: 'fill', target: { candidates: [{ label: 'Street address' }] }, value: { kind: 'literal', text: '14 Example Road' } },
-      { type: 'select', target: { candidates: [{ label: 'One-time code' }] }, value: { kind: 'redacted', reason: 'sensitive-input' } },
-      { type: 'navigate', url: 'https://example.test/done?ticket=' },
+      { type: 'select', target: { candidates: [{ label: 'One-time code' }] }, value: { kind: 'redacted', reason: 'sensitive-input' }, expect: { url: 'https://example.test/done?ticket=' } },
     ])
     expect(JSON.stringify(trace)).not.toContain('secret')
     expect(JSON.stringify(trace)).not.toContain('private-value')
@@ -80,7 +84,19 @@ describe('workflow recorder', () => {
     expect(test.scripts.some((script) => script.includes('state.cleanup'))).toBe(true)
 
     await binding({}, { type: 'click', target: { text: 'after stop' } })
-    expect(trace.steps).toHaveLength(6)
+    expect(trace.steps).toHaveLength(5)
+  })
+
+  it('ignores subframe navigation and marks popup pages as unrecorded', async () => {
+    const test = fakePage()
+    const recorder = await createWorkflowRecorder(test.page, 'External flow')
+    for (const listener of test.listeners.get('framenavigated') ?? []) listener(test.subFrame)
+    for (const listener of test.listeners.get('popup') ?? []) listener({ url: () => 'https://popup.example.test/' })
+
+    expect((await recorder.stop()).steps).toEqual([
+      { type: 'navigate', url: 'https://example.test/start?session=' },
+      { type: 'unrecorded-popup' },
+    ])
   })
 
   it('fails clearly when the computer page lacks Playwright event hooks', async () => {

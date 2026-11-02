@@ -52,6 +52,22 @@ describe('workflow trace schema', () => {
     ] } })
   })
 
+  it('validates action outcomes, Enter presses, checkbox state, and incomplete popup markers', () => {
+    const target = { candidates: [{ label: 'Accept terms' }] }
+    expect(parseWorkflowStep({
+      type: 'check', target, expect: { url: 'https://example.test/accepted?ticket=secret#done' },
+    })).toEqual({
+      type: 'check', target, expect: { url: 'https://example.test/accepted?ticket=' },
+    })
+    expect(parseWorkflowStep({ type: 'uncheck', target })).toEqual({ type: 'uncheck', target })
+    expect(parseWorkflowStep({ type: 'press', key: 'Enter', target })).toEqual({ type: 'press', key: 'Enter', target })
+    expect(parseWorkflowStep({ type: 'unrecorded-popup' })).toEqual({ type: 'unrecorded-popup' })
+    expect(() => parseWorkflowStep({ type: 'press', key: 'Control+A', target })).toThrow(/unsupported workflow key/)
+    expect(() => parseWorkflowStep({
+      type: 'click', target, expect: { url: 'javascript:alert(1)' },
+    })).toThrow(/workflow URL/)
+  })
+
   it('supports optional intent and page/frame references on traces and steps', () => {
     const trace = parseWorkflowTrace({
       format: 'opengrokbot.workflow', version: 1, title: 'Create invoice', intent: 'Create a monthly invoice',

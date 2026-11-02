@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { join, win32 } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { findBrowser, findDownloadedBrowser, installBrowser, type SpawnLike } from '../src/browsers.js'
 
@@ -21,14 +22,23 @@ describe('findBrowser', () => {
       .toEqual({ executablePath: '/usr/bin/chromium', source: 'system' })
   })
 
+  it('detects a system Chrome installation on Windows', () => {
+    const chrome = win32.join('C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe')
+    const edge = win32.join('C:\\Program Files (x86)', 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+    expect(findBrowser({
+      dataDir: 'C:\\data', platform: 'win32', env: { ProgramFiles: 'C:\\Program Files', 'ProgramFiles(x86)': 'C:\\Program Files (x86)' },
+      exists: have(chrome, edge),
+    })).toEqual({ executablePath: chrome, source: 'system' })
+  })
+
   it('falls back to the newest browser we downloaded ourselves, else null', () => {
-    const newest = '/data/browsers/chromium-1300/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
-    const older = '/data/browsers/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+    const newest = join('/data/browsers', 'chromium-1300', 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
+    const older = join('/data/browsers', 'chromium-1248', 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing')
     const readdir = () => ['chromium-1248', 'ffmpeg-1013', 'chromium-1300', '.links']
     expect(findBrowser({ dataDir: '/data', env: {}, platform: 'darwin', exists: have(newest, older), readdir }))
       .toEqual({ executablePath: newest, source: 'downloaded' })
-    expect(findDownloadedBrowser('/data/browsers', { exists: have('/data/browsers/chromium-1248/chrome-linux64/chrome'), readdir }))
-      .toBe('/data/browsers/chromium-1248/chrome-linux64/chrome')
+    expect(findDownloadedBrowser('/data/browsers', { exists: have(join('/data/browsers', 'chromium-1248', 'chrome-linux64', 'chrome')), readdir }))
+      .toBe(join('/data/browsers', 'chromium-1248', 'chrome-linux64', 'chrome'))
     expect(findBrowser({ dataDir: '/data', env: {}, platform: 'darwin', exists: () => false, readdir: () => [] })).toBeNull()
   })
 })
@@ -51,7 +61,7 @@ function fakeSpawn(exitCode: number, output = ''): { spawnImpl: SpawnLike; calls
 
 describe('installBrowser', () => {
   it('runs playwright-core\'s installer into the data dir, through the mirror when given, and returns the executable', async () => {
-    const exe = '/data/browsers/chromium-1248/chrome-linux64/chrome'
+    const exe = join('/data/browsers', 'chromium-1248', 'chrome-linux64', 'chrome')
     const { spawnImpl, calls } = fakeSpawn(0)
     const lines: string[] = []
     const found = await installBrowser('/data/browsers', {

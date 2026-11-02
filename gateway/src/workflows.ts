@@ -17,12 +17,16 @@ export type WorkflowValue =
   | { kind: 'redacted'; reason: 'sensitive-input' }
 
 type WorkflowStepContext = { intent?: string; page?: string; frame?: string }
+type WorkflowActionContext = WorkflowStepContext & { expect?: { url: string } }
 
 export type WorkflowStep = WorkflowStepContext & (
   | { type: 'navigate'; url: string }
-  | { type: 'click'; target: WorkflowTarget }
-  | { type: 'fill'; target: WorkflowTarget; value: WorkflowValue }
-  | { type: 'select'; target: WorkflowTarget; value: WorkflowValue }
+  | (WorkflowActionContext & { type: 'click'; target: WorkflowTarget })
+  | (WorkflowActionContext & { type: 'check' | 'uncheck'; target: WorkflowTarget })
+  | (WorkflowActionContext & { type: 'press'; key: 'Enter'; target: WorkflowTarget })
+  | (WorkflowActionContext & { type: 'fill'; target: WorkflowTarget; value: WorkflowValue })
+  | (WorkflowActionContext & { type: 'select'; target: WorkflowTarget; value: WorkflowValue })
+  | { type: 'unrecorded-popup' }
 )
 
 export type WorkflowTrace = {
@@ -195,8 +199,19 @@ function parseWorkflowValue(value: unknown, target: WorkflowTarget): WorkflowVal
   throw new TypeError('invalid workflow value')
 }
 
+function parseActionContext(context: WorkflowStepContext, value: unknown): WorkflowActionContext {
+  if (value === undefined) return context
+  if (!isRecord(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, 'url')) {
+    throw new TypeError('invalid workflow expectation')
+  }
+  const url = sanitizeWorkflowUrl(readString(value.url, 'URL', MAX_URL_LENGTH))
+  if (!url) throw new TypeError('invalid workflow URL')
+  return { ...context, expect: { url } }
+}
+
 export function parseWorkflowStep(value: unknown): WorkflowStep {
   if (!isRecord(value)) throw new TypeError('invalid workflow step')
+  if (value.type === 'unrecorded-popup') return { type: 'unrecorded-popup' }
   const context = parseStepContext(value)
   switch (value.type) {
     case 'navigate': {
@@ -205,11 +220,18 @@ export function parseWorkflowStep(value: unknown): WorkflowStep {
       return { ...context, type: 'navigate', url }
     }
     case 'click':
-      return { ...context, type: 'click', target: parseTarget(value.target) }
+      return { ...parseActionContext(context, value.expect), type: 'click', target: parseTarget(value.target) }
+    case 'check':
+    case 'uncheck':
+      return { ...parseActionContext(context, value.expect), type: value.type, target: parseTarget(value.target) }
+    case 'press': {
+      if (value.key !== 'Enter') throw new TypeError('unsupported workflow key')
+      return { ...parseActionContext(context, value.expect), type: 'press', key: 'Enter', target: parseTarget(value.target) }
+    }
     case 'fill':
     case 'select': {
       const target = parseTarget(value.target)
-      return { ...context, type: value.type, target, value: parseWorkflowValue(value.value, target) }
+      return { ...parseActionContext(context, value.expect), type: value.type, target, value: parseWorkflowValue(value.value, target) }
     }
     default:
       throw new TypeError('unsupported workflow step')

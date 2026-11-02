@@ -211,12 +211,13 @@ describe('LocalComputer window for signing in', () => {
     const state = { url: 'about:blank', open: false, launches: 0 }
     let current: PageHarness | null = null
     const makePage = (): PageHarness => {
-      const listeners = new Map<'framenavigated' | 'close', Set<(value?: unknown) => void>>([
-        ['framenavigated', new Set()], ['close', new Set()],
+      const listeners = new Map<'framenavigated' | 'close' | 'popup', Set<(value?: unknown) => void>>([
+        ['framenavigated', new Set()], ['close', new Set()], ['popup', new Set()],
       ])
       const bindings = new Map<string, (source: unknown, event: unknown) => void | Promise<void>>()
+      const mainFrame = {}
       const page: PageLike = {
-        async goto(url) { state.url = url; for (const listener of listeners.get('framenavigated') ?? []) listener() },
+        async goto(url) { state.url = url; for (const listener of listeners.get('framenavigated') ?? []) listener(mainFrame) },
         async title() { return 'Example' },
         url: () => state.url,
         async innerText() { return '' },
@@ -229,6 +230,7 @@ describe('LocalComputer window for signing in', () => {
         },
         on(event, listener) { listeners.get(event)?.add(listener) },
         off(event, listener) { listeners.get(event)?.delete(listener) },
+        mainFrame: () => mainFrame,
         viewportSize: () => ({ width: 1280, height: 800 }),
       }
       return { page, bindings, close: () => { for (const listener of listeners.get('close') ?? []) listener() } }

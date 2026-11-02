@@ -25,8 +25,9 @@ export type PageLike = {
   waitForLoadState?(state?: string, opts?: unknown): Promise<void>
   evaluate?(script: string): Promise<unknown>
   exposeBinding?(name: string, callback: (source: unknown, event: unknown) => void | Promise<void>): Promise<BindingDisposable>
-  on?(event: 'framenavigated' | 'close', listener: (value?: unknown) => void): void
-  off?(event: 'framenavigated' | 'close', listener: (value?: unknown) => void): void
+  mainFrame?(): unknown
+  on?(event: 'framenavigated' | 'close' | 'popup', listener: (value?: unknown) => void): void
+  off?(event: 'framenavigated' | 'close' | 'popup', listener: (value?: unknown) => void): void
   viewportSize(): { width: number; height: number } | null
 }
 

@@ -6,6 +6,7 @@ import { createFakeComputer } from '../src/computer.js'
 import { openDb, upsertBot } from '../src/db.js'
 import type { LLM } from '../src/llm.js'
 import { createPool } from '../src/pool.js'
+import { createRoutine } from '../src/routines.js'
 import { createApp } from '../src/server.js'
 import type { WorkflowRecording } from '../src/workflow-recorder.js'
 import { parseWorkflowTrace, type WorkflowTrace } from '../src/workflows.js'
@@ -111,6 +112,95 @@ describe('workflow recording API', () => {
       expect((await app.request('/api/bots/researcher/computer')).status).toBe(200)
       expect((await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })).status).toBe(409)
     } finally {
+      await pool.disposeAll()
+      db.close()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a recording while busy and holds turns and watch routines until it stops', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-gate-'))
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    const chat = vi.fn(async () => ({ content: 'ok', toolCalls: [], raw: { role: 'assistant' as const, content: 'ok' } }))
+    const localLlm: LLM = { chat }
+    const computer = createFakeComputer({
+      startWorkflowRecording: async (title): Promise<WorkflowRecording> => ({
+        async reattach() {},
+        async stop() { return parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, steps: [] }) },
+      }),
+    })
+    const pool = createPool({ dataDir, makeComputer: async () => computer })
+    const { app, isBusy, runRoutine } = createApp({ db, llm: localLlm, pool, dataDir })
+
+    try {
+      const start = await app.request('/api/bots/researcher/workflows/recording', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Operator flow' }),
+      })
+      expect(start.status).toBe(202)
+
+      const directTurn = await app.request('/api/threads/dm:researcher/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Please check this' }),
+      })
+      expect(directTurn.status).toBe(202)
+      const watch = createRoutine(db, {
+        botId: 'researcher', name: 'Status watch', cron: '', instructions: 'Check the status page', mode: 'watch',
+      })
+      const watchRun = runRoutine(watch, { force: true })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(chat).not.toHaveBeenCalled()
+      expect(isBusy('researcher')).toBe(true)
+
+      const stop = await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })
+      expect(stop.status).toBe(200)
+      await watchRun
+      await vi.waitFor(() => expect(chat).toHaveBeenCalledTimes(2))
+      expect(isBusy('researcher')).toBe(false)
+    } finally {
+      await pool.disposeAll()
+      db.close()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses to start recording while a turn is running', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-busy-'))
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    let finishTurn: (() => void) | undefined
+    let turnStarted!: () => void
+    const started = new Promise<void>((resolve) => { turnStarted = resolve })
+    const localLlm: LLM = {
+      async chat() {
+        turnStarted()
+        await new Promise<void>((resolve) => { finishTurn = resolve })
+        return { content: 'ok', toolCalls: [], raw: { role: 'assistant', content: 'ok' } }
+      },
+    }
+    let recorderStarts = 0
+    const computer = createFakeComputer({
+      startWorkflowRecording: async (title): Promise<WorkflowRecording> => {
+        recorderStarts += 1
+        return { async reattach() {}, async stop() { return parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, steps: [] }) } }
+      },
+    })
+    const pool = createPool({ dataDir, makeComputer: async () => computer })
+    const { app, isBusy } = createApp({ db, llm: localLlm, pool, dataDir })
+
+    try {
+      await app.request('/api/threads/dm:researcher/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Start work' }),
+      })
+      await started
+      const response = await app.request('/api/bots/researcher/workflows/recording', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Operator flow' }),
+      })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ error: 'the teammate is busy' })
+      expect(recorderStarts).toBe(0)
+    } finally {
+      finishTurn?.()
+      await vi.waitFor(() => expect(isBusy('researcher')).toBe(false))
       await pool.disposeAll()
       db.close()
       await rm(dataDir, { recursive: true, force: true })

@@ -79,6 +79,7 @@ type ActiveWorkflowRecording = {
   recorder: WorkflowRecording | null
   stopping: Promise<WorkflowTrace> | null
   draft: WorkflowDraft | null
+  releaseTurns: () => void
 }
 
 /** 每条 routine 记住最近这么多个投递编号 */
@@ -189,6 +190,7 @@ export function createApp(deps: AppDeps): GatewayApp {
   }
   const lastSent = new Map<string, Presence>()
   const routinesInFlight = new Set<number>()
+  const routineBotsInFlight = new Map<string, number>()
   /** 已落库、还没交给某个回合去回答的用户消息（按线程） */
   const waiting = new Map<string, Set<number>>()
   const workflowRecordings = new Map<string, ActiveWorkflowRecording>()
@@ -523,6 +525,7 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (!bot) return 'gone'
     if (routinesInFlight.has(fresh.id)) return 'skipped'
     routinesInFlight.add(fresh.id)
+    routineBotsInFlight.set(bot.id, (routineBotsInFlight.get(bot.id) ?? 0) + 1)
     try {
       markRoutineRun(db, fresh.id, now().getTime())
       const threadId = ensureDmThread(db, bot.id)
@@ -555,6 +558,9 @@ export function createApp(deps: AppDeps): GatewayApp {
       return 'ran'
     } finally {
       routinesInFlight.delete(fresh.id)
+      const remaining = (routineBotsInFlight.get(bot.id) ?? 1) - 1
+      if (remaining === 0) routineBotsInFlight.delete(bot.id)
+      else routineBotsInFlight.set(bot.id, remaining)
     }
   }
 
@@ -627,17 +633,22 @@ export function createApp(deps: AppDeps): GatewayApp {
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : 'invalid workflow metadata' }, 400)
     }
-    const active: ActiveWorkflowRecording = { recorder: null, stopping: null, draft: null }
+    if (routineBotsInFlight.has(botId)) return c.json({ error: 'the teammate is busy' }, 409)
+    const releaseTurns = turns.hold(botId)
+    if (!releaseTurns) return c.json({ error: 'the teammate is busy' }, 409)
+    const active: ActiveWorkflowRecording = { recorder: null, stopping: null, draft: null, releaseTurns }
     workflowRecordings.set(botId, active)
     let computer: BotComputer
     try {
       computer = await pool.get(botId)
     } catch {
       if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      active.releaseTurns()
       return c.json({ error: 'the bot browser is unavailable' }, 503)
     }
     if (!computer.startWorkflowRecording) {
       if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      active.releaseTurns()
       return c.json({ error: 'this computer cannot record workflows' }, 409)
     }
     try {
@@ -646,6 +657,7 @@ export function createApp(deps: AppDeps): GatewayApp {
       return c.json({ ok: true, recording: true }, 202)
     } catch (error) {
       if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      active.releaseTurns()
       return c.json({ error: error instanceof Error ? error.message : 'could not start workflow recording' }, 409)
     }
   })
@@ -664,7 +676,10 @@ export function createApp(deps: AppDeps): GatewayApp {
       const trace = await active.stopping
       active.draft ??= { id: randomUUID(), trace }
       workflowDrafts.set(botId, active.draft)
-      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+      if (workflowRecordings.get(botId) === active) {
+        workflowRecordings.delete(botId)
+        active.releaseTurns()
+      }
       return c.json(active.draft)
     } catch (error) {
       active.stopping = null

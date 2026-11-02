@@ -13,7 +13,7 @@ type Entry = {
   done: Promise<void>
   coalesceKey?: string
 }
-type Lane = { running: Entry | null; waiting: Entry[] }
+type Lane = { running: Entry | null; waiting: Entry[]; held: boolean }
 
 export type TurnQueue = {
   /**
@@ -23,6 +23,8 @@ export type TurnQueue = {
   run(laneId: string, threadId: string, job: TurnJob, opts?: { coalesceKey?: string }): Promise<void>
   /** 停掉某个线程的工作：正在跑的收到 abort，排着队的直接丢弃。返回受影响的回合数。 */
   stopThread(threadId: string): number
+  /** Reserve an idle bot lane for browser recording. Returns null if work is already running or queued. */
+  hold(laneId: string): (() => void) | null
   statuses(): Record<string, TurnState>
   isBusy(laneId: string): boolean
 }
@@ -30,9 +32,11 @@ export type TurnQueue = {
 export function createTurnQueue(onStatus: (laneId: string, state: TurnState) => void): TurnQueue {
   const lanes = new Map<string, Lane>()
 
-  async function drain(laneId: string, lane: Lane): Promise<void> {
-    onStatus(laneId, 'thinking')
+  async function drain(laneId: string, lane: Lane, announce = true): Promise<void> {
+    if (lane.held || lanes.get(laneId) !== lane) return
+    if (announce) onStatus(laneId, 'thinking')
     while (lane.waiting.length > 0) {
+      if (lane.held) return
       const entry = lane.waiting.shift()!
       lane.running = entry
       try {
@@ -43,8 +47,10 @@ export function createTurnQueue(onStatus: (laneId: string, state: TurnState) => 
       lane.running = null
       entry.resolve()
     }
-    lanes.delete(laneId)
-    onStatus(laneId, 'idle')
+    if (!lane.held && lanes.get(laneId) === lane) {
+      lanes.delete(laneId)
+      onStatus(laneId, 'idle')
+    }
   }
 
   return {
@@ -58,7 +64,7 @@ export function createTurnQueue(onStatus: (laneId: string, state: TurnState) => 
       if (lane) {
         lane.waiting.push(entry)
       } else {
-        const fresh: Lane = { running: null, waiting: [entry] }
+        const fresh: Lane = { running: null, waiting: [entry], held: false }
         lanes.set(laneId, fresh)
         void drain(laneId, fresh)
       }
@@ -83,6 +89,24 @@ export function createTurnQueue(onStatus: (laneId: string, state: TurnState) => 
         lane.waiting = keep
       }
       return stopped
+    },
+    hold(laneId) {
+      if (lanes.has(laneId)) return null
+      const lane: Lane = { running: null, waiting: [], held: true }
+      lanes.set(laneId, lane)
+      onStatus(laneId, 'thinking')
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        if (lanes.get(laneId) !== lane) return
+        lane.held = false
+        if (lane.waiting.length > 0) void drain(laneId, lane, false)
+        else {
+          lanes.delete(laneId)
+          onStatus(laneId, 'idle')
+        }
+      }
     },
     statuses: () => Object.fromEntries([...lanes.keys()].map((id) => [id, 'thinking' as const])),
     isBusy: (laneId) => lanes.has(laneId),

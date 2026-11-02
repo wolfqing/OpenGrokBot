@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 
 /**
  * 本机模式要一个 Chromium 系浏览器。顺序：操作者指定的 → 机器上装好的（真 Chrome 优先，登录页对它最宽容）→
@@ -22,6 +22,21 @@ const SYSTEM_BROWSERS: Record<string, string[]> = {
     '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium',
     '/usr/bin/brave-browser',
   ],
+}
+
+function systemBrowsers(platform: string, env: Record<string, string | undefined>): string[] {
+  if (platform !== 'win32') return SYSTEM_BROWSERS[platform] ?? []
+  const programFiles = env.ProgramFiles ?? 'C:\\Program Files'
+  const programFilesX86 = env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
+  const localAppData = env.LOCALAPPDATA
+  return [
+    win32.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    win32.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ...(localAppData ? [win32.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe')] : []),
+    win32.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    win32.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ...(localAppData ? [win32.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe')] : []),
+  ]
 }
 
 /** playwright 下载的 Chromium 在 browsers 目录里长什么样（Chrome for Testing 新布局在前，老布局兜底） */
@@ -67,7 +82,7 @@ export function findBrowser(opts: {
     if (!exists(wanted)) throw new Error(`OPENGROKBOT_BROWSER points to ${wanted}, which does not exist`)
     return { executablePath: wanted, source: 'env' }
   }
-  for (const candidate of SYSTEM_BROWSERS[opts.platform ?? process.platform] ?? []) {
+  for (const candidate of systemBrowsers(opts.platform ?? process.platform, env)) {
     if (exists(candidate)) return { executablePath: candidate, source: 'system' }
   }
   const downloaded = findDownloadedBrowser(browsersDir(opts.dataDir), opts)
