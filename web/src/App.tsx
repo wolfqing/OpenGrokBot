@@ -220,28 +220,20 @@ export default function App() {
     }
   }
 
-  /** 本机模式：登录完了，把浏览器窗口收回后台，面板跟着刷新 */
-  const onWindowDone = async () => {
+  /** 本机模式的两个动作：网关拒了（没沙箱、自检失败）就把原因抛回面板显示；不管成败都刷新面板 */
+  const panelAction = async (run: (botId: string) => Promise<void>) => {
     if (!panel) return
     try {
-      await setComputerWindow(panel.botId, false)
-      await loadPanel(panel.botId)
-    } catch (err) {
-      guard(err)
-    }
-  }
-
-  /** 本机模式：开关命令行；网关拒了（没沙箱、自检失败）就把原因弹出来 */
-  const onShell = async (enabled: boolean) => {
-    if (!panel) return
-    try {
-      await setComputerShell(panel.botId, enabled)
+      await run(panel.botId)
     } catch (err) {
       if (err instanceof SignedOut) { setSignedOut(true); return }
-      window.alert(err instanceof Error ? err.message : String(err))
+      throw err
+    } finally {
+      await loadPanel(panel.botId)
     }
-    await loadPanel(panel.botId)
   }
+  const onWindowDone = () => panelAction((botId) => setComputerWindow(botId, false))
+  const onShell = (enabled: boolean) => panelAction((botId) => setComputerShell(botId, enabled))
 
   const hire = async (name: string, role: string) => {
     try {
@@ -295,8 +287,8 @@ export default function App() {
           onRoutine={(id, action) => { void onRoutine(id, action) }}
           onRevokeRule={(id) => { void onRevokeRule(id) }}
           onForgetRule={(rule) => { void onForgetRule(rule) }}
-          onWindowDone={() => { void onWindowDone() }}
-          onShell={(enabled) => { void onShell(enabled) }}
+          onWindowDone={onWindowDone}
+          onShell={onShell}
         />
       ) : null}
       {hiring ? (

@@ -187,7 +187,8 @@ describe('a local computer', () => {
     vi.stubGlobal('WebSocket', class { constructor(url: string) { sockets.push(url) } close() {} })
     const { container } = render(<ComputerPanel info={local} botName="Scout" onClose={() => {}} />)
     expect(container.querySelector('iframe')).toBeNull()
-    expect(screen.getByRole('img', { name: "Scout's screen" })).toBeInTheDocument()
+    expect(container.querySelector('.panel-screen-cdp')).not.toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting…')
     expect(sockets[0]).toMatch(/\/screen\/researcher\/ws$/)
     expect(screen.getByText(/Local computer/)).toBeInTheDocument()
     vi.unstubAllGlobals()
@@ -197,8 +198,8 @@ describe('a local computer', () => {
     vi.stubGlobal('WebSocket', class { close() {} })
     const done = vi.fn()
     render(<ComputerPanel info={{ ...local, window: true }} botName="Scout" onClose={() => {}} onWindowDone={done} />)
-    expect(screen.getByRole('status')).toHaveTextContent(/open as a window on your desktop/)
-    await userEvent.click(screen.getByRole('button', { name: "I'm done signing in" }))
+    expect(screen.getByText(/open as a window on your desktop/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: "I\u2019m done signing in" }))
     expect(done).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })
@@ -225,5 +226,33 @@ describe('the commands switch', () => {
   it('is not offered for a sealed computer', () => {
     render(<ComputerPanel info={{ ...running, kind: 'docker', shell: { enabled: true, available: true } }} botName="Scout" onClose={() => {}} onShell={() => {}} />)
     expect(screen.queryByRole('checkbox', { name: 'Allow commands' })).toBeNull()
+  })
+})
+
+describe('waiting on the gateway', () => {
+  const local: ComputerInfo = { ...running, kind: 'local', vncUrl: null, screen: null, shell: { enabled: false, available: true } }
+
+  it('locks the commands switch while the sandbox is checked, and shows why when the gateway refuses', async () => {
+    let reject!: (err: Error) => void
+    const onShell = vi.fn(() => new Promise<void>((_, r) => { reject = r }))
+    render(<ComputerPanel info={local} botName="Scout" onClose={() => {}} onShell={onShell} />)
+    const box = screen.getByRole('checkbox', { name: 'Allow commands' })
+    await userEvent.click(box)
+    expect(onShell).toHaveBeenCalledWith(true)
+    expect(box).toBeDisabled()
+    expect(screen.getByText(/Checking the sandbox/)).toBeInTheDocument()
+    await act(async () => { reject(new Error('the sandbox failed its self-check: it let a command write outside')) })
+    expect(screen.getByRole('alert')).toHaveTextContent(/write outside/)
+    expect(box).not.toBeDisabled()
+  })
+
+  it('disables the done button while the window is being put away', async () => {
+    let resolve!: () => void
+    const onWindowDone = vi.fn(() => new Promise<void>((r) => { resolve = r }))
+    render(<ComputerPanel info={{ ...local, window: true }} botName="Scout" onClose={() => {}} onWindowDone={onWindowDone} />)
+    await userEvent.click(screen.getByRole('button', { name: "I\u2019m done signing in" }))
+    expect(screen.getByRole('button', { name: 'Closing…' })).toBeDisabled()
+    await act(async () => { resolve() })
+    expect(screen.getByRole('button', { name: "I\u2019m done signing in" })).not.toBeDisabled()
   })
 })

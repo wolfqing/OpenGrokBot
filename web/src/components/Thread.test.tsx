@@ -96,13 +96,13 @@ describe('Thread', () => {
     const { rerender } = render(
       <Thread conversation={dm} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Open the computer panel' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open its computer' }))
     expect(onOpenScreen).toHaveBeenCalled()
 
     rerender(
       <Thread conversation={group} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
     )
-    expect(screen.queryByRole('button', { name: 'Open the computer panel' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open its computer' })).toBeNull()
   })
 
   it('renders a login request and opens the screen from it', async () => {
