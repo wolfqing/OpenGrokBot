@@ -143,3 +143,13 @@ describe('trusted UI origins', () => {
     expect(trustedOrigins({ webUrl: '', allowedOrigins: [] })).toEqual([])
   })
 })
+
+describe('isProtectedPath', () => {
+  it('guards the data, the live stream and both kinds of screen; leaves the page and the sign-in link open', async () => {
+    const { isProtectedPath } = await import('../src/auth.js')
+    for (const p of ['/api/bots', '/ws', '/vnc/researcher/view.html', '/vnc/researcher/websockify', '/screen/researcher/ws']) {
+      expect(isProtectedPath(p), p).toBe(true)
+    }
+    for (const p of ['/', '/index.html', '/assets/app.js', '/auth', '/hooks/routines/1']) expect(isProtectedPath(p), p).toBe(false)
+  })
+})

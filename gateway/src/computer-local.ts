@@ -1,4 +1,5 @@
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { mkdir, open, readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createBrowserSession, pageOperations, type BrowserLike, type ContextLike } from './browser-page.js'
@@ -161,7 +162,13 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       if (Buffer.byteLength(content, 'utf8') > MAX_FILE_BYTES) throw new Error('content too large')
       const full = await confined(opts.workspaceDir, path)
       await mkdir(dirname(full), { recursive: true })
-      await writeFile(full, content, 'utf8')
+      // 最后一段不跟符号链接：confined 查完到真正打开之间，开着命令行的 bot 能把它换成链接
+      const handle = await open(full, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW)
+      try {
+        await handle.writeFile(content, 'utf8')
+      } finally {
+        await handle.close()
+      }
     },
     ...pageOperations(() => session.page()),
     dispose: () => session.dispose(),

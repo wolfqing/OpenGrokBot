@@ -599,8 +599,10 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (body.shell) {
       const sandbox = deps.computers?.sandbox
       if (!sandbox?.available) return c.json({ error: `no sandbox for commands on this machine. ${sandbox?.why ?? ''}`.trim() }, 409)
-      const checked = await deps.computers?.checkSandbox?.(bot.id)
-      if (checked && !checked.ok) return c.json({ error: `the sandbox failed its self-check: ${checked.why}` }, 409)
+      // 没法自检就不开：说「有沙箱」却没验过，比没有沙箱更糟
+      if (!deps.computers?.checkSandbox) return c.json({ error: 'this gateway cannot self-check its sandbox, so commands stay off' }, 409)
+      const checked = await deps.computers.checkSandbox(bot.id)
+      if (!checked.ok) return c.json({ error: `the sandbox failed its self-check: ${checked.why}` }, 409)
     }
     setBotShell(db, bot.id, body.shell)
     return c.json({ ok: true, shell: shellView(botById(bot.id)!) })
