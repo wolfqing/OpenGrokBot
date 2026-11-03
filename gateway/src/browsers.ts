@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 /**
  * 本机模式要一个 Chromium 系浏览器。顺序：操作者指定的 → 机器上装好的（真 Chrome 优先，登录页对它最宽容）→
@@ -91,7 +91,8 @@ export async function installBrowser(dir: string, opts: {
   cliPath?: string
 } & FsDeps = {}): Promise<string> {
   const log = opts.log ?? (() => {})
-  const cli = opts.cliPath ?? createRequire(import.meta.url).resolve('playwright-core/cli.js')
+  // cli.js 不在 playwright-core 的 exports 里，直接 resolve 会报 ERR_PACKAGE_PATH_NOT_EXPORTED：从 package.json 找到包目录再拼
+  const cli = opts.cliPath ?? join(dirname(createRequire(import.meta.url).resolve('playwright-core/package.json')), 'cli.js')
   const env: NodeJS.ProcessEnv = { ...process.env, PLAYWRIGHT_BROWSERS_PATH: dir }
   if (opts.mirror) env.PLAYWRIGHT_DOWNLOAD_HOST = opts.mirror
   const spawnImpl = opts.spawnImpl ?? (spawn as unknown as SpawnLike)

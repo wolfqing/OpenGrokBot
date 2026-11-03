@@ -18,6 +18,9 @@ still change behaviour.
 
 ### Fixed
 
+- A machine with no Chrome, Edge or Chromium could not download a browser for its local teammates: the
+  download failed at once with `ERR_PACKAGE_PATH_NOT_EXPORTED`, because playwright-core does not export its
+  `cli.js`. The gateway now finds the installer through the package's own folder.
 - The sign-in window of a local computer closed as soon as the teammate used its browser again, or a routine
   fired — while the operator might be typing a password. It now closes only when the operator speaks again
   (a message, a decision) or clicks *I'm done signing in*.
