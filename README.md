@@ -108,8 +108,9 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 
 Needs Node 22+ and pnpm. **Docker is optional.** Without it, each teammate gets a *local computer*: a browser of
 its own on your machine (your Chrome, Edge or Chromium if you have one — otherwise one is downloaded once) and a
-folder of its own. With Docker running, each gets a sealed container instead. macOS and Linux for local
-computers; on Windows, use Docker.
+folder of its own. With Docker running, each gets a sealed container instead. Local computers run on macOS,
+Linux and Windows; on Windows they get the browser and the folder but no commands, so a teammate that needs a
+shell there gets a Docker computer.
 
 ```bash
 git clone https://github.com/wolfqing/OpenGrokBot.git
@@ -123,6 +124,8 @@ Try it with no API key at all — a scripted stub model drives every path end to
 OPENGROKBOT_MODEL=stub pnpm dev
 ```
 
+On Windows, in PowerShell: `$env:OPENGROKBOT_MODEL = 'stub'; pnpm dev`.
+
 The gateway prints a sign-in link — `http://localhost:5173/auth?token=…`. Open it once per browser; nothing
 reaches the gateway without that token.
 
@@ -132,14 +135,17 @@ Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a 
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 ```
 
+(PowerShell: `$env:OPENGROKBOT_API_KEY = 'sk-…'; $env:OPENGROKBOT_MODEL = 'grok-4'; pnpm dev`.)
+
 The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers,
 local otherwise (`OPENGROKBOT_COMPUTERS=docker|local` forces one). For Docker, build the image first:
 `docker build -t opengrokbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
 for that teammate in its computer panel; then they run in an OS sandbox (Seatbelt on macOS, bubblewrap on Linux)
-that can write only that teammate's folder. Details in [docs/local-computers.md](docs/local-computers.md).
+that can write only that teammate's folder. Windows has no sandbox that strong, so there the switch stays off.
+Details in [docs/local-computers.md](docs/local-computers.md).
 
 To keep it running — one process, one port, started at boot, reachable through a tunnel — `pnpm build &&
-pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/always-on.md).
+pnpm start` and the launchd / systemd / Windows Task Scheduler templates in [docs/always-on.md](docs/always-on.md).
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -207,7 +213,7 @@ official xAI product. [Download the latest release](https://github.com/wolfqing/
       by hand or from a routine. The one Grok Bot feature with no open equivalent; a contributor has taken the
       first slice (the recorder and its trace format) in [#1](../../issues/1)
 - [x] **Computers without Docker** on macOS and Linux — a browser profile and a folder per teammate, commands
-      off by default and sandboxed when on (v0.4.0)
+      off by default and sandboxed when on (v0.4.0); on Windows, the browser and the folder
 - [ ] A desktop app with a first-run wizard, so trying it needs no Docker, Node or terminal; then an Apple
       container backend on macOS 26. Plan in [docs/local-computers.md](docs/local-computers.md)
 - [ ] Telegram as a notification / approval surface for when you are away from the desk
@@ -223,9 +229,9 @@ even run on the same brain: point it at the Grok API.
 a private computer per teammate pulls against OpenClaw's shared-host model. The old recipe is kept in
 [docs/openclaw-recipe/](docs/openclaw-recipe/README.md). Not an official OpenClaw project.
 
-**Do I have to use Docker?** No. On macOS and Linux, a teammate without Docker gets a local computer: a browser
-and a folder of its own on your machine. Docker buys stronger isolation (a container per teammate, with resource
-limits), and on Windows it is still the only way to give teammates a computer. See
+**Do I have to use Docker?** No. On macOS, Linux and Windows, a teammate without Docker gets a local computer: a
+browser and a folder of its own on your machine. Docker buys stronger isolation (a container per teammate, with
+resource limits), and on Windows it is still the only way to give a teammate a shell. See
 [docs/local-computers.md](docs/local-computers.md).
 
 More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·

@@ -73,7 +73,7 @@ because of something the bot read shows up there.
 | Secret | Where |
 |---|---|
 | Model API key | The `OPENGROKBOT_API_KEY` environment variable. The gateway never writes it to disk. |
-| Gateway token | `gateway/data/auth-token` (`0600`), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
+| Gateway token | `gateway/data/auth-token`, readable by your account only (`0600`; on Windows the gateway removes inherited access and grants only you, and warns if it cannot), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
 | Bot logins | Each bot's browser profile: inside its container (Docker), or under `<data>/bots/<id>/browser` (local). The gateway never sees a password. |
 | Shim token, VNC password | Generated per container at creation, kept in that container's environment. |
 | Webhook keys | One per webhook routine, in the gateway's SQLite database. Shown only in the computer panel — inside the address, and on its own as the *Secret* for GitHub — and in the token-guarded routine listing the panel reads. |
@@ -95,7 +95,9 @@ A local computer is weaker than a container in ways you should know before you g
   running as your user — the same standing as your own browser profile, no better.
 - **Chromium's own sandbox stays on**, which it cannot inside a container. Pages the teammate visits get the
   protection your own browser gives you.
-- **Windows has no local computer** yet, because it has no sandbox as mature as the two above.
+- **On Windows, a local computer has no commands.** It gets the browser and the folder; Windows has no sandbox as
+  mature as the two above, so the switch for commands stays off. File access is the gateway's own check, which on
+  Windows also refuses other drives, network shares, device names such as `CON`, and alternate data streams.
 
 If a job needs a Linux of its own, software installed, or stronger isolation, give that teammate a Docker computer.
 

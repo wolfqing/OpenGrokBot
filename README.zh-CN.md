@@ -98,7 +98,8 @@ Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹�
 
 需要 Node 22+ 和 pnpm。**Docker 可选。** 不装 Docker，每位同事得到一台「本机电脑」：在你机器上有它自己的浏览器
 （有 Chrome / Edge / Chromium 就直接用，没有就自动下载一次）和自己的文件夹；Docker 开着时，每位同事得到一个
-封闭的容器。本机电脑支持 macOS 和 Linux；Windows 请用 Docker。
+封闭的容器。本机电脑支持 macOS、Linux 和 Windows；Windows 上它有浏览器和文件夹，但没有命令行——在 Windows 上需要
+命令行的同事，请给它一台 Docker 电脑。
 
 ```bash
 git clone https://github.com/wolfqing/OpenGrokBot.git
@@ -112,6 +113,8 @@ pnpm install
 OPENGROKBOT_MODEL=stub pnpm dev
 ```
 
+Windows 上在 PowerShell 里：`$env:OPENGROKBOT_MODEL = 'stub'; pnpm dev`。
+
 gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?token=…`。每个浏览器打开一次即可；没有这个
 令牌，什么都连不上 gateway。
 
@@ -121,13 +124,16 @@ gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?to
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
 ```
 
+（PowerShell：`$env:OPENGROKBOT_API_KEY = 'sk-…'; $env:OPENGROKBOT_MODEL = 'grok-4'; pnpm dev`。）
+
 gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答就用 Docker，否则用本机模式
 （`OPENGROKBOT_COMPUTERS=docker|local` 可以强制）。用 Docker 要先建镜像：`docker build -t opengrokbot/bot:dev docker/bot`。
 本机电脑上**命令行默认关着**，在那位同事的电脑面板里按需打开；打开后命令跑在系统沙箱里（macOS 用 Seatbelt，
-Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [docs/local-computers.md](docs/local-computers.md)。
+Linux 用 bubblewrap），只能写这位同事自己的文件夹。Windows 没有同样可靠的沙箱，那里这个开关一直关着。
+细节见 [docs/local-computers.md](docs/local-computers.md)。
 
 想让它常驻——一个进程、一个端口、开机自启、经隧道远程访问——用 `pnpm build && pnpm start`，以及
-[docs/always-on.md](docs/always-on.md) 里的 launchd / systemd 模板。
+[docs/always-on.md](docs/always-on.md) 里的 launchd / systemd / Windows 计划任务模板。
 
 | 环境变量 | 默认值 | 作用 |
 |---|---|---|
@@ -191,7 +197,7 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 - [ ] **teach-mode**——录一遍浏览器操作，存成一个同事能反复执行的 workflow，手动跑或由 routine 定时跑。这是
       Grok Bot 唯一没有开源等价物的能力；已有贡献者接下第一步（录制器和录制格式），在 [#1](../../issues/1)
 - [x] **不用 Docker 的电脑**（macOS 和 Linux）——每位同事独立的浏览器 profile 和文件夹，命令行默认关、打开后跑在
-      系统沙箱里（v0.4.0）
+      系统沙箱里（v0.4.0）；Windows 上有浏览器和文件夹
 - [ ] 带首次启动向导的桌面 App，试用时不需要 Docker、Node 和终端；之后是 macOS 26 上的 Apple container 后端。
       计划见 [docs/local-computers.md](docs/local-computers.md)
 - [ ] Telegram 作为离开电脑时的通知 / 审批补位渠道
@@ -206,9 +212,9 @@ Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown�
 自己的电脑」和 OpenClaw 的共享主机模型是拧着的。旧配方保留在
 [docs/openclaw-recipe/](docs/openclaw-recipe/README.md)。本项目不是 OpenClaw 官方项目。
 
-**必须用 Docker 吗？** 不必。在 macOS 和 Linux 上，没有 Docker 时每位同事得到一台本机电脑：你机器上它自己的
-浏览器和文件夹。Docker 换来的是更强的隔离（每位同事一个容器，带资源上限）；在 Windows 上，目前仍然只有 Docker
-能给同事配电脑。见 [docs/local-computers.md](docs/local-computers.md)。
+**必须用 Docker 吗？** 不必。在 macOS、Linux 和 Windows 上，没有 Docker 时每位同事得到一台本机电脑：你机器上它
+自己的浏览器和文件夹。Docker 换来的是更强的隔离（每位同事一个容器，带资源上限）；在 Windows 上，目前仍然只有
+Docker 能给同事命令行。见 [docs/local-computers.md](docs/local-computers.md)。
 
 更多见 [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
 [docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)

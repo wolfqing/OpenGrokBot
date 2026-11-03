@@ -15,6 +15,26 @@ still change behaviour.
   denied a short list of key folders and bubblewrap denied none of them. The self-check now also fails if a
   command can list the home directory, and the switch refuses to turn on when no self-check is wired.
 - `write_file` on a local computer opens the final path component without following symlinks.
+- On Windows the gateway token file is limited to your account: inherited access is removed and only your user (by
+  SID) is granted. Before, `0600` did nothing there and the file kept whatever its folder allowed. Start-up warns
+  if it cannot restrict the file, and an existing token is tightened on the next start.
+- A local computer's file tools refuse Windows device names (`CON`, `NUL`, `COM1`, … — reading `CON` would wait for
+  input forever) and colons, which would write into an alternate data stream.
+
+### Added
+
+- **Local computers on Windows**, with the browser and the folder: the gateway finds Chrome, Edge, Chromium or Brave
+  where Windows installs them (for all users or just you) and otherwise downloads Chrome for Testing. Commands stay
+  off, because Windows has no sandbox as strong as Seatbelt or bubblewrap; a teammate that needs a shell there
+  gets a Docker computer.
+- **Start at sign-in on Windows**: `deploy/windows/install-task.ps1` registers a Task Scheduler task that runs the
+  gateway as you, in your session (so a sign-in window can appear), and restarts it if it stops.
+- **CI on Linux, macOS and Windows.** Typecheck, tests and build run on all three, and a new job runs the
+  local-computer smoke test on each against the runner's real Chrome — on Linux with bubblewrap and a virtual
+  display, on macOS with Seatbelt, on Windows with the extra path checks. The Windows job also installs and removes
+  the start-up task.
+- `deploy/linux/bwrap.apparmor`: the AppArmor profile bubblewrap needs on Ubuntu 23.10 and later, which otherwise
+  stop it from creating the user namespace it sandboxes commands in. CI applies the same file.
 
 ### Fixed
 
@@ -36,6 +56,11 @@ still change behaviour.
 
 ### Changed
 
+- `pnpm dev` works in PowerShell and cmd: the gateway's dev script set its default UI address with Unix shell
+  syntax, which Windows rejected; the default now lives in `gateway/scripts/dev.ts`.
+- Every file is checked out with LF line endings (`.gitattributes`). On Windows git would otherwise convert them, and
+  a bot image built from that checkout fails at `entrypoint.sh` with `/bin/bash^M: bad interpreter`.
+- The READMEs and docs give PowerShell versions of the commands and describe Windows local computers.
 - The READMEs describe local computers wherever they still assumed Docker: the FAQ no longer says Docker is
   required, the computer and security sections say how a local computer differs from a container (files kept to
   its folder, commands off by default, no resource limits), and the roadmap marks computers without Docker as

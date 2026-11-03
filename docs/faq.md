@@ -22,7 +22,7 @@ Read [comparison.md](comparison.md) — including the "what Grok Bot genuinely d
 No. v0.2 runs its own gateway and its own containers, and never reads or writes an OpenClaw config. If you want the old v0.1 distribution path instead, it is in [openclaw-recipe/](openclaw-recipe/README.md) — and its `setup.sh` still refuses to overwrite an existing config, writing a merge file instead.
 
 **Windows?**
-WSL2, with Docker Desktop's WSL2 backend for the bot computers. Local computers (no Docker) are macOS and Linux only for now.
+Yes. `pnpm install` and `pnpm dev` work in PowerShell, and without Docker each teammate gets a local computer: a browser and a folder of its own. Commands stay off there, because Windows has no sandbox as strong as Seatbelt or bubblewrap; a teammate that needs a shell gets a Docker computer (Docker Desktop with its WSL2 backend). To keep the gateway running, see the Windows part of [always-on.md](always-on.md).
 
 **How much RAM does a VPS need?**
 2GB minimum. Each awake teammate runs a real Chromium — in its container, or headless on your machine — so budget roughly 300–500MB per teammate that is actually awake. Computers start on demand and stop after an hour without use (`OPENGROKBOT_IDLE_STOP_MINUTES`), so idle teammates cost disk, not memory. Their logins survive the stop.
