@@ -82,3 +82,28 @@ describe('createDockerBackend', () => {
     expect(stopped).toEqual(['opengrokbot-researcher'])
   })
 })
+
+describe('createLocalBackend.running', () => {
+  it('leaves out a computer whose browser has gone away', async () => {
+    const { createLocalBackend } = await import('../src/backend.js')
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    let open = true
+    const browser = {
+      contexts: () => [{ pages: () => [], newPage: async () => { throw new Error('no page needed') } }],
+      close: async () => { open = false },
+      isConnected: () => open,
+    }
+    const backend = createLocalBackend({
+      dataDir: mkdtempSync(join(tmpdir(), 'ogb-backend-')),
+      resolveBrowser: async () => '/bin/chrome',
+      launch: async () => browser,
+    })
+    const bob = await backend.make('bob')
+    expect(await backend.running()).toEqual(['bob'])
+    await expect(bob.goto('https://example.com')).rejects.toThrow() // 开了浏览器（没有页面的假浏览器）
+    open = false // 操作者手动退出了 Chrome
+    expect(await backend.running()).toEqual([])
+  })
+})

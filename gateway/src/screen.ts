@@ -82,7 +82,9 @@ export function screencastRelay(
         ws.close()
         return
       }
-      computer.screencast((frame) => { if (!closed) ws.send(JSON.stringify({ type: 'frame', ...frame })) })
+      // 浏览器重开（登录窗口开/收）流就断了：关掉这条连接，面板按断线重连接上新的浏览器
+      const onEnd = () => { if (!closed) ws.close() }
+      computer.screencast((frame) => { if (!closed) ws.send(JSON.stringify({ type: 'frame', ...frame })) }, { onEnd })
         .then((s) => {
           if (closed) void s() // 订阅成功前面板就关了
           else stop = s

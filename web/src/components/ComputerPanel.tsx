@@ -17,7 +17,7 @@ function Waking({ botName }: { botName: string }) {
       <span className="panel-spinner" aria-hidden="true" />
       <div className="panel-loading-title">Starting {botName}&apos;s computer…</div>
       <div className="panel-loading-why">
-        One that was asleep takes 10–20 seconds to wake. Its logins and files come back with it.
+        A sealed one that was asleep takes 10–20 seconds to wake; a local one a few seconds. Its logins and files come back with it.
       </div>
       {seconds >= 3 ? <div className="panel-loading-elapsed">{seconds}s</div> : null}
     </div>
@@ -30,10 +30,10 @@ type PanelActions = {
   onRevokeRule?: (id: number) => void
   /** 从 MEMORY.md 删掉一条规矩（原句） */
   onForgetRule?: (rule: string) => void
-  /** 本机模式：登录完了，把开在桌面上的浏览器窗口收回后台 */
-  onWindowDone?: () => void
-  /** 本机模式：开关命令行 */
-  onShell?: (enabled: boolean) => void
+  /** 本机模式：登录完了，把开在桌面上的浏览器窗口收回后台。失败就 reject，面板把原因摆出来 */
+  onWindowDone?: () => void | Promise<void>
+  /** 本机模式：开关命令行（开之前网关要实测沙箱，得几秒）。失败就 reject */
+  onShell?: (enabled: boolean) => void | Promise<void>
 }
 
 /** webhook 地址带着密钥：给一个「复制」，不把它整串摊在面板上 */
@@ -145,6 +145,20 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
   const rules = info.rules ?? []
   const memory = info.memory ?? []
   const skills = info.skills ?? []
+  // 开关命令行、收回窗口都要等网关几秒：期间锁住控件，失败把原因写在旁边，不用 alert
+  const [busy, setBusy] = useState<'shell' | 'window' | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const act = async (what: 'shell' | 'window', run: () => void | Promise<void>) => {
+    setBusy(what)
+    setProblem(null)
+    try {
+      await run()
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(null)
+    }
+  }
   return (
     <>
       {info.screen?.kind === 'cdp' ? (
@@ -160,13 +174,17 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
       {info.window ? (
         <div className="panel-window" role="status">
           <span>Its browser is open as a window on your desktop — sign in there.</span>
-          {onWindowDone ? <button className="panel-copy" onClick={onWindowDone}>I&apos;m done signing in</button> : null}
+          {onWindowDone ? (
+            <button className="panel-copy" disabled={busy !== null} onClick={() => void act('window', onWindowDone)}>
+              {busy === 'window' ? 'Closing…' : 'I\u2019m done signing in'}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {info.kind ? (
         <div className="panel-kind">
           {info.kind === 'local'
-            ? 'Local sandbox: its own browser profile and folder on this machine.'
+            ? 'Local computer: its own browser profile and folder on this machine. Commands stay off unless you allow them below.'
             : 'Sealed computer: a container of its own.'}
         </div>
       ) : null}
@@ -177,19 +195,21 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
             <input
               type="checkbox"
               checked={info.shell.enabled}
-              disabled={!info.shell.available || !onShell}
-              onChange={(e) => onShell?.(e.target.checked)}
+              disabled={!info.shell.available || !onShell || busy !== null}
+              onChange={(e) => { const next = e.target.checked; void act('shell', () => onShell?.(next)) }}
               aria-label="Allow commands"
             />
             <span>
               Allow commands, in a sandbox that can only write this teammate&apos;s folder.
               {info.shell.available
-                ? ' It cannot install software or read your keys.'
+                ? ' It cannot install software, or read your home directory and keys.'
                 : ` Not available here: ${info.shell.why ?? 'no sandbox on this machine'}`}
+              {busy === 'shell' ? ' Checking the sandbox…' : ''}
             </span>
           </label>
         </div>
       ) : null}
+      {problem ? <div className="panel-problem" role="alert">{problem}</div> : null}
 
       <div className="panel-section">
         <div className="panel-section-title">Routines</div>

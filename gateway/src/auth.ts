@@ -30,9 +30,9 @@ function sameToken(presented: string, token: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
-/** 页面本身（静态文件）和登录入口是公开的；数据、实时流、屏幕都要令牌。 */
+/** 页面本身（静态文件）和登录入口是公开的；数据、实时流、两种屏幕都要令牌。 */
 export function isProtectedPath(path: string): boolean {
-  return path.startsWith('/api/') || path === '/ws' || path.startsWith('/vnc/')
+  return path.startsWith('/api/') || path === '/ws' || path.startsWith('/vnc/') || path.startsWith('/screen/')
 }
 
 function presentedToken(c: Context): string | undefined {

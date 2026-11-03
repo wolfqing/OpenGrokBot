@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { findBrowser, findDownloadedBrowser, installBrowser, type SpawnLike } from '../src/browsers.js'
 
@@ -63,6 +64,14 @@ describe('installBrowser', () => {
     expect(calls[0]!.env.PLAYWRIGHT_BROWSERS_PATH).toBe('/data/browsers')
     expect(calls[0]!.env.PLAYWRIGHT_DOWNLOAD_HOST).toBe('https://cdn.npmmirror.com/binaries/playwright')
     expect(lines.join('\n')).toMatch(/downloading a browser/)
+  })
+
+  it('finds playwright-core\'s own installer when no cli path is given', async () => {
+    const { spawnImpl, calls } = fakeSpawn(0)
+    await installBrowser('/data/browsers', { spawnImpl, exists: () => true, readdir: () => ['chromium-1248'] }).catch(() => {})
+    const cli = calls[0]?.args[0] ?? ''
+    expect(cli).toMatch(/playwright-core[\\/]cli\.js$/)
+    expect(existsSync(cli)).toBe(true)
   })
 
   it('explains a failed download and what to do instead', async () => {

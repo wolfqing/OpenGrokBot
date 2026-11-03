@@ -115,7 +115,10 @@ export function createLocalBackend(opts: LocalBackendOptions): ComputerBackend {
       return tracked
     },
     async running() {
-      return [...live.keys()]
+      // 操作者手动退出了 Chrome 的那台不算在跑；下次要它时 pool 会原样再起
+      const alive: string[] = []
+      for (const [botId, computer] of live) if (await computer.ping()) alive.push(botId)
+      return alive
     },
     async stop(botId) {
       await live.get(botId)?.dispose()

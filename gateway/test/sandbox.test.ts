@@ -21,36 +21,54 @@ describe('detectSandbox', () => {
 })
 
 describe('the confinement rules', () => {
-  it('Seatbelt: deny by default, read most things, never the data dir or key folders, write only its own folders', () => {
-    const profile = seatbeltProfile(c)
+  const cHome = { ...c, exists: (p: string) => ['/Users/op/.nvm', '/Users/op/.cargo/bin'].includes(p) }
+
+  it('Seatbelt: deny by default; read the system but not the home dir; see the way to the workspace; toolchains read-only; write only its own folders', () => {
+    const profile = seatbeltProfile(cHome)
     expect(profile.startsWith('(version 1)\n(deny default)')).toBe(true)
     expect(profile).toContain('(allow network*)')
-    expect(profile).toMatch(/\(deny file-read\* \(subpath "\/data"\) \(subpath "\/Users\/op\/.ssh"\)/)
-    expect(profile).toContain('(subpath "/Users/op/Library/Application Support/Google/Chrome")')
+    expect(profile).toContain('(allow file-read*)\n(deny file-read* (subpath "/Users/op") (subpath "/data"))')
+    expect(profile).toContain('(allow file-read-metadata (literal "/data") (literal "/data/workspaces") (literal "/data/bots") (literal "/data/bots/bob"))')
+    expect(profile).toContain('(allow file-read* (subpath "/Users/op/.nvm") (subpath "/Users/op/.cargo/bin"))')
+    expect(profile).not.toContain('"/Users/op/.cargo")') // 整个 .cargo 不给：credentials.toml 在里面
     expect(profile).toContain('(allow file-read* file-write* (subpath "/data/workspaces/bob") (subpath "/data/bots/bob/tmp"))')
-    // 自己的文件夹的放行写在数据目录的禁令之后：Seatbelt 以后写的为准
+    // 放行写在禁令之后：Seatbelt 以后写的为准
+    expect(profile.indexOf('(deny file-read*')).toBeLessThan(profile.indexOf('(allow file-read* (subpath'))
     expect(profile.indexOf('(deny file-read*')).toBeLessThan(profile.indexOf('(allow file-read* file-write*'))
   })
 
-  it('bubblewrap: read-only root, the data dir hidden under a tmpfs, its own folders bound back in, network kept', () => {
-    const args = bubblewrapArgs(c)
-    expect(args.slice(0, 4)).toEqual(['--die-with-parent', '--new-session', '--unshare-all', '--share-net'])
-    expect(args.join(' ')).toContain('--ro-bind / /')
-    expect(args.indexOf('/data')).toBeGreaterThan(-1)
-    expect(args[args.indexOf('/data') - 1]).toBe('--tmpfs')
-    expect(args.indexOf('--tmpfs')).toBeLessThan(args.indexOf('--bind'))
-    expect(args.join(' ')).toContain('--bind /data/workspaces/bob /data/workspaces/bob')
-    expect(args.slice(-2)).toEqual(['--chdir', '/data/workspaces/bob'])
+  it('Seatbelt: a data dir under the home dir is hidden by the home rule alone', () => {
+    const under = { workspace: '/Users/op/ogb/data/workspaces/bob', tmp: '/Users/op/ogb/data/bots/bob/tmp', dataDir: '/Users/op/ogb/data', home: '/Users/op', exists: () => false }
+    const profile = seatbeltProfile(under)
+    expect(profile).toContain('(deny file-read* (subpath "/Users/op"))')
+    expect(profile).toContain('(literal "/Users/op/ogb/data/workspaces")')
+    expect(profile).not.toContain('(allow file-read* (subpath')
   })
 
-  it('hands the command to bash inside the sandbox, with a scrubbed environment', () => {
+  it('bubblewrap: read-only root, the home dir (and a data dir elsewhere) hidden under tmpfs, toolchains read-only, its own folders bound back in, network kept', () => {
+    const args = bubblewrapArgs(cHome)
+    expect(args.slice(0, 4)).toEqual(['--die-with-parent', '--new-session', '--unshare-all', '--share-net'])
+    const joined = args.join(' ')
+    expect(joined).toContain('--ro-bind / /')
+    expect(joined).toContain('--tmpfs /Users/op --tmpfs /data')
+    expect(joined).toContain('--ro-bind /Users/op/.nvm /Users/op/.nvm --ro-bind /Users/op/.cargo/bin /Users/op/.cargo/bin')
+    expect(joined).toContain('--bind /data/workspaces/bob /data/workspaces/bob --bind /data/bots/bob/tmp /data/bots/bob/tmp')
+    // 遮住在前、放回在后：挂载顺序就是优先级
+    expect(args.indexOf('--tmpfs')).toBeLessThan(args.indexOf('--ro-bind', 5))
+    expect(args.lastIndexOf('--tmpfs')).toBeLessThan(args.indexOf('--bind'))
+    expect(args.slice(-2)).toEqual(['--chdir', '/data/workspaces/bob'])
+    const under = bubblewrapArgs({ workspace: '/home/op/ogb/data/workspaces/bob', tmp: '/home/op/ogb/data/bots/bob/tmp', dataDir: '/home/op/ogb/data', home: '/home/op', exists: () => false })
+    expect(under.filter((a) => a === '--tmpfs')).toHaveLength(2) // /tmp 和家目录；数据目录在家里，不用再遮
+  })
+
+  it('hands the command to bash inside the sandbox, with a scrubbed environment that still finds this node', () => {
     expect(sandboxedCommand({ kind: 'seatbelt', executable: '/usr/bin/sandbox-exec' }, c, 'ls -la'))
       .toMatchObject({ file: '/usr/bin/sandbox-exec', args: ['-p', expect.stringContaining('(version 1)'), '/bin/bash', '-c', 'ls -la'] })
     expect(sandboxedCommand({ kind: 'bubblewrap', executable: '/usr/bin/bwrap' }, c, 'ls').args.slice(-3)).toEqual(['/bin/bash', '-c', 'ls'])
-    const env = sandboxEnv(c, { LANG: 'zh_CN.UTF-8', TZ: 'Asia/Shanghai', AWS_SECRET_ACCESS_KEY: 'nope', HOME: '/Users/op' })
+    const env = sandboxEnv(c, { LANG: 'zh_CN.UTF-8', TZ: 'Asia/Shanghai', AWS_SECRET_ACCESS_KEY: 'nope', HOME: '/Users/op' }, '/Users/op/.nvm/versions/node/v24/bin')
     expect(env).toEqual({
-      PATH: expect.stringContaining('/usr/bin'), HOME: '/data/workspaces/bob', TMPDIR: '/data/bots/bob/tmp',
-      LANG: 'zh_CN.UTF-8', TERM: 'dumb', TZ: 'Asia/Shanghai',
+      PATH: '/Users/op/.nvm/versions/node/v24/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+      HOME: '/data/workspaces/bob', TMPDIR: '/data/bots/bob/tmp', LANG: 'zh_CN.UTF-8', TERM: 'dumb', TZ: 'Asia/Shanghai',
     })
   })
 })
@@ -99,6 +117,11 @@ describe.skipIf(!realSeatbelt)('Seatbelt for real (macOS only)', () => {
     const token = await runSandboxed(`cat "${join(c.dataDir, 'auth-token')}"`, { sandbox, confinement: c })
     expect(token.exitCode).not.toBe(0)
     expect(token.stdout).not.toContain('secret-token')
+    const home = await runSandboxed(`ls -A "${process.env.HOME}"; cat "${process.env.HOME}/.zshrc" "${process.env.HOME}/.bashrc" 2>&1 | head -c 300`, { sandbox, confinement: c })
+    expect(home.stdout).not.toMatch(/Documents|Library|\.ssh/)
+    expect(home.stdout).toMatch(/Operation not permitted|No such file/)
+    const node = await runSandboxed('node -e "console.log(21*2)" && echo "$PATH"', { sandbox, confinement: c })
+    expect(node.stdout).toContain('42')
     expect(await sandboxSelfCheck(sandbox, c)).toEqual({ ok: true })
   }, 60_000)
 

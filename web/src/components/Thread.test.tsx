@@ -115,7 +115,7 @@ describe('Thread', () => {
       <Thread conversation={dm} roster={roster} messages={asked} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
     )
     expect(screen.getByText('Sign in to Zendesk')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Open its screen' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open the computer panel' }))
     expect(onOpenScreen).toHaveBeenCalled()
   })
 

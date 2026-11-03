@@ -157,7 +157,7 @@ export async function runTurn(
     const timeZone = deps.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
     const messages = withTimeNote(history, timeNote(now, timeZone))
     const hasSkills = Boolean(deps.skills?.length && deps.onReadSkill)
-    const tools = buildTools({ hasComputer, canRelay, hasSkills, watch: deps.watch === true, shell: deps.computer?.shell })
+    const tools = buildTools({ hasComputer, canRelay, hasSkills, watch: deps.watch === true, shell: deps.computer?.shell, kind: deps.computer?.kind })
     const maxSteps = deps.maxSteps && deps.maxSteps > 0 ? Math.floor(deps.maxSteps) : DEFAULT_MAX_STEPS
     const turnMs = deps.turnTimeoutMs ?? DEFAULT_TURN_MS
     const startedAt = Date.now()

@@ -12,6 +12,46 @@ still change behaviour.
   saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
   and routines remain out of scope.
 
+### Security
+
+- A local computer's screen stream (`/screen/:botId/ws`) was served without the gateway's token and origin
+  checks; it is now guarded like the noVNC path.
+- Sandboxed commands can no longer read the operator's home directory. Both sandboxes hide it entirely and put
+  back only runtime managers (`~/.nvm`, `~/.volta`, `~/.pyenv`, `~/.cargo/bin`, …) read-only; before, Seatbelt
+  denied a short list of key folders and bubblewrap denied none of them. The self-check now also fails if a
+  command can list the home directory, and the switch refuses to turn on when no self-check is wired.
+- `write_file` on a local computer opens the final path component without following symlinks.
+
+### Fixed
+
+- A machine with no Chrome, Edge or Chromium could not download a browser for its local teammates: the
+  download failed at once with `ERR_PACKAGE_PATH_NOT_EXPORTED`, because playwright-core does not export its
+  `cli.js`. The gateway now finds the installer through the package's own folder.
+- The sign-in window of a local computer closed as soon as the teammate used its browser again, or a routine
+  fired — while the operator might be typing a password. It now closes only when the operator speaks again
+  (a message, a decision) or clicks *I'm done signing in*.
+- The panel's screen froze on the last frame after the browser was reopened for a sign-in; the stream now ends
+  and the panel reconnects to the new browser.
+- The screen viewer no longer retries forever (relaunching the browser each time) after the gateway says there
+  is no screen, and stops streaming while the tab is hidden.
+- The commands switch and the done button lock while the gateway works and show its refusal inline.
+- The shell tool and the briefing describe a local computer's working directory honestly (the folder is the
+  working directory and `$HOME`; `/workspace` is the file tools' name for it); `ask_for_login` tells the model to
+  stop and wait. The node the gateway runs on is first on a sandboxed command's PATH, so nvm-installed nodes work.
+- `running()` no longer counts a local computer whose browser the operator quit by hand.
+
+### Changed
+
+- The READMEs describe local computers wherever they still assumed Docker: the FAQ no longer says Docker is
+  required, the computer and security sections say how a local computer differs from a container (files kept to
+  its folder, commands off by default, no resource limits), and the roadmap marks computers without Docker as
+  shipped.
+
+### Fixed
+
+- A gateway test that failed now and then on CI. It waits for two replies in a row, and `vi.waitFor` gave up at its
+  default of one second on a slow runner; gateway tests now wait up to three seconds, as the web tests already do.
+
 ## [0.4.0] - 2026-10-30
 
 Teammates' computers without Docker: on macOS and Linux each teammate can get a browser and a folder of its

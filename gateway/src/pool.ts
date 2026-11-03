@@ -3,6 +3,8 @@ import type { BotComputer } from './computer.js'
 
 export type Pool = {
   get(botId: string): Promise<BotComputer>
+  /** 已经拉起过的那台（不会去开新的）；没有就是 undefined */
+  peek(botId: string): Promise<BotComputer> | undefined
   disposeAll(): Promise<void>
   /** 上次有人（bot 的工具、面板、预热）要这台电脑的时间；没用过是 undefined */
   lastUsed(botId: string): number | undefined
@@ -59,6 +61,7 @@ export function createPool(opts: {
       live.set(botId, started)
       return started
     },
+    peek: (botId) => live.get(botId),
     async disposeAll() {
       const all = [...live.values()]
       live.clear()

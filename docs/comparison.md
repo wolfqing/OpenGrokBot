@@ -9,11 +9,11 @@ ships almost daily, so this table ages fast. Corrections welcome via PR — it o
 
 | Capability | Grok Bot | This stack | Notes |
 |---|---|---|---|
-| Always-on teammates | ✅ on xAI's cloud | ✅ one Docker container each | Yours runs where you say: Mac mini, NAS, $5 VPS |
+| Always-on teammates | ✅ on xAI's cloud | ✅ a container, or a local sandbox, each | Yours runs where you say: Mac mini, NAS, $5 VPS |
 | Whose computer | A cloud computer per member; xAI's wording says a member's bots share it | A separate container per teammate | Separate desks mean separate blast radii: one teammate's browser, files and logins are out of another's reach |
 | Watch its screen / take over | ✅ status, side preview, full-screen takeover | ✅ noVNC panel from the thread | |
 | Signing in | Secure Form fills logins from chat; 1Password on Mac; takeover as fallback | Takeover only: you sign in on its screen | Theirs is smoother; ours never lets a password pass through the gateway |
-| Work on your own machine | ✅ "Your computer" in the desktop app; web traffic can leave through your desktop | ❌ | A Docker-free local mode is planned ([local-computers.md](local-computers.md)) |
+| Work on your own machine | ✅ "Your computer" in the desktop app; web traffic can leave through your desktop | ✅ local computers (v0.4.0): a browser profile and a folder of its own on your machine, commands off until you allow them and sandboxed then | macOS and Linux; Windows still needs Docker ([local-computers.md](local-computers.md)) |
 | Named bots, persistent memory | ✅ | ✅ | Rules live in `MEMORY.md` outside the bot's computer; every change is a diff chip |
 | Forget a rule | ✅ | ✅ `forget_memory`, or remove it in the panel | |
 | Approval gate on outward actions | ✅ draft cards, Auto-review by a separate model | ✅ Approve / Discard, or a bare 👍 | Ours is held by instruction, not a sandbox — see [security.md](security.md) |
@@ -38,7 +38,7 @@ ships almost daily, so this table ages fast. Corrections welcome via PR — it o
 | Voice | ✅ voice chat and calls | ❌ | |
 | Apps | macOS, Windows and Linux desktop; iOS | A web client in your browser, reachable from other machines through a tunnel | Not tuned for phones yet |
 | Model choice | Grok only | Any OpenAI-compatible: Grok, Kimi, DeepSeek, local | `stub` runs with no key |
-| Setup | Zero (their infra) | `pnpm install` + one `docker build` | This is the price of custody |
+| Setup | Zero (their infra) | `pnpm install`; Docker only if you want sealed containers | This is the price of custody |
 | Your credentials live | xAI's cloud | Your disk | The actual point |
 
 ## The other two: Meta Muse and OpenAI dots
@@ -73,7 +73,7 @@ today they cannot act, but they can still load any page.
 | Item | Grok Bot | OpenGrokBot |
 |---|---|---|
 | Subscription | Comes with SuperGrok and Cursor plans from Pro up, with its own usage meter; past the included usage you upgrade or set an on-demand limit | $0 |
-| Compute | included | hardware you own, or a ~$5/mo VPS (2GB RAM min for Docker builds) |
+| Compute | included | hardware you own, or a ~$5/mo VPS (2GB RAM min if the teammates use Docker) |
 | Model usage | included up to the plan's allowance | your API bill; moderate single-bot usage on grok-4.5 ≈ single-digit $/mo; local model = $0 |
 
 ## What Grok Bot genuinely does better

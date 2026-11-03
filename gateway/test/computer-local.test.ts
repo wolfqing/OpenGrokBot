@@ -339,3 +339,24 @@ describe('LocalComputer shell', () => {
     expect(ran).toEqual(['ls'])
   })
 })
+
+describe('LocalComputer screen across a relaunch', () => {
+  it('ends the stream when the browser is reopened for a window, and when the computer is disposed', async () => {
+    const { launch } = fakeCdpBrowser()
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    let ended = 0
+    await c.screencast!(() => {}, { onEnd: () => { ended += 1 } })
+    await c.showWindow!()
+    expect(ended).toBe(1)
+    await c.screencast!(() => {}, { onEnd: () => { ended += 1 } })
+    await c.hideWindow!()
+    expect(ended).toBe(2)
+    const stop = await c.screencast!(() => {}, { onEnd: () => { ended += 1 } })
+    await stop() // 自己退订的不再通知
+    await c.dispose()
+    expect(ended).toBe(2)
+    await c.screencast!(() => {}, { onEnd: () => { ended += 1 } })
+    await c.dispose()
+    expect(ended).toBe(3)
+  })
+})

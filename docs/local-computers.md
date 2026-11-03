@@ -1,4 +1,4 @@
-# Plan: teammates' computers without Docker
+# Teammates' computers without Docker
 
 > **Status: the local computer has shipped for macOS and Linux** (step 1 below). The desktop app, the first-run
 > wizard and the Apple container backend are still plans. The two questions this page once left open were settled
@@ -27,8 +27,8 @@ The gateway chooses at startup — Docker when the daemon answers, local otherwi
 
 - **Out of your way.** Teammates work in a headless browser in the background — no windows popping up.
 - **Signing in gets simpler.** At a login wall, the teammate's browser reopens as a normal window on your desktop,
-  on the page it was stuck on; you sign in there, click *I'm done signing in* in the panel (or just send it the next
-  message), and it goes back to the background with the session in its own profile. No VNC in between.
+  on the page it was stuck on; you sign in there, click *I'm done signing in* in the panel (your next message to it does the same;
+  a routine firing meanwhile leaves the window alone), and it goes back to the background with the session in its own profile. No VNC in between.
 - **Watching still works.** The computer panel shows the browser's screen as a live stream (CDP screencast), view
   only.
 - **The browser keeps its own sandbox.** On the host, Chromium runs with its sandbox on (inside containers it
@@ -36,7 +36,8 @@ The gateway chooses at startup — Docker when the daemon answers, local otherwi
 - **Commands are off by default.** A local teammate gets a browser and its own folder; most of the work people
   hand off needs nothing more. You can turn commands on per teammate in its computer panel, and then they run in
   an OS sandbox that confines them to that teammate's folder: Seatbelt on macOS, bubblewrap on Linux — the same
-  primitives developer agents use today. The switch refuses to turn on until the sandbox passes a self-check (a
+  primitives developer agents use today. Your home directory is hidden from them, except the runtime managers
+  (`~/.nvm`, `~/.volta`, `~/.pyenv`, `~/.cargo/bin`, …) they need to find `node` or `python`. The switch refuses to turn on until the sandbox passes a self-check (a
   write outside the folder and a read of the gateway token must both fail). What the sandbox does and does not
   promise is spelled out in [security.md](security.md#local-computers).
 - **No Linux userland.** A local teammate cannot `apt install` tools. Teammates that need that get a sealed
