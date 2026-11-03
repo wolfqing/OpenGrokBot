@@ -7,8 +7,12 @@ on:
 
 jobs:
   test:
-    name: Typecheck, test, build
-    runs-on: ubuntu-latest
+    name: Typecheck, test, build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -20,6 +24,55 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Windows start-up scripts parse, install and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem deploy/windows/*.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors; exit 1 }
+          }
+          powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/install-task.ps1
+          $task = Get-ScheduledTask -TaskName 'OpenGrokBot gateway'
+          if ($task.Actions[0].Arguments -notmatch 'start-gateway\.ps1') { "unexpected action: $($task.Actions[0].Arguments)"; exit 1 }
+          if ($task.Principal.LogonType -ne 'Interactive') { "unexpected logon type: $($task.Principal.LogonType)"; exit 1 }
+          powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/install-task.ps1 -Uninstall
+          if (Get-ScheduledTask -TaskName 'OpenGrokBot gateway' -ErrorAction SilentlyContinue) { 'task still registered'; exit 1 }
+
+  local-computer:
+    # 本机模式（不用 Docker）对着真浏览器、真沙箱走一遍：文件、浏览器、截屏流、登录窗口、命令行开关与沙箱边界。
+    # 每台 runner 上都装好了 Chrome，所以也顺带验了各平台找系统浏览器的路径。
+    name: Local computer smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: bubblewrap and a virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap xvfb
+          # Ubuntu 23.10+ 默认不许普通程序建用户命名空间：装上文档里给用户的那份 AppArmor 配置
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ]; then
+            sudo cp deploy/linux/bwrap.apparmor /etc/apparmor.d/bwrap
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+      - name: Smoke (Linux, on a virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm --filter @opengrokbot/gateway run smoke:local
+      - name: Smoke
+        if: runner.os != 'Linux'
+        run: pnpm --filter @opengrokbot/gateway run smoke:local
 
   audit:
     name: Dependency audit

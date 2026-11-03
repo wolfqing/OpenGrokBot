@@ -1,0 +1,6 @@
+# 一律以 LF 检出：Windows 上 git 默认会转成 CRLF，那样 docker/bot/entrypoint.sh 在容器里会以
+# "/bin/bash^M: bad interpreter" 起不来，带 frontmatter 的 Markdown 和测试夹具也会跟着走样。
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
