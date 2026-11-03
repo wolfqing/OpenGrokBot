@@ -8,7 +8,7 @@ a service: one process, one port, started at boot, reachable from your other mac
 ```bash
 pnpm install
 pnpm build                                   # web UI → web/dist, gateway → gateway/dist
-docker build -t opengrokbot/bot:dev docker/bot
+docker build -t opengrokbot/bot:dev docker/bot   # only if the teammates use Docker computers
 OPENGROKBOT_API_KEY=sk-… pnpm start
 ```
 
@@ -25,10 +25,13 @@ cp deploy/launchd/ai.opengrokbot.gateway.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/ai.opengrokbot.gateway.plist
 ```
 
-Docker Desktop has to come up with you: *Settings → General → Start Docker Desktop when you sign in*.
+If the teammates use Docker computers, Docker Desktop has to come up with you: *Settings → General → Start Docker
+Desktop when you sign in*. Local computers need no service — but a sign-in window can only appear in a desktop
+session, so keep the gateway a LaunchAgent of the user you sign in as, not a LaunchDaemon.
 
 **Linux.** Use [`deploy/systemd/opengrokbot.service`](../deploy/systemd/opengrokbot.service): run it as a user
-in the `docker` group and keep the key in `/etc/opengrokbot.env` (mode `600`).
+in the `docker` group (for Docker computers; for local computers that user needs `bubblewrap` installed if commands
+are to be allowed) and keep the key in `/etc/opengrokbot.env` (mode `600`).
 
 ```bash
 sudo cp deploy/systemd/opengrokbot.service /etc/systemd/system/

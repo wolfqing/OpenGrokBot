@@ -22,10 +22,10 @@ Read [comparison.md](comparison.md) — including the "what Grok Bot genuinely d
 No. v0.2 runs its own gateway and its own containers, and never reads or writes an OpenClaw config. If you want the old v0.1 distribution path instead, it is in [openclaw-recipe/](openclaw-recipe/README.md) — and its `setup.sh` still refuses to overwrite an existing config, writing a merge file instead.
 
 **Windows?**
-WSL2, with Docker Desktop's WSL2 backend for the bot computers.
+WSL2, with Docker Desktop's WSL2 backend for the bot computers. Local computers (no Docker) are macOS and Linux only for now.
 
 **How much RAM does a VPS need?**
-2GB minimum. Each bot's container runs a real Chromium, so budget roughly 300–500MB per teammate that is actually awake. Computers start on demand and stop after an hour without use (`OPENGROKBOT_IDLE_STOP_MINUTES`), so idle teammates cost disk, not memory. Their logins survive the stop.
+2GB minimum. Each awake teammate runs a real Chromium — in its container, or headless on your machine — so budget roughly 300–500MB per teammate that is actually awake. Computers start on demand and stop after an hour without use (`OPENGROKBOT_IDLE_STOP_MINUTES`), so idle teammates cost disk, not memory. Their logins survive the stop.
 
 **Why does it ask me to sign in?**
 The gateway can drive browsers that hold your sessions, so nothing talks to it without its token — not other websites you visit, not other devices on your network, not the bots themselves. Open the sign-in link it prints at startup once per browser; the token is in `gateway/data/auth-token`. Details in [security.md](security.md).
