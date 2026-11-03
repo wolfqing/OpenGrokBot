@@ -137,3 +137,22 @@ describe('screencastRelay', () => {
     expect(stopped).toBe(1)
   })
 })
+
+describe('screencastRelay when the browser goes away', () => {
+  it('closes the panel\'s connection so it reconnects to the new browser', async () => {
+    let end: (() => void) | undefined
+    const computer = {
+      screencast: async (_cb: unknown, hooks?: { onEnd?: () => void }) => { end = hooks?.onEnd; return async () => {} },
+    }
+    const relay = screencastRelay(computer)
+    let closed = 0
+    const ws = { send: () => {}, close: () => { closed += 1 } }
+    relay.onOpen!(undefined as never, ws as never)
+    await new Promise((r) => setTimeout(r, 0))
+    end!()
+    expect(closed).toBe(1)
+    relay.onClose!(undefined as never, ws as never)
+    end!() // 面板已经关了：不再碰这条连接
+    expect(closed).toBe(1)
+  })
+})

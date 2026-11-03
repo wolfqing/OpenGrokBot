@@ -289,6 +289,9 @@ export function createApp(deps: AppDeps): GatewayApp {
         order = { pendingIds: waitingHere }
       }
       if (pool && opts.prewarm) void pool.get(bot.id).catch(() => {})
+      // 登录接管留下的窗口：操作者再开口（下一条消息、一个决定）就收回后台；routine、webhook、
+      // 转交开的回合不动它——人可能正在那个窗口里敲密码。只收已经开着的电脑，不为此拉起一台。
+      if (pool && opts.origin === 'operator') await pool.peek(bot.id)?.then((c) => c.hideWindow?.()).catch(() => {})
       opts.onStart?.()
       const { soul, manual } = loadPersona(bot)
       const memory = dataDir ? await readMemory(dataDir, bot.id) : ''
@@ -314,8 +317,7 @@ export function createApp(deps: AppDeps): GatewayApp {
         // 提前把容器拉起来，用户点开面板时屏幕已经在了
         // 容器：提前拉起来，用户点开面板时屏幕已经在了；本机：把浏览器以窗口开到桌面上让人登录
         ...(pool ? { onAskForLogin: async () => { await (await pool.get(bot.id)).showWindow?.() } } : {}),
-        // 登录接管留下的窗口，在 bot 下一次用电脑时收回后台（本来就在后台时什么都不做）
-        ...(pool ? { getComputer: async () => { const computer = await pool.get(bot.id); await computer.hideWindow?.(); return computer } } : {}),
+        ...(pool ? { getComputer: () => pool.get(bot.id) } : {}),
         computer: { kind: computerKind, shell: shellEnabledFor(bot) },
         ...(pool && dataDir ? { saveShot: (botId, shot) => saveScreenshot(dataDir, botId, shot, Date.now()) } : {}),
         onApproval: async ({ action, detail, kind, target, rulesAllowed, items }) => {

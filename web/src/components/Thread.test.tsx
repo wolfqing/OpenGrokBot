@@ -96,13 +96,13 @@ describe('Thread', () => {
     const { rerender } = render(
       <Thread conversation={dm} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
     )
-    await userEvent.click(screen.getByRole('button', { name: 'Open its computer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open the computer panel' }))
     expect(onOpenScreen).toHaveBeenCalled()
 
     rerender(
       <Thread conversation={group} roster={roster} messages={[]} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
     )
-    expect(screen.queryByRole('button', { name: 'Open its computer' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open the computer panel' })).toBeNull()
   })
 
   it('renders a login request and opens the screen from it', async () => {
@@ -115,7 +115,7 @@ describe('Thread', () => {
       <Thread conversation={dm} roster={roster} messages={asked} thinking={false} onSend={() => {}} onDecide={() => {}} onOpenScreen={onOpenScreen} />,
     )
     expect(screen.getByText('Sign in to Zendesk')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Open its screen' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open the computer panel' }))
     expect(onOpenScreen).toHaveBeenCalled()
   })
 

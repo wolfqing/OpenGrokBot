@@ -9,7 +9,7 @@ export function LoginChip({ payload, onOpenScreen }: {
       <div className="login-label">Needs you at the keyboard</div>
       <div className="login-site">Sign in to {payload.site}</div>
       {payload.why ? <div className="login-why">{payload.why}</div> : null}
-      <button className="login-open" onClick={onOpenScreen}>Open its screen</button>
+      <button className="login-open" onClick={onOpenScreen}>Open the computer panel</button>
     </div>
   )
 }

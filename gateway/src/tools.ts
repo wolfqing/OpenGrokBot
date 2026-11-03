@@ -37,12 +37,18 @@ export const MESSAGE_USER_TOOL: ToolDef = {
   },
 }
 
+/** 容器里工作目录真叫 /workspace；本机电脑的工作目录是同事自己的文件夹（文件工具里的 /workspace 指的也是它） */
+const SHELL_DESCRIPTION = {
+  docker: 'Run a bash command on your own computer. Working directory is /workspace, which persists between sessions.',
+  local: 'Run a bash command on your own computer, in a sandbox confined to your workspace folder — the working directory and $HOME (the file tools call that same folder /workspace). It persists between sessions. You cannot install software there.',
+}
+
 const COMPUTER_TOOLS: ToolDef[] = [
   {
     type: 'function',
     function: {
       name: 'shell',
-      description: 'Run a bash command on your own computer. Working directory is /workspace, which persists between sessions.',
+      description: SHELL_DESCRIPTION.docker,
       parameters: {
         type: 'object',
         properties: {
@@ -171,7 +177,7 @@ const COMPUTER_TOOLS: ToolDef[] = [
     function: {
       name: 'ask_for_login',
       description:
-        'Ask your operator to sign in to a site on your computer. Use it the moment you hit a login wall — you never have their credentials and must never ask for them in chat. They take over your screen, sign in once, and the session stays in your browser from then on.',
+        'Ask your operator to sign in to a site in your browser. Use it the moment you hit a login wall — you never have their credentials and must never ask for them in chat. They sign in on your computer themselves, once, and the session stays in your browser from then on. After calling it, stop and wait: do not touch the browser again until they say they are done.',
       parameters: {
         type: 'object',
         properties: {
@@ -353,8 +359,14 @@ export function buildTools(opts: {
   watch?: boolean
   /** false = 这台电脑没有命令行（本机模式默认）：连工具都不列，模型就不会去试 */
   shell?: boolean
+  /** 本机电脑的 shell 说明不一样（没有 /workspace 这个目录） */
+  kind?: 'docker' | 'local'
 }): ToolDef[] {
-  const computerTools = opts.shell === false ? COMPUTER_TOOLS.filter((t) => t.function.name !== 'shell') : COMPUTER_TOOLS
+  const computerTools = COMPUTER_TOOLS
+    .filter((t) => opts.shell !== false || t.function.name !== 'shell')
+    .map((t) => (t.function.name === 'shell' && opts.kind === 'local'
+      ? { ...t, function: { ...t.function, description: SHELL_DESCRIPTION.local } }
+      : t))
   const tools = [
     MESSAGE_USER_TOOL,
     ...WORKFLOW_TOOLS,

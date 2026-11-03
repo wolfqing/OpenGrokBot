@@ -189,7 +189,7 @@ describe('a local computer', () => {
     expect(container.querySelector('iframe')).toBeNull()
     expect(screen.getByRole('img', { name: "Scout's screen" })).toBeInTheDocument()
     expect(sockets[0]).toMatch(/\/screen\/researcher\/ws$/)
-    expect(screen.getByText(/Local sandbox/)).toBeInTheDocument()
+    expect(screen.getByText(/Local computer/)).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
 

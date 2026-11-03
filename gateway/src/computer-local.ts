@@ -97,10 +97,18 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
    * Chromium 不能在运行中切换有没有窗口：关掉再以另一种方式开同一个配置。
    * 登录态在配置目录里，两边共享；当前页面也带过去，操作者看到的就是 bot 卡住的那一页。
    */
+  /** 正在看屏幕的人：浏览器一重开，旧的流就断了，告诉他们重连 */
+  const watchers = new Set<() => void>()
+  const endStreams = () => {
+    for (const end of [...watchers]) end()
+    watchers.clear()
+  }
+
   async function relaunch(nextHeadless: boolean): Promise<void> {
     let url: string | undefined
     if (session.state() === 'open') url = await session.page().then((p) => p.url()).catch(() => undefined)
     await session.dispose()
+    endStreams()
     headless = nextHeadless
     const p = await session.page()
     if (url && url !== 'about:blank') await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {})
@@ -112,13 +120,15 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       // 还没开过浏览器也算活着：它随时能开；开过又没了才说明这台电脑坏了，让 pool 换一台
       return session.state() !== 'gone'
     },
-    async screencast(onFrame) {
+    async screencast(onFrame, hooks = {}) {
       const context = await session.context()
       if (!context.newCDPSession) throw new Error('this browser cannot stream its screen')
       const page = await session.page()
       const cdp = await context.newCDPSession(page)
       type Frame = { data: string; sessionId: number; metadata: { deviceWidth: number; deviceHeight: number } }
       let stopped = false
+      const end = () => { stopped = true; hooks.onEnd?.() }
+      watchers.add(end)
       cdp.on('Page.screencastFrame', (frame: Frame) => {
         if (stopped) return
         onFrame({ data: frame.data, width: frame.metadata.deviceWidth, height: frame.metadata.deviceHeight })
@@ -132,6 +142,7 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 })
       return async () => {
         stopped = true
+        watchers.delete(end)
         await cdp.send('Page.stopScreencast').catch(() => {})
         await cdp.detach().catch(() => {})
       }
@@ -171,6 +182,9 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       }
     },
     ...pageOperations(() => session.page()),
-    dispose: () => session.dispose(),
+    async dispose() {
+      await session.dispose()
+      endStreams()
+    },
   }
 }

@@ -13,8 +13,8 @@ export interface BotComputer {
   readonly kind: ComputerKind
   /** 容器电脑的屏幕：noVNC 的地址（只给网关代理用）和 VNC 口令。 */
   readonly screen?: { base: string; password?: string }
-  /** 本机电脑的屏幕：订阅浏览器画面，返回取消订阅。 */
-  screencast?(onFrame: (frame: ScreencastFrame) => void): Promise<() => Promise<void>>
+  /** 本机电脑的屏幕：订阅浏览器画面，返回取消订阅。浏览器重开或关掉时流就断了，onEnd 通知订阅方重连。 */
+  screencast?(onFrame: (frame: ScreencastFrame) => void, hooks?: { onEnd?: () => void }): Promise<() => Promise<void>>
   /** 接管登录（本机模式）：把浏览器以普通窗口开到桌面上；hideWindow 切回后台。两者都保住当前页面和登录态。 */
   showWindow?(): Promise<void>
   hideWindow?(): Promise<void>

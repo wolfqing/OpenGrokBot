@@ -9,7 +9,7 @@ describe('LoginChip', () => {
     render(<LoginChip payload={{ site: 'Zendesk', why: 'to work the support queue' }} onOpenScreen={onOpenScreen} />)
     expect(screen.getByText('Sign in to Zendesk')).toBeInTheDocument()
     expect(screen.getByText('to work the support queue')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Open its screen' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Open the computer panel' }))
     expect(onOpenScreen).toHaveBeenCalled()
   })
 

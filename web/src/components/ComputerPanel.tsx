@@ -17,7 +17,7 @@ function Waking({ botName }: { botName: string }) {
       <span className="panel-spinner" aria-hidden="true" />
       <div className="panel-loading-title">Starting {botName}&apos;s computer…</div>
       <div className="panel-loading-why">
-        One that was asleep takes 10–20 seconds to wake. Its logins and files come back with it.
+        A sealed one that was asleep takes 10–20 seconds to wake; a local one a few seconds. Its logins and files come back with it.
       </div>
       {seconds >= 3 ? <div className="panel-loading-elapsed">{seconds}s</div> : null}
     </div>
@@ -166,7 +166,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
       {info.kind ? (
         <div className="panel-kind">
           {info.kind === 'local'
-            ? 'Local sandbox: its own browser profile and folder on this machine.'
+            ? 'Local computer: its own browser profile and folder on this machine. Commands stay off unless you allow them below.'
             : 'Sealed computer: a container of its own.'}
         </div>
       ) : null}
