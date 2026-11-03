@@ -156,6 +156,14 @@ const MIGRATIONS: Migration[] = [
   `),
   // v4：本机电脑的命令行开关，按同事存（操作者在面板上做的决定，要看得见、能撤）
   (db) => db.exec(`ALTER TABLE bots ADD COLUMN shell_enabled INTEGER NOT NULL DEFAULT 0;`),
+  // v5：操作者在界面上改的设置（服务商、模型、语言……），值是 JSON；API key 不在这里，单独放 <data>/llm-key
+  (db) => db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `),
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

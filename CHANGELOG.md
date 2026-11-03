@@ -6,6 +6,13 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- The gateway keeps settings of its own (schema v5 adds a `settings` table): provider, API base, model, vision,
+  language, computers, browser mirror and update checks, read at startup. An env var still wins over a saved
+  value. The model API key can live in `<data>/llm-key` (mode `0600`, next to the gateway token, out of reach of
+  sandboxed commands and containers) instead of `OPENGROKBOT_API_KEY`. Nothing writes these from the UI yet.
+
 ### Security
 
 - A local computer's screen stream (`/screen/:botId/ws`) was served without the gateway's token and origin

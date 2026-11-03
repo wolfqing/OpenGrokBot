@@ -102,7 +102,7 @@ describe.skipIf(!realSeatbelt)('Seatbelt for real (macOS only)', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
   const confinementIn = (root: string) => ({ workspace: join(root, 'data/workspaces/bob'), tmp: join(root, 'data/bots/bob/tmp'), dataDir: join(root, 'data') })
 
-  it('lets a command work in its folder, and stops it writing elsewhere or reading the gateway token', async () => {
+  it('lets a command work in its folder, and stops it writing elsewhere or reading the gateway token or the model key', async () => {
     const c = confinementIn(dir)
     await sandboxSelfCheck(sandbox, c) // creates the folders
     writeFileSync(join(c.dataDir, 'auth-token'), 'secret-token')
@@ -117,6 +117,10 @@ describe.skipIf(!realSeatbelt)('Seatbelt for real (macOS only)', () => {
     const token = await runSandboxed(`cat "${join(c.dataDir, 'auth-token')}"`, { sandbox, confinement: c })
     expect(token.exitCode).not.toBe(0)
     expect(token.stdout).not.toContain('secret-token')
+    writeFileSync(join(c.dataDir, 'llm-key'), 'sk-secret-key')
+    const key = await runSandboxed(`cat "${join(c.dataDir, 'llm-key')}"`, { sandbox, confinement: c })
+    expect(key.exitCode).not.toBe(0)
+    expect(key.stdout).not.toContain('sk-secret-key')
     const home = await runSandboxed(`ls -A "${process.env.HOME}"; cat "${process.env.HOME}/.zshrc" "${process.env.HOME}/.bashrc" 2>&1 | head -c 300`, { sandbox, confinement: c })
     expect(home.stdout).not.toMatch(/Documents|Library|\.ssh/)
     expect(home.stdout).toMatch(/Operation not permitted|No such file/)

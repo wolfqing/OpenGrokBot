@@ -18,15 +18,22 @@ import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
+import { applySettings, readSavedSettings, resolveApiKey, resolveSettings } from './settings.js'
 import { serveWeb } from './web.js'
 
-const config = loadConfig()
-mkdirSync(config.dataDir, { recursive: true })
-if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
-const db = openDb(config.dbPath, {
+const startup = loadConfig()
+mkdirSync(startup.dataDir, { recursive: true })
+if (startup.dbPath !== ':memory:') mkdirSync(dirname(startup.dbPath), { recursive: true })
+const db = openDb(startup.dbPath, {
   onBackup: (file) => console.log(`[gateway] backed up the database before upgrading it → ${file}`),
   onMigrate: (from, to) => console.log(`[gateway] database schema v${from} → v${to}`),
 })
+// 界面上存的设置（库里）和 key 文件（<data>/llm-key）叠到启动配置上；设了环境变量的项仍以环境变量为准
+const config = applySettings(
+  startup,
+  resolveSettings(process.env, readSavedSettings(db)).values,
+  resolveApiKey(process.env, startup.dataDir).key,
+)
 // 预置样板来自版本库，用户新雇的同事住在数据目录
 const bots = [
   ...seedTeammates(db, config.teammatesDir),
