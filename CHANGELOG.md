@@ -53,9 +53,16 @@ still change behaviour.
   working directory and `$HOME`; `/workspace` is the file tools' name for it); `ask_for_login` tells the model to
   stop and wait. The node the gateway runs on is first on a sandboxed command's PATH, so nvm-installed nodes work.
 - `running()` no longer counts a local computer whose browser the operator quit by hand.
+- Commands on a Linux local computer could never be turned on when a runtime manager (`~/.cargo/bin`, `~/.nvm`, …)
+  or the gateway's own folder sat in your home directory, which is the usual case: the sandbox self-check counted
+  bubblewrap's own mount points as a view of your home. It now ignores exactly the folders it binds back, and also
+  checks with a probe file it puts in your home and removes. Found by the new Linux CI job.
 
 ### Changed
 
+- `pnpm install` no longer compiles better-sqlite3. Its package carries prebuilt binaries for macOS, Linux and
+  Windows and loads them in preference anyway, so the compile was wasted everywhere and, on Windows, failed without
+  Visual Studio's C++ tools. Installing on Windows now needs no compiler.
 - `pnpm dev` works in PowerShell and cmd: the gateway's dev script set its default UI address with Unix shell
   syntax, which Windows rejected; the default now lives in `gateway/scripts/dev.ts`.
 - Every file is checked out with LF line endings (`.gitattributes`). On Windows git would otherwise convert them, and
