@@ -6,6 +6,18 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- The READMEs describe local computers wherever they still assumed Docker: the FAQ no longer says Docker is
+  required, the computer and security sections say how a local computer differs from a container (files kept to
+  its folder, commands off by default, no resource limits), and the roadmap marks computers without Docker as
+  shipped.
+
+### Fixed
+
+- A gateway test that failed now and then on CI. It waits for two replies in a row, and `vi.waitFor` gave up at its
+  default of one second on a slow runner; gateway tests now wait up to three seconds, as the web tests already do.
+
 ## [0.4.0] - 2026-10-30
 
 Teammates' computers without Docker: on macOS and Linux each teammate can get a browser and a folder of its
