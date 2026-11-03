@@ -1,12 +1,13 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { PageLike } from './browser-page.js'
 import {
-  MAX_WORKFLOW_STEPS, parseWorkflowStep, parseWorkflowTrace, sanitizeWorkflowUrl,
+  MAX_WORKFLOW_STEPS, MAX_WORKFLOW_TRACE_BYTES, parseWorkflowStep, parseWorkflowTrace, sanitizeWorkflowUrl,
   type WorkflowTrace,
 } from './workflows.js'
 
 export type WorkflowRecording = {
   reattach(page: PageLike): Promise<void>
+  detach?(): Promise<void>
   stop(): Promise<WorkflowTrace>
 }
 
@@ -31,24 +32,37 @@ function canRecord(page: PageLike): page is RecordablePage {
     && typeof page.mainFrame === 'function'
 }
 
-function captureScript(bindingName: string, marker: string): string {
-  return `(() => {
+function captureScript(bindingName: string, marker: string, capability: string): string {
+  return `(async () => {
     const marker = ${JSON.stringify(marker)};
     const previous = window[marker];
-    if (previous && typeof previous.cleanup === 'function') previous.cleanup();
+    const capability = ${JSON.stringify(capability)};
+    if (previous && typeof previous.cleanup === 'function') await previous.cleanup(capability);
     const bindingName = ${JSON.stringify(bindingName)};
+    const binding = window[bindingName];
+    try { delete window[bindingName]; } catch { /* The capability still protects a non-configurable binding. */ }
+    const pending = new Set();
     const emit = (event) => {
-      const binding = window[bindingName];
-      if (typeof binding === 'function') void binding(event).catch(() => {});
+      if (typeof binding !== 'function') return Promise.resolve();
+      const operation = Promise.resolve(binding({ ...event, isTrusted: true, __proof: capability })).catch(() => {});
+      pending.add(operation);
+      void operation.finally(() => pending.delete(operation));
+      return operation;
     };
     const clean = (value) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 256);
     const textOf = (element) => clean(element.innerText || element.textContent || '');
     const labelsOf = (element) => element.labels ? Array.from(element.labels, (label) => textOf(label)).filter(Boolean) : [];
+    const editable = (element) => {
+      if (element instanceof HTMLTextAreaElement) return true;
+      if (element instanceof HTMLInputElement) return !['hidden', 'button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio'].includes(element.type.toLowerCase());
+      return element.isContentEditable || element.getAttribute('role') === 'textbox';
+    };
     const accessibleName = (element) => {
       const labelledBy = clean(element.getAttribute('aria-labelledby')).split(' ').filter(Boolean)
         .map((id) => document.getElementById(id)).filter(Boolean).map(textOf).filter(Boolean).join(' ');
-      return clean(element.getAttribute('aria-label') || labelledBy || labelsOf(element).join(' ')
-        || element.getAttribute('placeholder') || element.getAttribute('title') || textOf(element));
+      const semanticName = element.getAttribute('aria-label') || labelledBy || labelsOf(element).join(' ')
+        || element.getAttribute('placeholder') || element.getAttribute('title');
+      return clean(semanticName || (editable(element) ? '' : textOf(element)));
     };
     const roleOf = (element) => {
       const explicit = clean(element.getAttribute('role'));
@@ -97,7 +111,7 @@ function captureScript(bindingName: string, marker: string): string {
       if (css) candidates.push({ css });
       return { candidates };
     };
-    const sensitiveName = /(?:^|[^a-z0-9])(?:pass(?:word|code)?|secret|token|credential|api[\\s_-]*key|otp|totp|mfa|private[\\s_-]*key|credit[\\s_-]*card|card[\\s_-]*number|cc[\\s_-]*(?:number|exp|csc)|(?:one[\\s_-]*)?time[\\s_-]*(?:password|code|pin|token)|(?:security|verification) code|auth(?:entication|orization)? code)(?=$|[^a-z0-9])/i;
+    const sensitiveName = /(?:^|[^a-z0-9])(?:pass(?:word|code)?|secret|token|credential|api[\\s_-]*key|otp|totp|mfa|private[\\s_-]*key|credit[\\s_-]*card|card[\\s_-]*number|cc[\\s_-]*(?:number|exp|csc)|(?:one[\\s_-]*)?time[\\s_-]*(?:password|code|pin|token)|(?:security|verification) code|\\d{1,2}[\\s-]*digit(?:al)?[\\s-]+code|auth(?:entication|orization)? code)(?=$|[^a-z0-9])/i;
     const sensitiveAutocomplete = /\\b(?:current-password|new-password|one-time-code|cc-(?:number|exp|exp-month|exp-year|csc|name|type))\\b/i;
     const secretPattern = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\\bBearer\\s+\\S+|\\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,})\\b|\\b(?:password|secret|token|api[\\s_-]*key)\\s*[:=]\\s*[^\\s,;]{6,}/i;
     const entropySecret = (value) => {
@@ -131,18 +145,14 @@ function captureScript(bindingName: string, marker: string): string {
     const timers = new Map();
     let enterSubmitForm = null;
     let enterSubmitAt = 0;
-    const editable = (element) => {
-      if (element instanceof HTMLTextAreaElement) return true;
-      if (element instanceof HTMLInputElement) return !['hidden', 'button', 'submit', 'reset', 'image', 'file', 'checkbox', 'radio'].includes(element.type.toLowerCase());
-      return element.isContentEditable || element.getAttribute('role') === 'textbox';
-    };
     const flush = (element, type = 'fill', force = false) => {
       const timer = timers.get(element);
       if (timer === undefined && !force) return;
       if (timer !== undefined) { clearTimeout(timer); timers.delete(element); }
-      emit({ type, target: locatorFor(element), value: valueFor(element) });
+      return emit({ type, target: locatorFor(element), value: valueFor(element) });
     };
     const onInput = (event) => {
+      if (!event.isTrusted) return;
       const element = event.target;
       if (!(element instanceof Element) || !editable(element)) return;
       const timer = timers.get(element);
@@ -150,16 +160,19 @@ function captureScript(bindingName: string, marker: string): string {
       timers.set(element, setTimeout(() => flush(element), 400));
     };
     const onChange = (event) => {
+      if (!event.isTrusted) return;
       const element = event.target;
       if (!(element instanceof Element)) return;
       if (element instanceof HTMLSelectElement) flush(element, 'select', true);
       else if (editable(element)) flush(element);
     };
     const onBlur = (event) => {
+      if (!event.isTrusted) return;
       const element = event.target;
       if (element instanceof Element && editable(element)) flush(element);
     };
     const onClick = (event) => {
+      if (!event.isTrusted) return;
       const element = event.target instanceof Element ? event.target.closest(actionable) : null;
       if (!element) return;
       if (element instanceof HTMLLabelElement && element.control) return;
@@ -177,6 +190,7 @@ function captureScript(bindingName: string, marker: string): string {
       emit({ type: 'click', target: locatorFor(element) });
     };
     const onKeyDown = (event) => {
+      if (!event.isTrusted) return;
       const element = event.target;
       if (event.key === 'Enter' && element instanceof Element && editable(element)) {
         if (element instanceof HTMLInputElement && element.form) {
@@ -192,27 +206,29 @@ function captureScript(bindingName: string, marker: string): string {
     document.addEventListener('blur', onBlur, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeyDown, true);
-    window[marker] = { cleanup() {
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+    window[marker] = { async cleanup(providedCapability) {
+      if (providedCapability !== capability) return;
+      for (const element of [...timers.keys()]) flush(element);
       document.removeEventListener('input', onInput, true);
       document.removeEventListener('change', onChange, true);
       document.removeEventListener('blur', onBlur, true);
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('keydown', onKeyDown, true);
       delete window[marker];
+      await Promise.all([...pending]);
     } };
   })()`
 }
 
-function removeCaptureScript(marker: string): string {
-  return `(() => { const state = window[${JSON.stringify(marker)}]; if (state && typeof state.cleanup === 'function') state.cleanup(); })()`
+function removeCaptureScript(marker: string, capability: string): string {
+  return `(() => { const state = window[${JSON.stringify(marker)}]; if (state && typeof state.cleanup === 'function') return state.cleanup(${JSON.stringify(capability)}); })()`
 }
 
 /** Attach to the teammate's existing page; reattach is used when local show/hide relaunches Chromium. */
 export async function createWorkflowRecorder(page: PageLike, title: string, intent?: string): Promise<WorkflowRecording> {
   const trace: WorkflowTrace = parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, ...(intent ? { intent } : {}), steps: [] })
   const recordingId = randomUUID().replace(/-/g, '')
+  const capability = randomBytes(32).toString('hex')
   const bindingName = `__opengrokbot_workflow_${recordingId}`
   const marker = `__opengrokbot_workflow_state_${recordingId}`
   let active = true
@@ -220,10 +236,15 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
   let stopped: WorkflowTrace | null = null
   let stopPromise: Promise<WorkflowTrace> | null = null
   let lastAction: { index: number; at: number } | null = null
+  let traceBytes = Buffer.byteLength(JSON.stringify(trace), 'utf8')
   const NAVIGATION_EXPECTATION_WINDOW_MS = 5_000
 
   const append = (step: unknown) => {
-    if (!active || trace.steps.length >= MAX_WORKFLOW_STEPS) return
+    if (!active || trace.truncated) return
+    if (trace.steps.length >= MAX_WORKFLOW_STEPS) {
+      trace.truncated = true
+      return
+    }
     try {
       const parsed = parseWorkflowStep(step)
       if (parsed.type === 'navigate') {
@@ -231,7 +252,15 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
         if (action && Date.now() - action.at <= NAVIGATION_EXPECTATION_WINDOW_MS) {
           const previous = trace.steps[action.index]
           if (previous && previous.type !== 'navigate' && previous.type !== 'unrecorded-popup') {
-            trace.steps[action.index] = parseWorkflowStep({ ...previous, expect: { url: parsed.url } })
+            const updated = parseWorkflowStep({ ...previous, expect: { url: parsed.url } })
+            const addedBytes = Buffer.byteLength(JSON.stringify(updated), 'utf8')
+              - Buffer.byteLength(JSON.stringify(previous), 'utf8')
+            if (traceBytes + addedBytes > MAX_WORKFLOW_TRACE_BYTES - 32) {
+              trace.truncated = true
+              return
+            }
+            trace.steps[action.index] = updated
+            traceBytes += addedBytes
             lastAction = null
             return
           }
@@ -244,7 +273,14 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
       } else {
         lastAction = { index: trace.steps.length, at: Date.now() }
       }
+      const stepBytes = Buffer.byteLength(JSON.stringify(parsed), 'utf8')
+      const addedBytes = stepBytes + (trace.steps.length ? 1 : -1)
+      if (traceBytes + addedBytes > MAX_WORKFLOW_TRACE_BYTES - 32) {
+        trace.truncated = true
+        return
+      }
       trace.steps.push(parsed)
+      traceBytes += addedBytes
     } catch {
       // Browser events are untrusted input; incomplete or unknown events are skipped.
     }
@@ -254,35 +290,57 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     attachment.page.off('framenavigated', attachment.onNavigate)
     attachment.page.off('close', attachment.onClose)
     attachment.page.off('popup', attachment.onPopup)
-    if (current === attachment) current = null
-    if (!attachment.closed) await attachment.page.evaluate(removeCaptureScript(marker)).catch(() => {})
-    await attachment.binding.dispose().catch(() => {})
+    try {
+      if (!attachment.closed) await attachment.page.evaluate(removeCaptureScript(marker, capability))
+    } finally {
+      if (current === attachment) current = null
+      await attachment.binding.dispose().catch(() => {})
+    }
   }
 
   const attach = async (candidate: PageLike) => {
     if (!active) return
-    if (!canRecord(candidate)) throw new Error('the bot browser cannot record workflow events')
+    if (!canRecord(candidate)) {
+      trace.truncated = true
+      throw new Error('the bot browser cannot record workflow events')
+    }
     if (current?.page === candidate) return
     lastAction = null
     if (current) await detach(current)
 
     let attachment: Attachment | null = null
-    const binding = await candidate.exposeBinding(bindingName, async (_source, event) => {
-      if (active && attachment && current === attachment) append(event)
+    const binding = await candidate.exposeBinding(bindingName, async (source, event) => {
+      if (!active || !attachment || current !== attachment) return
+      const origin = source as { frame?: unknown } | null
+      if (!origin || origin.frame !== page.mainFrame() || !event || typeof event !== 'object' || Array.isArray(event)) return
+      const submitted = event as Record<string, unknown>
+      if (submitted.__proof !== capability || submitted.isTrusted !== true
+        || !['click', 'check', 'uncheck', 'press', 'fill', 'select'].includes(String(submitted.type))) return
+      append({
+        type: submitted.type,
+        ...(submitted.target !== undefined ? { target: submitted.target } : {}),
+        ...(submitted.value !== undefined ? { value: submitted.value } : {}),
+        ...(submitted.key !== undefined ? { key: submitted.key } : {}),
+      })
     })
+      .catch((error: unknown) => {
+        trace.truncated = true
+        throw error
+      })
     const page = candidate
     const onNavigate: PageListener = (frame) => {
       if (!active || !attachment || current !== attachment) return
       if (frame !== page.mainFrame()) return
       const url = sanitizeWorkflowUrl(page.url())
       if (url) append({ type: 'navigate', url })
-      void page.evaluate(captureScript(bindingName, marker))
-        .then(async () => { if (!active || current !== attachment) await page.evaluate(removeCaptureScript(marker)).catch(() => {}) })
+      void page.evaluate(captureScript(bindingName, marker, capability))
+        .then(async () => { if (!active || current !== attachment) await page.evaluate(removeCaptureScript(marker, capability)).catch(() => {}) })
         .catch(() => {})
     }
     const onClose: PageListener = () => {
       if (!attachment) return
       attachment.closed = true
+      trace.truncated = true
       lastAction = null
       page.off('framenavigated', onNavigate)
       page.off('close', onClose)
@@ -302,7 +360,7 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     const url = sanitizeWorkflowUrl(page.url())
     if (url) append({ type: 'navigate', url })
     try {
-      await page.evaluate(captureScript(bindingName, marker))
+      await page.evaluate(captureScript(bindingName, marker, capability))
     } catch (error) {
       await detach(attachment)
       throw error
@@ -313,14 +371,24 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
 
   return {
     reattach: attach,
+    async detach() {
+      if (current) await detach(current)
+    },
     stop() {
       if (stopped) return Promise.resolve(stopped)
       stopPromise ??= (async () => {
-        active = false
-        if (current) await detach(current)
+        try {
+          if (current) await detach(current)
+        } finally {
+          active = false
+        }
         stopped = parseWorkflowTrace(trace)
         return stopped
       })()
+      stopPromise = stopPromise.catch((error: unknown) => {
+        stopPromise = null
+        throw error
+      })
       return stopPromise
     },
   }

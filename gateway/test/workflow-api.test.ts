@@ -7,7 +7,7 @@ import { openDb, upsertBot } from '../src/db.js'
 import type { LLM } from '../src/llm.js'
 import { createPool } from '../src/pool.js'
 import { createRoutine } from '../src/routines.js'
-import { createApp } from '../src/server.js'
+import { createApp, WORKFLOW_RECORDING_MAX_MS } from '../src/server.js'
 import type { WorkflowRecording } from '../src/workflow-recorder.js'
 import { parseWorkflowTrace, type WorkflowTrace } from '../src/workflows.js'
 
@@ -172,6 +172,109 @@ describe('workflow recording API', () => {
       expect(resumedMessages.filter((message) => message.kind === 'webhook')).toHaveLength(1)
       expect(isBusy('researcher')).toBe(false)
     } finally {
+      await pool.disposeAll()
+      db.close()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('releases the teammate and queued turns when stopping a recording fails', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-stop-failure-'))
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    const chat = vi.fn(async () => ({ content: 'resumed', toolCalls: [], raw: { role: 'assistant' as const, content: 'resumed' } }))
+    const localLlm: LLM = { chat }
+    const computer = createFakeComputer({
+      startWorkflowRecording: async (): Promise<WorkflowRecording> => ({
+        async reattach() {},
+        async stop() { throw new Error('trace exceeds the storage limit') },
+      }),
+    })
+    const pool = createPool({ dataDir, makeComputer: async () => computer })
+    const { app, isBusy } = createApp({ db, llm: localLlm, pool, dataDir })
+
+    try {
+      const start = await app.request('/api/bots/researcher/workflows/recording', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Failure recovery' }),
+      })
+      expect(start.status).toBe(202)
+
+      const stop = await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })
+      expect(stop.status).toBe(500)
+      expect(isBusy('researcher')).toBe(false)
+
+      const message = await app.request('/api/threads/dm:researcher/messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Continue work' }),
+      })
+      expect(message.status).toBe(202)
+      await vi.waitFor(() => expect(chat).toHaveBeenCalledTimes(1))
+    } finally {
+      await pool.disposeAll()
+      db.close()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cancels a recording and releases the teammate lane', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-cancel-'))
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    const stop = vi.fn(async () => parseWorkflowTrace({
+      format: 'opengrokbot.workflow', version: 1, title: 'Discarded recording', steps: [],
+    }))
+    const computer = createFakeComputer({
+      startWorkflowRecording: async (): Promise<WorkflowRecording> => ({
+        async reattach() {}, stop,
+      }),
+    })
+    const pool = createPool({ dataDir, makeComputer: async () => computer })
+    const { app, isBusy } = createApp({ db, llm, pool, dataDir })
+
+    try {
+      expect((await app.request('/api/bots/researcher/workflows/recording', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Discarded recording' }),
+      })).status).toBe(202)
+
+      const cancel = await app.request('/api/bots/researcher/workflows/recording', { method: 'DELETE' })
+      expect(cancel.status).toBe(204)
+      expect(stop).toHaveBeenCalledTimes(1)
+      expect(isBusy('researcher')).toBe(false)
+      expect((await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })).status).toBe(409)
+    } finally {
+      await pool.disposeAll()
+      db.close()
+      await rm(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('stops an overlong recording and leaves a marked incomplete draft', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-time-limit-'))
+    const db = openDb(':memory:')
+    upsertBot(db, bot)
+    const stop = vi.fn(async () => parseWorkflowTrace({
+      format: 'opengrokbot.workflow', version: 1, title: 'Time-limited recording', steps: [],
+    }))
+    const computer = createFakeComputer({
+      startWorkflowRecording: async (): Promise<WorkflowRecording> => ({
+        async reattach() {}, stop,
+      }),
+    })
+    const pool = createPool({ dataDir, makeComputer: async () => computer })
+    const { app, isBusy } = createApp({ db, llm, pool, dataDir })
+
+    vi.useFakeTimers()
+    try {
+      expect((await app.request('/api/bots/researcher/workflows/recording', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Time-limited recording' }),
+      })).status).toBe(202)
+
+      await vi.advanceTimersByTimeAsync(WORKFLOW_RECORDING_MAX_MS)
+      expect(stop).toHaveBeenCalledTimes(1)
+      expect(isBusy('researcher')).toBe(false)
+      const draft = await (await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })).json() as { trace: WorkflowTrace }
+      expect(draft.trace.truncated).toBe(true)
+    } finally {
+      vi.useRealTimers()
       await pool.disposeAll()
       db.close()
       await rm(dataDir, { recursive: true, force: true })

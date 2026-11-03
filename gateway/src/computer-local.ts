@@ -102,11 +102,14 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
   async function relaunch(nextHeadless: boolean): Promise<void> {
     let url: string | undefined
     if (session.state() === 'open') url = await session.page().then((p) => p.url()).catch(() => undefined)
+    await activeWorkflowRecording?.detach?.()
     await session.dispose()
     headless = nextHeadless
     const p = await session.page()
-    await activeWorkflowRecording?.reattach(p)
+    let reattachError: unknown
+    try { await activeWorkflowRecording?.reattach(p) } catch (error) { reattachError = error }
     if (url && url !== 'about:blank') await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => {})
+    if (reattachError) throw reattachError
   }
 
   return {
@@ -171,6 +174,7 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       const recorder = await createWorkflowRecorder(await session.page(), title, intent)
       const active: WorkflowRecording = {
         reattach: (page) => recorder.reattach(page),
+        async detach() { await recorder.detach?.() },
         async stop() {
           try {
             return await recorder.stop()

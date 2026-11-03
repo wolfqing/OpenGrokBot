@@ -10,9 +10,12 @@ function fakePage(overrides: Record<string, unknown> = {}) {
     ['framenavigated', new Set()], ['close', new Set()], ['popup', new Set()],
   ])
   const mainFrame = {}
+  const scripts: string[] = []
   return {
     state,
     bindings,
+    mainFrame,
+    scripts,
     page: {
       async goto(url: string) {
         state.goneTo.push(url)
@@ -24,7 +27,7 @@ function fakePage(overrides: Record<string, unknown> = {}) {
       async innerText() { return 'Example Domain\nMore information...' },
       async screenshot() { return Buffer.from('PNGDATA') },
       async click(sel: string) { state.clicked.push(sel) },
-      async evaluate() { return undefined },
+      async evaluate(script: string) { scripts.push(script); return undefined },
       async exposeBinding(name: string, callback: (source: unknown, event: unknown) => void | Promise<void>) {
         bindings.set(name, callback)
         return { async dispose() { bindings.delete(name) } }
@@ -113,14 +116,19 @@ describe('DockerComputer browser over CDP', () => {
   })
 
   it('records on the existing CDP page and stops with a safe typed trace', async () => {
-    const { page, state, bindings } = fakePage()
+    const { page, state, bindings, mainFrame, scripts } = fakePage()
     const connection = fakeConnect(page)
     const c = createDockerComputer(endpoints, { connect: connection.connect })
     await c.goto('https://example.com/start')
     const recording = await c.startWorkflowRecording!('Docker workflow', 'Check the current status')
     const binding = bindings.values().next().value
     expect(binding).toBeDefined()
-    await binding!({}, { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Refresh' } }, { css: 'button:nth-of-type(1)' }] } })
+    const capability = scripts[0]?.match(/const capability = "([a-f0-9]+)";/)?.[1]
+    expect(capability).toBeDefined()
+    await binding!({ frame: mainFrame }, {
+      type: 'click', isTrusted: true, __proof: capability,
+      target: { candidates: [{ role: { role: 'button', name: 'Refresh' } }, { css: 'button:nth-of-type(1)' }] },
+    })
     await c.goto('https://example.com/status?ticket=private#details')
     const trace = await recording.stop()
 

@@ -34,6 +34,7 @@ export type WorkflowTrace = {
   version: 1
   title: string
   intent?: string
+  truncated?: true
   steps: WorkflowStep[]
 }
 
@@ -53,10 +54,10 @@ const MAX_LOCATOR_LENGTH = 256
 const MAX_LOCATOR_CANDIDATES = 8
 const MAX_VALUE_LENGTH = 2_000
 const MAX_URL_LENGTH = 4_096
-const MAX_TRACE_BYTES = 5_000_000
+export const MAX_WORKFLOW_TRACE_BYTES = 5_000_000
 const STRUCTURAL_CSS = /^(?:[a-z][a-z0-9-]*:nth-of-type\(\d+\))(?:\s*>\s*[a-z][a-z0-9-]*:nth-of-type\(\d+\))*$/i
 
-const SENSITIVE_NAME = /(?:^|[^a-z0-9])(?:pass(?:word|code)?|secret|token|credential|api[\s_-]*key|otp|totp|mfa|private[\s_-]*key|credit[\s_-]*card|card[\s_-]*number|cc[\s_-]*(?:number|exp|csc)|(?:one[\s_-]*)?time[\s_-]*(?:password|code|pin|token)|(?:security|verification) code|auth(?:entication|orization)? code)(?=$|[^a-z0-9])/i
+const SENSITIVE_NAME = /(?:^|[^a-z0-9])(?:pass(?:word|code)?|secret|token|credential|api[\s_-]*key|otp|totp|mfa|private[\s_-]*key|credit[\s_-]*card|card[\s_-]*number|cc[\s_-]*(?:number|exp|csc)|(?:one[\s_-]*)?time[\s_-]*(?:password|code|pin|token)|(?:security|verification) code|\d{1,2}[\s-]*digit(?:al)?[\s-]+code|auth(?:entication|orization)? code)(?=$|[^a-z0-9])/i
 const SECRET_PATTERN = /-----BEGIN [A-Z ]*PRIVATE KEY-----|\bBearer\s+\S+|\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b|\b(?:password|secret|token|api[\s_-]*key)\s*[:=]\s*[^\s,;]{6,}/i
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,6 +118,11 @@ export function sanitizeWorkflowUrl(value: string): string | null {
     url.username = ''
     url.password = ''
     url.hash = ''
+    url.pathname = url.pathname.split('/').map((segment) => {
+      let decoded = segment
+      try { decoded = decodeURIComponent(segment) } catch { /* Keep malformed path bytes for the URL serializer. */ }
+      return SECRET_PATTERN.test(decoded) || looksLikeHighEntropySecret(decoded) ? ':redacted' : segment
+    }).join('/')
     const queryKeys = [...url.searchParams.keys()]
     url.search = ''
     for (const key of queryKeys) url.searchParams.append(key, '')
@@ -249,12 +255,16 @@ export function parseWorkflowTrace(value: unknown): WorkflowTrace {
     title: readString(value.title, 'title', MAX_TITLE_LENGTH).trim(),
     steps: value.steps.map(parseWorkflowStep),
   }
+  if (value.truncated !== undefined) {
+    if (value.truncated !== true) throw new TypeError('invalid workflow truncation marker')
+    trace.truncated = true
+  }
   if (value.intent !== undefined) {
     const intent = readString(value.intent, 'intent', MAX_INTENT_LENGTH).trim()
     if (SECRET_PATTERN.test(intent) || looksLikeHighEntropySecret(intent)) throw new TypeError('workflow intent may not contain secrets')
     if (intent) trace.intent = intent
   }
-  if (Buffer.byteLength(JSON.stringify(trace), 'utf8') > MAX_TRACE_BYTES) throw new TypeError('workflow trace is too large')
+  if (Buffer.byteLength(JSON.stringify(trace), 'utf8') > MAX_WORKFLOW_TRACE_BYTES) throw new TypeError('workflow trace is too large')
   return trace
 }
 

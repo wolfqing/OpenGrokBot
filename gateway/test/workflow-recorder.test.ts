@@ -5,6 +5,13 @@ import { createWorkflowRecorder } from '../src/workflow-recorder.js'
 type Binding = (source: unknown, event: unknown) => void | Promise<void>
 type PageEvent = 'framenavigated' | 'close' | 'popup'
 type Listener = (value?: unknown) => void
+type PageHarness = ReturnType<typeof fakePage>
+
+async function fire(test: PageHarness, binding: Binding, event: Record<string, unknown>, frame: unknown = test.mainFrame) {
+  const capability = test.scripts[0]?.match(/const capability = "([a-f0-9]+)";/)?.[1]
+  if (!capability) throw new Error('recorder did not install its event capability')
+  await binding({ frame }, { ...event, isTrusted: true, __proof: capability })
+}
 
 function fakePage() {
   let currentUrl = 'https://operator:login-secret@example.test/start?session=do-not-store#form'
@@ -45,6 +52,53 @@ function fakePage() {
 }
 
 describe('workflow recorder', () => {
+  it('rejects forged binding events and events from a subframe', async () => {
+    const test = fakePage()
+    const recorder = await createWorkflowRecorder(test.page, 'Untrusted page')
+    const binding = test.bindings.values().next().value
+    expect(binding).toBeDefined()
+    if (!binding) throw new Error('recorder did not expose its event binding')
+
+    await binding({ frame: test.mainFrame }, {
+      type: 'navigate', url: 'https://evil.example/landing', intent: 'INJECTED-INTENT',
+    })
+    await binding({ frame: test.mainFrame }, {
+      type: 'click', isTrusted: true, target: { candidates: [{ text: 'forged click' }] },
+    })
+    await fire(test, binding, {
+      type: 'click', target: { candidates: [{ text: 'trusted click' }] },
+      intent: 'INJECTED-INTENT', expect: { url: 'https://evil.example/' }, page: 'evil', frame: 'evil',
+    })
+    await fire(test, binding, { type: 'click', target: { candidates: [{ text: 'subframe click' }] } }, test.subFrame)
+
+    const trace = await recorder.stop()
+    expect(trace.steps).toEqual([
+      { type: 'navigate', url: 'https://example.test/start?session=' },
+      { type: 'click', target: { candidates: [{ text: 'trusted click' }] } },
+    ])
+    expect(JSON.stringify(trace)).not.toContain('INJECTED-INTENT')
+  })
+
+  it('truncates an oversized recording and marks the saved trace incomplete', async () => {
+    const test = fakePage()
+    const recorder = await createWorkflowRecorder(test.page, 'Large recording')
+    const binding = test.bindings.values().next().value
+    expect(binding).toBeDefined()
+    if (!binding) throw new Error('recorder did not expose its event binding')
+    const candidates = Array.from({ length: 8 }, (_, index) => ({
+      label: `Field ${index} ${'a'.repeat(248)}`,
+    }))
+    for (let index = 0; index < 1_000; index++) {
+      await fire(test, binding, {
+        type: 'fill', target: { candidates }, value: { kind: 'literal', text: '\n'.repeat(2_000) },
+      })
+    }
+
+    const trace = await recorder.stop()
+    expect(trace.truncated).toBe(true)
+    expect(trace.steps.length).toBeLessThan(1_000)
+  })
+
   it('captures typed semantic actions on the current page and stops cleanly', async () => {
     const test = fakePage()
     const recorder = await createWorkflowRecorder(test.page, 'Sign in', 'Complete a secure sign-in')
@@ -52,15 +106,15 @@ describe('workflow recorder', () => {
     expect(binding).toBeDefined()
     if (!binding) throw new Error('recorder did not expose its event binding')
 
-    await binding({}, { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Continue' } }, { text: 'Continue' }] } })
-    await binding({}, {
+    await fire(test, binding, { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Continue' } }, { text: 'Continue' }] } })
+    await fire(test, binding, {
       type: 'fill', target: { candidates: [{ role: { role: 'textbox', name: 'Password' } }, { label: 'Password' }] },
       value: { kind: 'literal', text: 'do-not-store-this-password' },
     })
-    await binding({}, {
+    await fire(test, binding, {
       type: 'fill', target: { candidates: [{ label: 'Street address' }] }, value: { kind: 'literal', text: '14 Example Road' },
     })
-    await binding({}, {
+    await fire(test, binding, {
       type: 'select', target: { candidates: [{ label: 'One-time code' }] }, value: { kind: 'literal', text: '654321' },
     })
 
@@ -83,7 +137,7 @@ describe('workflow recorder', () => {
     expect(test.scripts.some((script) => script.includes('document.addEventListener'))).toBe(true)
     expect(test.scripts.some((script) => script.includes('state.cleanup'))).toBe(true)
 
-    await binding({}, { type: 'click', target: { text: 'after stop' } })
+    await fire(test, binding, { type: 'click', target: { text: 'after stop' } })
     expect(trace.steps).toHaveLength(5)
   })
 
@@ -99,6 +153,15 @@ describe('workflow recorder', () => {
     ])
   })
 
+  it('marks the trace incomplete when the attached browser page closes unexpectedly', async () => {
+    const test = fakePage()
+    const recorder = await createWorkflowRecorder(test.page, 'Page closed')
+    for (const listener of test.listeners.get('close') ?? []) listener()
+
+    const trace = await recorder.stop()
+    expect(trace.truncated).toBe(true)
+  })
+
   it('fails clearly when the computer page lacks Playwright event hooks', async () => {
     const page: PageLike = {
       async goto() {}, async title() { return '' }, url: () => 'about:blank', async innerText() { return '' },
@@ -112,12 +175,12 @@ describe('workflow recorder', () => {
     const next = fakePage()
     const recorder = await createWorkflowRecorder(first.page, 'Reattach')
     const firstBinding = first.bindings.values().next().value!
-    await firstBinding({}, { type: 'click', target: { candidates: [{ text: 'Before relaunch' }] } })
+    await fire(first, firstBinding, { type: 'click', target: { candidates: [{ text: 'Before relaunch' }] } })
 
     await recorder.reattach(next.page)
     const nextBinding = next.bindings.values().next().value!
-    await firstBinding({}, { type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
-    await nextBinding({}, { type: 'click', target: { candidates: [{ text: 'After relaunch' }] } })
+    await fire(first, firstBinding, { type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
+    await fire(next, nextBinding, { type: 'click', target: { candidates: [{ text: 'After relaunch' }] } })
 
     expect((await recorder.stop()).steps).toEqual([
       { type: 'navigate', url: 'https://example.test/start?session=' },

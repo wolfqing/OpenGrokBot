@@ -80,7 +80,12 @@ type ActiveWorkflowRecording = {
   stopping: Promise<WorkflowTrace> | null
   draft: WorkflowDraft | null
   releaseTurns: () => void
+  timeout: ReturnType<typeof setTimeout> | null
+  cancelled: boolean
+  released: boolean
 }
+
+export const WORKFLOW_RECORDING_MAX_MS = 15 * 60_000
 
 /** 每条 routine 记住最近这么多个投递编号 */
 const MAX_DELIVERIES = 500
@@ -195,6 +200,17 @@ export function createApp(deps: AppDeps): GatewayApp {
   const waiting = new Map<string, Set<number>>()
   const workflowRecordings = new Map<string, ActiveWorkflowRecording>()
   const workflowDrafts = new Map<string, WorkflowDraft>()
+  const releaseWorkflowRecording = (botId: string, active: ActiveWorkflowRecording) => {
+    if (active.timeout) clearTimeout(active.timeout)
+    active.timeout = null
+    if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+    if (!active.released) {
+      active.released = true
+      active.releaseTurns()
+    }
+  }
+  const stopWorkflowRecording = (active: ActiveWorkflowRecording, recorder: WorkflowRecording) =>
+    active.stopping ??= Promise.resolve().then(() => recorder.stop())
 
   if (deps.token) {
     app.use('*', authMiddleware(deps.token, deps.allowedOrigins))
@@ -636,28 +652,45 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (routineBotsInFlight.has(botId)) return c.json({ error: 'the teammate is busy' }, 409)
     const releaseTurns = turns.hold(botId)
     if (!releaseTurns) return c.json({ error: 'the teammate is busy' }, 409)
-    const active: ActiveWorkflowRecording = { recorder: null, stopping: null, draft: null, releaseTurns }
+    const active: ActiveWorkflowRecording = {
+      recorder: null, stopping: null, draft: null, releaseTurns, timeout: null, cancelled: false, released: false,
+    }
     workflowRecordings.set(botId, active)
     let computer: BotComputer
     try {
       computer = await pool.get(botId)
     } catch {
-      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
-      active.releaseTurns()
+      releaseWorkflowRecording(botId, active)
       return c.json({ error: 'the bot browser is unavailable' }, 503)
     }
+    if (active.cancelled || workflowRecordings.get(botId) !== active) {
+      releaseWorkflowRecording(botId, active)
+      return c.json({ error: 'workflow recording was cancelled before it started' }, 409)
+    }
     if (!computer.startWorkflowRecording) {
-      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
-      active.releaseTurns()
+      releaseWorkflowRecording(botId, active)
       return c.json({ error: 'this computer cannot record workflows' }, 409)
     }
     try {
       const recorder = await computer.startWorkflowRecording(title, intent)
+      if (active.cancelled || workflowRecordings.get(botId) !== active) {
+        await recorder.stop().catch(() => {})
+        releaseWorkflowRecording(botId, active)
+        return c.json({ error: 'workflow recording was cancelled before it started' }, 409)
+      }
       active.recorder = recorder
+      active.timeout = setTimeout(() => {
+        const stopping = stopWorkflowRecording(active, recorder)
+        void stopping.then((trace) => {
+          const draftTrace = parseWorkflowTrace({ ...trace, truncated: true })
+          active.draft = { id: active.draft?.id ?? randomUUID(), trace: draftTrace }
+          workflowDrafts.set(botId, active.draft)
+        }).catch(() => {}).finally(() => releaseWorkflowRecording(botId, active))
+      }, WORKFLOW_RECORDING_MAX_MS)
+      active.timeout.unref?.()
       return c.json({ ok: true, recording: true }, 202)
     } catch (error) {
-      if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
-      active.releaseTurns()
+      releaseWorkflowRecording(botId, active)
       return c.json({ error: error instanceof Error ? error.message : 'could not start workflow recording' }, 409)
     }
   })
@@ -671,20 +704,34 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (!active) return c.json({ error: 'no workflow is being recorded' }, 409)
     const recorder = active.recorder
     if (!recorder) return c.json({ error: 'workflow recording is still starting' }, 409)
-    active.stopping ??= recorder.stop()
+    const stopping = stopWorkflowRecording(active, recorder)
     try {
-      const trace = await active.stopping
+      const trace = await stopping
+      if (active.cancelled) return c.json({ error: 'workflow recording was cancelled' }, 409)
       active.draft ??= { id: randomUUID(), trace }
       workflowDrafts.set(botId, active.draft)
-      if (workflowRecordings.get(botId) === active) {
-        workflowRecordings.delete(botId)
-        active.releaseTurns()
-      }
+      releaseWorkflowRecording(botId, active)
       return c.json(active.draft)
     } catch (error) {
       active.stopping = null
+      releaseWorkflowRecording(botId, active)
       return c.json({ error: error instanceof Error ? error.message : 'could not stop workflow recording' }, 500)
     }
+  })
+
+  app.delete('/api/bots/:botId/workflows/recording', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const active = workflowRecordings.get(botId)
+    if (!active) return c.json({ error: 'no workflow is being recorded' }, 409)
+    active.cancelled = true
+    if (active.recorder) {
+      const stopping = stopWorkflowRecording(active, active.recorder)
+      await stopping.catch(() => {})
+    }
+    if (active.draft && workflowDrafts.get(botId) === active.draft) workflowDrafts.delete(botId)
+    releaseWorkflowRecording(botId, active)
+    return c.body(null, 204)
   })
 
   app.post('/api/bots/:botId/workflows', async (c) => {

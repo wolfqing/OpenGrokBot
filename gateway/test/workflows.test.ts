@@ -38,6 +38,20 @@ describe('workflow trace schema', () => {
     expect(serialized).not.toContain('123456')
   })
 
+  it('redacts reset tokens from URL path segments and short one-time codes', () => {
+    const token = `github_pat_${'a'.repeat(36)}`
+    expect(sanitizeWorkflowUrl(`https://example.test/reset/${token}/continue?next=dashboard`))
+      .toBe('https://example.test/reset/:redacted/continue?next=')
+
+    const code = parseWorkflowStep({
+      type: 'fill',
+      target: { candidates: [{ label: 'Enter the 6-digit code we sent' }] },
+      value: { kind: 'literal', text: '123456' },
+    })
+    expect(code).toMatchObject({ value: { kind: 'redacted', reason: 'sensitive-input' } })
+    expect(JSON.stringify(code)).not.toContain('123456')
+  })
+
   it('keeps locator strategies ordered, with exactly one strategy per candidate', () => {
     const step = parseWorkflowStep({
       type: 'click',

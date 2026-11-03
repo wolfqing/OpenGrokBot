@@ -206,15 +206,20 @@ describe('LocalComputer window for signing in', () => {
     type PageHarness = {
       page: PageLike
       bindings: Map<string, (source: unknown, event: unknown) => void | Promise<void>>
+      mainFrame: object
+      scripts: string[]
+      fire(event: Record<string, unknown>, binding?: (source: unknown, event: unknown) => void | Promise<void>): Promise<void>
       close(): void
     }
-    const state = { url: 'about:blank', open: false, launches: 0 }
+    const state = { url: 'about:blank', open: false, launches: 0, failNextBinding: false }
+    const operations: string[] = []
     let current: PageHarness | null = null
     const makePage = (): PageHarness => {
       const listeners = new Map<'framenavigated' | 'close' | 'popup', Set<(value?: unknown) => void>>([
         ['framenavigated', new Set()], ['close', new Set()], ['popup', new Set()],
       ])
       const bindings = new Map<string, (source: unknown, event: unknown) => void | Promise<void>>()
+      const scripts: string[] = []
       const mainFrame = {}
       const page: PageLike = {
         async goto(url) { state.url = url; for (const listener of listeners.get('framenavigated') ?? []) listener(mainFrame) },
@@ -223,8 +228,12 @@ describe('LocalComputer window for signing in', () => {
         async innerText() { return '' },
         async screenshot() { return Buffer.from('PNG') },
         async click() {},
-        async evaluate() { return undefined },
+        async evaluate(script) { scripts.push(script); if (script.includes('state.cleanup')) operations.push(`cleanup-${state.launches}`); return undefined },
         async exposeBinding(name, callback) {
+          if (state.failNextBinding) {
+            state.failNextBinding = false
+            throw new Error('binding unavailable')
+          }
           bindings.set(name, callback)
           return { async dispose() { bindings.delete(name) } }
         },
@@ -233,12 +242,24 @@ describe('LocalComputer window for signing in', () => {
         mainFrame: () => mainFrame,
         viewportSize: () => ({ width: 1280, height: 800 }),
       }
-      return { page, bindings, close: () => { for (const listener of listeners.get('close') ?? []) listener() } }
+      return {
+        page,
+        bindings,
+        mainFrame,
+        scripts,
+        async fire(event, binding = bindings.values().next().value!) {
+          const capability = scripts[0]?.match(/const capability = "([a-f0-9]+)";/)?.[1]
+          if (!capability) throw new Error('recorder did not install its event capability')
+          await binding({ frame: mainFrame }, { ...event, isTrusted: true, __proof: capability })
+        },
+        close: () => { for (const listener of listeners.get('close') ?? []) listener() },
+      }
     }
     const browser: BrowserLike = {
       contexts: () => [{ pages: () => current ? [current.page] : [], newPage: async () => current!.page }],
       async close() {
         state.open = false
+        operations.push(`close-${state.launches}`)
         // A page close invalidates its listeners just as the local Chromium relaunch does.
         current?.close()
       },
@@ -255,21 +276,28 @@ describe('LocalComputer window for signing in', () => {
       await c.goto('https://example.test/start')
       const recorder = await c.startWorkflowRecording!('Window transitions')
       const initial = current!
-      await initial.bindings.values().next().value!({}, { type: 'click', target: { candidates: [{ text: 'Before show' }] } })
+      const initialBinding = initial.bindings.values().next().value!
+      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Before show' }] } }, initialBinding)
 
       await c.showWindow!()
       const shown = current!
       expect(shown).not.toBe(initial)
-      await shown.bindings.values().next().value!({}, { type: 'click', target: { candidates: [{ text: 'While shown' }] } })
+      expect(operations.slice(0, 2)).toEqual(['cleanup-1', 'close-1'])
+      await shown.fire({ type: 'click', target: { candidates: [{ text: 'While shown' }] } })
 
       await c.hideWindow!()
       const hidden = current!
       expect(hidden).not.toBe(shown)
-      await initial.bindings.values().next().value?.({}, { type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
-      await hidden.bindings.values().next().value!({}, { type: 'click', target: { candidates: [{ text: 'After hide' }] } })
+      expect(operations.slice(2, 4)).toEqual(['cleanup-2', 'close-2'])
+      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Stale event' }] } }, initialBinding)
+      await hidden.fire({ type: 'click', target: { candidates: [{ text: 'After hide' }] } })
+      state.failNextBinding = true
+      await expect(c.showWindow!()).rejects.toThrow('binding unavailable')
+      expect(state.url).toBe('https://example.test/start')
 
       const trace = await recorder.stop()
-      expect(state.launches).toBe(3)
+      expect(state.launches).toBe(4)
+      expect(trace.truncated).toBe(true)
       expect(trace.steps.filter((step) => step.type === 'click')).toEqual([
         { type: 'click', target: { candidates: [{ text: 'Before show' }] } },
         { type: 'click', target: { candidates: [{ text: 'While shown' }] } },
