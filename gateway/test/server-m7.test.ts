@@ -48,7 +48,7 @@ describe('settings changed while the gateway runs', () => {
 
 describe('/api/settings', () => {
   const KEY = 'sk-live-abcdef123456'
-  function setup(opts: { env?: Record<string, string>; token?: string; replies?: (url: string) => Response } = {}) {
+  function setup(opts: { env?: Record<string, string>; token?: string; replies?: (url: string) => Response; running?: 'local' | 'docker' } = {}) {
     const db = openDb(':memory:')
     const dataDir = mkdtempSync(join(tmpdir(), 'ogb-settings-'))
     const startedWith = loadConfig({ OPENGROKBOT_DATA: dataDir })
@@ -65,6 +65,7 @@ describe('/api/settings', () => {
     }) as typeof fetch
     const gateway = createApp({
       db, llm: { chat: async () => textTurn }, dataDir, ...(opts.token ? { token: opts.token } : {}),
+      ...(opts.running ? { computers: { kind: opts.running } } : {}),
       settings: { env: opts.env ?? {}, startedWith, fetchImpl },
     })
     const call = (method: string, path: string, body?: unknown) => gateway.app.request(path, {
@@ -102,6 +103,16 @@ describe('/api/settings', () => {
     expect(JSON.stringify(await (await call('GET', '/api/settings')).json())).not.toContain(KEY)
     expect((await call('PUT', '/api/settings', { apiKey: null })).status).toBe(200)
     expect(existsSync(join(dataDir, 'llm-key'))).toBe(false)
+  })
+
+  it('asks for a restart only when the computers the gateway would pick actually change', async () => {
+    // 启动时 auto、实际跑的是本机：改成 local 不用重启，改成 docker 要
+    const { call } = setup({ running: 'local' })
+    const restart = async (computers: string) =>
+      ((await (await call('PUT', '/api/settings', { computers })).json()) as { needsRestart: string[] }).needsRestart
+    expect(await restart('local')).toEqual([])
+    expect(await restart('docker')).toEqual(['computers'])
+    expect(await restart('auto')).toEqual([])
   })
 
   it('refuses what env vars pin, bad values and a bad key, and then saves nothing', async () => {
@@ -198,7 +209,7 @@ describe('/api/settings/providers', () => {
 })
 
 describe('/api/setup', () => {
-  function setup(opts: { status?: BrowserStatus; kind?: 'local' | 'docker'; timeZone?: string; docker?: boolean } = {}) {
+  function setup(opts: { status?: BrowserStatus; kind?: 'local' | 'docker'; timeZone?: string; docker?: boolean; image?: boolean } = {}) {
     const db = openDb(':memory:')
     const dataDir = mkdtempSync(join(tmpdir(), 'ogb-setup-'))
     let status: BrowserStatus = opts.status ?? { state: 'missing' }
@@ -213,9 +224,12 @@ describe('/api/setup', () => {
     const startedWith = { ...loadConfig({ OPENGROKBOT_DATA: dataDir }), timeZone: opts.timeZone ?? 'Europe/Berlin' }
     const gateway = createApp({
       db, llm: { chat: async () => textTurn }, dataDir,
-      computers: { kind: opts.kind ?? 'local', sandbox: { available: false, why: 'no sandbox here' } },
+      computers: {
+        kind: opts.kind ?? 'local', why: 'docker_image_missing', reason: 'Docker is running but the image is not built',
+        sandbox: { available: false, why: 'no sandbox here' },
+      },
       settings: { env: {}, startedWith },
-      setup: { browser, dockerReachable: async () => opts.docker ?? false },
+      setup: { browser, dockerReachable: async () => opts.docker ?? false, dockerImageReady: async () => opts.image ?? false },
     })
     const sent: unknown[] = []
     gateway.hub.add({ send: (d) => sent.push(JSON.parse(d)) })
@@ -230,13 +244,19 @@ describe('/api/setup', () => {
       demo: false,
       computers: {
         kind: 'local', choice: 'auto',
-        docker: { reachable: true },
+        why: 'docker_image_missing', reason: 'Docker is running but the image is not built',
+        docker: { reachable: true, imageReady: false },
         browser: { state: 'missing' },
         download: { approxMB: 190, onDiskMB: 370 },
         browserMirror: { current: '', suggested: null },
         sandbox: { available: false, why: 'no sandbox here' },
       },
     })
+  })
+
+  it('does not ask about the image when Docker is not running', async () => {
+    expect((await get(setup({ docker: false, image: true }))).computers.docker).toEqual({ reachable: false, imageReady: null })
+    expect((await get(setup({ docker: true, image: true }))).computers.docker).toEqual({ reachable: true, imageReady: true })
   })
 
   it('stops asking once the demo is picked', async () => {

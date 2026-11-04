@@ -12,6 +12,7 @@ import { loadConfig } from './config.js'
 import { botShellEnabled, openDb } from './db.js'
 import { createLiveLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
+import { botImageReady } from './containers.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
 import { createScreenViewers, mountScreenProxy, screenRelay, screencastRelay } from './screen.js'
@@ -19,7 +20,7 @@ import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
-import { currentConfig } from './settings.js'
+import { currentConfig, readSavedSettings, resolveSettings } from './settings.js'
 import { serveWeb } from './web.js'
 
 const startup = loadConfig()
@@ -52,7 +53,8 @@ const browser = createBrowserProvisioner({
   mirror: () => live().browserMirror,
   log: (line) => console.log(`[gateway] ${line}`),
 })
-const { backend, reason: backendReason } = await chooseBackend(config.computers, {
+const computersFrom = resolveSettings(process.env, readSavedSettings(db)).sources.computers
+const { backend, why: backendWhy, reason: backendReason } = await chooseBackend(config.computers, {
   docker: () => createDockerBackend(docker, {
     dataDir: config.dataDir,
     containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
@@ -65,6 +67,8 @@ const { backend, reason: backendReason } = await chooseBackend(config.computers,
     shell: { enabled: (botId) => botShellEnabled(db, botId), sandbox },
   }),
   dockerReachable: () => dockerReachable(docker),
+  dockerImageReady: () => botImageReady(docker),
+  ...(computersFrom === 'default' ? {} : { from: computersFrom }),
 })
 console.log(`[gateway] bot computers: ${backend.kind} (${backendReason})`)
 const pool = createPool({ dataDir: config.dataDir, backend })
@@ -85,6 +89,8 @@ const gateway = createApp({
   db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
   computers: {
     kind: backend.kind,
+    why: backendWhy,
+    reason: backendReason,
     sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint() },
     checkSandbox: (botId) => sandbox
       ? sandboxSelfCheck(sandbox, { workspace: join(config.dataDir, 'workspaces', botId), tmp: join(config.dataDir, 'bots', botId, 'tmp'), dataDir: config.dataDir })
@@ -100,7 +106,7 @@ const gateway = createApp({
   maxSteps: config.maxSteps,
   turnMinutes: config.turnMinutes,
   settings: { env: process.env, startedWith: config },
-  setup: { browser, dockerReachable: () => dockerReachable(docker, 1_500) },
+  setup: { browser, dockerReachable: () => dockerReachable(docker, 1_500), dockerImageReady: () => botImageReady(docker) },
 })
 const { app, hub } = gateway
 

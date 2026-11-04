@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BOT_NETWORK, SPEC_VERSION, containerConfigKey, containerName, createContainerSpec, ensureContainer, readEndpoints,
+  BOT_NETWORK, SPEC_VERSION, botImageReady, containerConfigKey, containerName, createContainerSpec, ensureContainer, readEndpoints,
   runningBotIds,
   stopBotContainer, waitForCdp, waitForShim,
 } from '../src/containers.js'
@@ -204,6 +204,15 @@ describe('docker not running', () => {
     const refused = Object.assign(new Error('connect ECONNREFUSED /Users/me/.docker/run/docker.sock'), { code: 'ECONNREFUSED' })
     const docker = { listNetworks: async () => { throw refused } } as never
     await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toThrow(/Docker is not running/)
+  })
+})
+
+describe('botImageReady', () => {
+  it('is true once the bot image exists, false when Docker says no such image', async () => {
+    const has = { getImage: () => ({ inspect: async () => ({ Id: 'sha256:x' }) }) } as never
+    const missing = { getImage: () => ({ inspect: async () => { throw Object.assign(new Error('no such image'), { statusCode: 404 }) } }) } as never
+    expect(await botImageReady(has)).toBe(true)
+    expect(await botImageReady(missing)).toBe(false)
   })
 })
 

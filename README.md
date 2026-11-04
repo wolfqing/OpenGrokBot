@@ -132,9 +132,9 @@ Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a 
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4.7 pnpm dev
 ```
 
-The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers,
-local otherwise (`OPENGROKBOT_COMPUTERS=docker|local` forces one). For Docker, build the image first:
-`docker build -t opengrokbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
+The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers and
+the bot image is built, local otherwise (`OPENGROKBOT_COMPUTERS=docker|local` forces one). For Docker, build the
+image first: `docker build -t opengrokbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
 for that teammate in its computer panel; then they run in an OS sandbox (Seatbelt on macOS, bubblewrap on Linux)
 that can write only that teammate's folder. Details in [docs/local-computers.md](docs/local-computers.md).
 
@@ -147,7 +147,7 @@ pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/alwa
 | `OPENGROKBOT_API_KEY` | — | Your key. Never written to disk by this repo |
 | `OPENGROKBOT_MODEL` | `grok-4.7` | `stub` runs offline with no key |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
-| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running, else local) |
+| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running and the image is built, else local) |
 | `OPENGROKBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome/Edge/Chromium are looked for, then one is downloaded |
 | `OPENGROKBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser, for slow-network regions |
 | `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |

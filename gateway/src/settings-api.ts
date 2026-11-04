@@ -1,4 +1,5 @@
 import type { Hono } from 'hono'
+import type { ComputerKind } from './computer.js'
 import type { Config } from './config.js'
 import type { Db } from './db.js'
 import { checkConnection, listModels } from './llm-check.js'
@@ -21,10 +22,13 @@ const RESTART_KEYS = ['computers'] as const
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db }): void {
+export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db; /** 启动时实际选中的电脑 */ runningKind?: ComputerKind }): void {
   const { db, env, startedWith } = deps
   const dataDir = startedWith.dataDir
   const now = () => currentConfig(startedWith, env, db)
+
+  // 启动时 auto 已经落到了本机，再改成 local，重启了也还是本机——不催重启
+  const alreadyRunning = (k: (typeof RESTART_KEYS)[number], v: string) => k === 'computers' && v === deps.runningKind
 
   /** key 只回掩码和来源，原文从不离开网关 */
   const view = () => {
@@ -34,7 +38,7 @@ export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db }): void 
       values,
       sources,
       apiKey: { set: key.source !== 'none', masked: maskKey(key.key), source: key.source },
-      needsRestart: RESTART_KEYS.filter((k) => values[k] !== startedWith[k]),
+      needsRestart: RESTART_KEYS.filter((k) => values[k] !== startedWith[k] && !alreadyRunning(k, values[k])),
     }
   }
 

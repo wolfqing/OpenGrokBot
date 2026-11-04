@@ -19,6 +19,7 @@ import { createHub, type GatewayEvent, type Hub, type Presence } from './hub.js'
 import type { LLM } from './llm.js'
 import { appendMemoryRule, listMemoryRules, readMemory, removeMemoryRule } from './memory.js'
 import type { ComputerKind } from './computer.js'
+import type { BackendWhy } from './backend.js'
 import type { Pool } from './pool.js'
 import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
@@ -35,6 +36,9 @@ import { createTurnQueue } from './turns.js'
 /** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
 export type ComputersInfo = {
   kind: ComputerKind
+  /** 启动时为什么选了这种电脑（界面按 why 翻译；reason 是日志里那句英文） */
+  why?: BackendWhy
+  reason?: string
   sandbox?: { available: boolean; why?: string }
   /** 打开命令行前实测一次沙箱；不传就只看 available */
   checkSandbox?: (botId: string) => Promise<{ ok: true } | { ok: false; why: string }>
@@ -195,7 +199,7 @@ export function createApp(deps: AppDeps): GatewayApp {
     app.get('/auth', loginHandler(deps.token))
   }
   app.get('/api/session', (c) => c.json({ ok: true }))
-  if (deps.settings) mountSettings(app, { ...deps.settings, db })
+  if (deps.settings) mountSettings(app, { ...deps.settings, db, ...(deps.computers ? { runningKind: deps.computers.kind } : {}) })
   if (deps.settings && deps.setup) {
     mountSetup(app, { ...deps.settings, ...deps.setup, db, hub, ...(deps.computers ? { computers: deps.computers } : {}) })
   }

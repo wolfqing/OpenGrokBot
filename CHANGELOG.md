@@ -37,6 +37,12 @@ still change behaviour.
   progress (which item, percent, size) as it goes.
 - The first local computer and the wizard share one browser download instead of possibly running two into the
   same folder. The browser mirror is read when the download starts, so changing it no longer needs a restart.
+- With `computers` on `auto`, a gateway whose Docker is running but whose bot image is not built now uses local
+  computers, instead of handing out Docker computers that fail on first use. The log says why and gives the
+  `docker build` command. `GET /api/setup` adds `docker.imageReady` and the reason the computers were picked
+  (`why`: `chosen`, `docker_running`, `docker_not_running`, `docker_image_missing`), and a choice made on the
+  settings page is logged as such rather than as `OPENGROKBOT_COMPUTERS`. Settings ask for a restart only when
+  it would change the computers: switching `auto` to `local` on a gateway that already runs local computers does not.
 
 ### Security
 

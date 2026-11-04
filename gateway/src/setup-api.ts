@@ -9,6 +9,8 @@ import { needsSetup, readSavedSettings, resolveSettings } from './settings.js'
 export type SetupDeps = {
   browser: BrowserProvisioner
   dockerReachable: () => Promise<boolean>
+  /** 同事电脑的镜像建没建；只在 Docker 应答时问 */
+  dockerImageReady?: () => Promise<boolean>
 }
 
 /** 2026-11-03 在 mac-arm64 上实测：下载约 186 MiB，解压后约 369 MB。向导照这个说，不说得更少 */
@@ -25,13 +27,19 @@ export function mountSetup(app: Hono, deps: SetupDeps & SettingsDeps & { db: Db;
   app.get('/api/setup', async (c) => {
     const { values } = resolveSettings(env, readSavedSettings(db))
     const sandbox = deps.computers?.sandbox ?? { available: false }
+    const reachable = await deps.dockerReachable()
+    const imageReady = reachable && deps.dockerImageReady ? await deps.dockerImageReady() : null
+    const why = deps.computers?.why
+    const reason = deps.computers?.reason
     return c.json({
       needsSetup: needsSetup(env, db, startedWith.dataDir),
       demo: values.model === 'stub',
       computers: {
         kind: deps.computers?.kind ?? 'docker',
         choice: values.computers,
-        docker: { reachable: await deps.dockerReachable() },
+        ...(why ? { why } : {}),
+        ...(reason ? { reason } : {}),
+        docker: { reachable, imageReady },
         browser: browser.status(),
         download: DOWNLOAD,
         browserMirror: { current: values.browserMirror, suggested: MAINLAND_ZONES.has(startedWith.timeZone) ? CN_MIRROR : null },

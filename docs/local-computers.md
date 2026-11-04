@@ -21,7 +21,8 @@ and picks one per machine:
 
 ## Local mode
 
-The gateway chooses at startup — Docker when the daemon answers, local otherwise — and says so in its log.
+The gateway chooses at startup — Docker when the daemon answers and the bot image is built, local otherwise — and
+says so in its log, with the reason (for a missing image, the command that builds it).
 `OPENGROKBOT_COMPUTERS=docker|local` forces one; `OPENGROKBOT_BROWSER` names a browser executable, and
 `OPENGROKBOT_BROWSER_MIRROR` a download host for the Chrome for Testing fallback.
 

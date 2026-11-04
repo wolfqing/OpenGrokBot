@@ -121,7 +121,7 @@ gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?to
 OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4.7 pnpm dev
 ```
 
-gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答就用 Docker，否则用本机模式
+gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答、镜像也建好了就用 Docker，否则用本机模式
 （`OPENGROKBOT_COMPUTERS=docker|local` 可以强制）。用 Docker 要先建镜像：`docker build -t opengrokbot/bot:dev docker/bot`。
 本机电脑上**命令行默认关着**，在那位同事的电脑面板里按需打开；打开后命令跑在系统沙箱里（macOS 用 Seatbelt，
 Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [docs/local-computers.md](docs/local-computers.md)。
@@ -135,7 +135,7 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [d
 | `OPENGROKBOT_API_KEY` | — | 你的 key，本仓库不会把它写进任何文件 |
 | `OPENGROKBOT_MODEL` | `grok-4.7` | 填 `stub` 可离线零 key 运行 |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite、bot 数据、工作区、gateway 令牌 |
-| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`、`local`，或 `auto`（Docker 在跑就用 Docker，否则本机） |
+| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`、`local`，或 `auto`（Docker 在跑、镜像建好了就用 Docker，否则本机） |
 | `OPENGROKBOT_BROWSER` | *(自动找)* | 本机电脑用的浏览器；不填就找 Chrome / Edge / Chromium，都没有就下载一个 |
 | `OPENGROKBOT_BROWSER_MIRROR` | *(官方)* | 下载那个浏览器用的镜像主机，国内网络用 |
 | `OPENGROKBOT_A2A_ALLOW` | *(空)* | 同级交接，如 `researcher>market-watch` |

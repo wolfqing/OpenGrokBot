@@ -38,6 +38,34 @@ describe('chooseBackend', () => {
     expect(fallback.reason).toMatch(/Docker is not running/)
   })
 
+  it('says whether an explicit choice came from the env var or the settings page', async () => {
+    const opts = { docker: () => fakeBackend('docker'), local: () => fakeBackend('local'), dockerReachable: async () => true }
+    expect(await chooseBackend('local', { ...opts, from: 'saved' })).toMatchObject({ why: 'chosen', reason: 'computers=local in settings' })
+    expect(await chooseBackend('docker', { ...opts, from: 'env' })).toMatchObject({ why: 'chosen', reason: 'OPENGROKBOT_COMPUTERS=docker' })
+  })
+
+  it('auto: Docker is up but the bot image is not built, so local computers, and says how to build it', async () => {
+    const opts = { docker: () => fakeBackend('docker'), local: () => fakeBackend('local'), dockerReachable: async () => true }
+    const fallback = await chooseBackend('auto', { ...opts, dockerImageReady: async () => false })
+    expect(fallback.backend.kind).toBe('local')
+    expect(fallback.why).toBe('docker_image_missing')
+    expect(fallback.reason).toMatch(/opengrokbot\/bot:dev is not built.*docker build -t opengrokbot\/bot:dev docker\/bot/)
+    expect(await chooseBackend('auto', { ...opts, dockerImageReady: async () => true })).toMatchObject({ why: 'docker_running' })
+    expect((await chooseBackend('auto', { ...opts, dockerReachable: async () => false })).why).toBe('docker_not_running')
+  })
+
+  it('does not look for the image when Docker is down or the choice is explicit', async () => {
+    let looked = 0
+    const opts = {
+      docker: () => fakeBackend('docker'), local: () => fakeBackend('local'),
+      dockerImageReady: async () => { looked++; return false },
+    }
+    expect((await chooseBackend('auto', { ...opts, dockerReachable: async () => false })).backend.kind).toBe('local')
+    // 显式选了 docker：镜像没建照样给 docker，用到时报「怎么建」
+    expect((await chooseBackend('docker', { ...opts, dockerReachable: async () => true })).backend.kind).toBe('docker')
+    expect(looked).toBe(0)
+  })
+
   it('auto without a local backend still hands out docker, and says why that will hurt', async () => {
     const { backend, reason } = await chooseBackend('auto', {
       docker: () => fakeBackend('docker'),

@@ -175,6 +175,11 @@ async function currentImageId(docker: DockerLike): Promise<string | null> {
   }
 }
 
+/** 同事电脑的镜像建了没有。只在 Docker 应答时问才有意义（连不上也回 false） */
+export async function botImageReady(docker: Pick<Docker, 'getImage'>): Promise<boolean> {
+  return (await currentImageId(docker as DockerLike)) !== null
+}
+
 /** 连不上 docker 的 socket：多半是 Docker Desktop 没开，直接说人话 */
 function explainDockerDown(err: unknown): never {
   const code = (err as { code?: string }).code
