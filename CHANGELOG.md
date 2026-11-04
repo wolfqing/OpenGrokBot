@@ -15,8 +15,9 @@ still change behaviour.
   denied a short list of key folders and bubblewrap denied none of them. The self-check now also fails if a
   command can list the home directory, and the switch refuses to turn on when no self-check is wired.
 - `write_file` on a local computer opens the final path component without following symlinks.
-- On Windows the gateway token file is limited to your account: inherited access is removed and only your user (by
-  SID) is granted. Before, `0600` did nothing there and the file kept whatever its folder allowed. Start-up warns
+- On Windows the gateway token file is limited to your account: its access list is reset (which also clears entries
+  written on the file itself, such as the creator's default `SYSTEM` and `Administrators` grants), inherited access is
+  removed, and only your user (by SID) is granted. Before, `0600` did nothing there and the file kept whatever its folder allowed. Start-up warns
   if it cannot restrict the file, and an existing token is tightened on the next start.
 - A local computer's file tools refuse Windows device names (`CON`, `NUL`, `COM1`, … — reading `CON` would wait for
   input forever) and colons, which would write into an alternate data stream.

@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   BOT_NETWORK, SPEC_VERSION, containerConfigKey, containerName, createContainerSpec, ensureContainer, readEndpoints,
@@ -48,7 +49,7 @@ describe('createContainerSpec', () => {
     const spec = createContainerSpec('researcher', '/data/workspaces/researcher', secrets)
     expect(spec.name).toBe('opengrokbot-researcher')
     expect(spec.Image).toBe('opengrokbot/bot:dev')
-    expect(spec.HostConfig!.Binds).toEqual(['/data/workspaces/researcher:/workspace'])
+    expect(spec.HostConfig!.Binds).toEqual([`${resolve('/data/workspaces/researcher')}:/workspace`]) // Windows 上是 D:\data\…，Docker Desktop 认得
     for (const port of ['7717/tcp', '9222/tcp', '6080/tcp']) {
       expect(spec.HostConfig!.PortBindings![port]).toEqual([{ HostIp: '127.0.0.1', HostPort: '' }])
       expect(spec.ExposedPorts![port]).toEqual({})
@@ -56,7 +57,7 @@ describe('createContainerSpec', () => {
     expect(spec.Labels).toMatchObject({
       'ai.opengrokbot.bot': 'researcher',
       'ai.opengrokbot.spec': SPEC_VERSION,
-      'ai.opengrokbot.workspace': '/data/workspaces/researcher',
+      'ai.opengrokbot.workspace': resolve('/data/workspaces/researcher'),
     })
   })
 
@@ -74,7 +75,7 @@ describe('createContainerSpec', () => {
 
   it('always binds an absolute host path, never a volume name', () => {
     const spec = createContainerSpec('researcher', 'data-stub/workspaces/researcher', secrets)
-    expect(spec.HostConfig!.Binds![0]).toMatch(/^\/.+\/data-stub\/workspaces\/researcher:\/workspace$/)
+    expect(spec.HostConfig!.Binds![0]).toBe(`${resolve('data-stub/workspaces/researcher')}:/workspace`)
   })
 
   it('fingerprints the settings that shape the container', () => {

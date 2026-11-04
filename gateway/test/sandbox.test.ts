@@ -81,7 +81,8 @@ function leakySandbox(dir: string) {
   return { kind: 'seatbelt' as const, executable: script }
 }
 
-describe('sandboxSelfCheck', () => {
+// 假沙箱是个 #!/bin/sh 脚本；Windows 上没有沙箱，自检也就从来不跑
+describe.skipIf(process.platform === 'win32')('sandboxSelfCheck', () => {
   let dir: string
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ogb-sb-')) })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))

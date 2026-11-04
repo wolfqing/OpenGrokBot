@@ -10,7 +10,7 @@ const newDir = () => mkdtempSync(join(tmpdir(), 'ogb-mem-'))
 
 describe('memoryPath', () => {
   it('lives outside the bot workspace, so a bot cannot quietly rewrite its own standing rules', () => {
-    expect(memoryPath('/data', 'researcher')).toBe('/data/bots/researcher/MEMORY.md')
+    expect(memoryPath('/data', 'researcher')).toBe(join('/data', 'bots', 'researcher', 'MEMORY.md'))
   })
 
 })

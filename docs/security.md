@@ -73,7 +73,7 @@ because of something the bot read shows up there.
 | Secret | Where |
 |---|---|
 | Model API key | The `OPENGROKBOT_API_KEY` environment variable. The gateway never writes it to disk. |
-| Gateway token | `gateway/data/auth-token`, readable by your account only (`0600`; on Windows the gateway removes inherited access and grants only you, and warns if it cannot), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
+| Gateway token | `gateway/data/auth-token`, readable by your account only (`0600`; on Windows the gateway resets the file's access list, removes inherited access and grants only you, and warns if it cannot), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
 | Bot logins | Each bot's browser profile: inside its container (Docker), or under `<data>/bots/<id>/browser` (local). The gateway never sees a password. |
 | Shim token, VNC password | Generated per container at creation, kept in that container's environment. |
 | Webhook keys | One per webhook routine, in the gateway's SQLite database. Shown only in the computer panel — inside the address, and on its own as the *Secret* for GitHub — and in the token-guarded routine listing the panel reads. |

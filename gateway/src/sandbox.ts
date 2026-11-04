@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+// Seatbelt 和 bubblewrap 只在 macOS / Linux 上有：规则里的路径一律按 POSIX 写，在哪台机器上算都一样
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path/posix'
 import type { ShellResult } from './computer.js'
 
 /**

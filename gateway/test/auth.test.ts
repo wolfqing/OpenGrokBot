@@ -40,7 +40,7 @@ describe('loadOrCreateToken', () => {
 })
 
 describe('restrictToOwner', () => {
-  it('on Windows, drops inherited access and grants only the current user, by SID', () => {
+  it('on Windows, clears direct entries, drops inherited access and grants only the current user, by SID', () => {
     const calls: { file: string; args: string[] }[] = []
     const run = (file: string, args: string[]) => {
       calls.push({ file, args })
@@ -49,6 +49,7 @@ describe('restrictToOwner', () => {
     restrictToOwner('C:\\data\\auth-token', 'win32', run)
     expect(calls).toEqual([
       { file: 'whoami', args: ['/user', '/fo', 'csv', '/nh'] },
+      { file: 'icacls', args: ['C:\\data\\auth-token', '/reset'] },
       { file: 'icacls', args: ['C:\\data\\auth-token', '/inheritance:r', '/grant:r', '*S-1-5-21-111-222-333-1001:F'] },
     ])
   })
@@ -68,6 +69,8 @@ describe('restrictToOwner', () => {
   it.skipIf(process.platform !== 'win32')('really leaves only the current user on the file (Windows)', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'ogb-acl-')), 'auth-token')
     writeFileSync(file, 'secret\n')
+    // 先塞一条直接写在文件上的「Users 可读」：继承开关管不到它，得靠 /reset 清掉
+    execFileSync('icacls', [file, '/grant', '*S-1-5-32-545:R'], { encoding: 'utf8' })
     restrictToOwner(file)
     const sid = execFileSync('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' }).trim().match(/"(S-1-[\d-]+)"\s*$/)![1]!
     const listing = execFileSync('icacls', [file], { encoding: 'utf8' })

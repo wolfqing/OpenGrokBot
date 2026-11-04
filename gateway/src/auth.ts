@@ -45,7 +45,9 @@ type RunFile = (file: string, args: string[], opts: { encoding: 'utf8'; windowsH
 
 /**
  * 只给本人读写。POSIX 上是 0600（umask 不该把它放宽）。Windows 上 chmod 只管「只读」标记，权限在 ACL 里：
- * 去掉从上级目录继承来的条目，只留当前用户。用户按 SID 指定（whoami 给的），本地账户、域账户、微软账户都一样。
+ * 先 /reset 把文件上直接写着的条目清掉（上级目录不往下传权限时，新文件会带上创建者的默认权限：SYSTEM、
+ * Administrators……都是直接条目，/inheritance:r 摘不掉），再去掉继承来的条目，只给当前用户。
+ * 用户按 SID 指定（whoami 给的），本地账户、域账户、微软账户都一样。
  */
 export function restrictToOwner(
   path: string,
@@ -59,6 +61,7 @@ export function restrictToOwner(
   // whoami /user /fo csv /nh → "pc\\ana","S-1-5-21-…"
   const sid = run('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }).trim().match(/"(S-1-[\d-]+)"\s*$/)?.[1]
   if (!sid) throw new Error('whoami did not report a SID')
+  run('icacls', [path, '/reset'], { encoding: 'utf8', windowsHide: true })
   run('icacls', [path, '/inheritance:r', '/grant:r', `*${sid}:F`], { encoding: 'utf8', windowsHide: true })
 }
 
