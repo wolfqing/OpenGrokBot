@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, posix, win32 } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLocalBackend } from '../src/backend.js'
-import type { BrowserLike } from '../src/browser-page.js'
+import type { BrowserLike, CdpSessionLike, PageLike } from '../src/browser-page.js'
 import { createLocalComputer, workspacePath, type LocalLaunch } from '../src/computer-local.js'
 
 let dir: string
@@ -239,6 +239,157 @@ describe('LocalComputer window for signing in', () => {
     expect(c.windowShown!()).toBe(false)
     expect(launches.map((l) => l.headless)).toEqual([true, false, true])
     expect(state.url).toBe('https://mail.example.com/login')
+  })
+
+  it('keeps workflow capture attached through show and hide relaunches', async () => {
+    type PageHarness = {
+      page: PageLike
+      bindings: Set<string>
+      scripts: string[]
+      fire(event: Record<string, unknown>): Promise<void>
+      close(): void
+    }
+    const state = { url: 'about:blank', open: false, launches: 0, failNextBinding: false, failNextCleanup: false }
+    const operations: string[] = []
+    let current: PageHarness | null = null
+    const makePage = (): PageHarness => {
+      const pageListeners = new Map<'framenavigated' | 'close' | 'popup', Set<(value?: unknown) => void>>([
+        ['framenavigated', new Set()], ['close', new Set()], ['popup', new Set()],
+      ])
+      const cdpListeners = new Map<string, Set<(value: unknown) => void>>()
+      const bindings = new Set<string>()
+      const scripts: string[] = []
+      const frameId = `main-${state.launches}`
+      let bindingName = ''
+      let contextId = 0
+      let documentVersion = 0
+      const session: CdpSessionLike = {
+        on(event, listener) {
+          const listeners = cdpListeners.get(event) ?? new Set<(value: unknown) => void>()
+          listeners.add(listener)
+          cdpListeners.set(event, listeners)
+        },
+        off(event, listener) { cdpListeners.get(event)?.delete(listener) },
+        async send(method, params) {
+          if (method === 'Runtime.addBinding') {
+            if (state.failNextBinding) {
+              state.failNextBinding = false
+              throw new Error('binding unavailable')
+            }
+            if (typeof params?.name === 'string') {
+              bindingName = params.name
+              bindings.add(bindingName)
+            }
+          }
+          if (method === 'Page.getFrameTree') {
+            return { frameTree: { frame: { id: frameId, url: state.url, loaderId: `document-${documentVersion}` } } }
+          }
+          if (method === 'Page.createIsolatedWorld') return { executionContextId: ++contextId }
+          if (method === 'Runtime.evaluate' && typeof params?.expression === 'string') {
+            scripts.push(params.expression)
+            if (params.expression.includes('state.cleanup')) {
+              operations.push(`cleanup-${state.launches}`)
+              if (state.failNextCleanup) {
+                state.failNextCleanup = false
+                throw new Error('page did not respond to recorder cleanup')
+              }
+            }
+          }
+          if (method === 'Runtime.removeBinding' && typeof params?.name === 'string') bindings.delete(params.name)
+          return {}
+        },
+        async detach() {},
+      }
+      const emitNavigation = (url: string) => {
+        documentVersion += 1
+        for (const listener of cdpListeners.get('Page.frameNavigated') ?? []) {
+          listener({ frame: { id: frameId, url, loaderId: `document-${documentVersion}` } })
+        }
+      }
+      const page: PageLike = {
+        async goto(url) { state.url = url; emitNavigation(url) },
+        async title() { return 'Example' },
+        url: () => state.url,
+        async innerText() { return '' },
+        async screenshot() { return Buffer.from('PNG') },
+        async click() {},
+        context: () => ({ newCDPSession: async () => session }),
+        on(event, listener) { pageListeners.get(event)?.add(listener) },
+        off(event, listener) { pageListeners.get(event)?.delete(listener) },
+        viewportSize: () => ({ width: 1280, height: 800 }),
+      }
+      return {
+        page,
+        bindings,
+        scripts,
+        async fire(event) {
+          const capability = scripts[0]?.match(/const capability = "([a-f0-9]+)";/)?.[1]
+          if (!capability) throw new Error('recorder did not install its event capability')
+          for (const listener of cdpListeners.get('Runtime.bindingCalled') ?? []) {
+            listener({
+              name: bindingName, executionContextId: contextId,
+              payload: JSON.stringify({ ...event, isTrusted: true, __proof: capability }),
+            })
+          }
+        },
+        close: () => { for (const listener of pageListeners.get('close') ?? []) listener() },
+      }
+    }
+    const browser: BrowserLike = {
+      contexts: () => [{ pages: () => current ? [current.page] : [], newPage: async () => current!.page }],
+      async close() {
+        state.open = false
+        operations.push(`close-${state.launches}`)
+        // A page close invalidates its listeners just as the local Chromium relaunch does.
+        current?.close()
+      },
+      isConnected: () => state.open,
+    }
+    const launch: LocalLaunch = async () => {
+      state.open = true
+      state.launches += 1
+      current = makePage()
+      return browser
+    }
+    const c = createLocalComputer({ workspaceDir: dir, profileDir: join(dir, 'p'), executablePath: '/bin/chrome', launch })
+    try {
+      await c.goto('https://example.test/start')
+      const recorder = await c.startWorkflowRecording!('Window transitions')
+      const initial = current!
+      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Before show' }] } })
+
+      await c.showWindow!()
+      const shown = current!
+      expect(shown).not.toBe(initial)
+      expect(operations.slice(0, 2)).toEqual(['cleanup-1', 'close-1'])
+      await shown.fire({ type: 'click', target: { candidates: [{ text: 'While shown' }] } })
+
+      await c.hideWindow!()
+      const hidden = current!
+      expect(hidden).not.toBe(shown)
+      expect(operations.slice(2, 4)).toEqual(['cleanup-2', 'close-2'])
+      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
+      await hidden.fire({ type: 'click', target: { candidates: [{ text: 'After hide' }] } })
+
+      state.failNextCleanup = true
+      await c.showWindow!()
+      expect(c.windowShown!()).toBe(true)
+      expect(state.failNextCleanup).toBe(false)
+      state.failNextBinding = true
+      await expect(c.hideWindow!()).rejects.toThrow('binding unavailable')
+      expect(state.url).toBe('https://example.test/start')
+
+      const trace = await recorder.stop()
+      expect(state.launches).toBe(5)
+      expect(trace.truncated).toBe(true)
+      expect(trace.steps.filter((step) => step.type === 'click')).toEqual([
+        { type: 'click', target: { candidates: [{ text: 'Before show' }] } },
+        { type: 'click', target: { candidates: [{ text: 'While shown' }] } },
+        { type: 'click', target: { candidates: [{ text: 'After hide' }] } },
+      ])
+    } finally {
+      await c.dispose()
+    }
   })
 
   it('hiding a browser that is already headless does not launch one', async () => {

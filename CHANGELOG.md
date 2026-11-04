@@ -6,6 +6,12 @@ still change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
+  saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
+  and routines remain out of scope.
+
 ### Security
 
 - A local computer's screen stream (`/screen/:botId/ws`) was served without the gateway's token and origin

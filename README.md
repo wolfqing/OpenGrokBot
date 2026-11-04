@@ -68,6 +68,10 @@ Every line below is implemented and covered by tests — nothing here is a roadm
   routine a secret webhook address instead, for GitHub, a form or any script to call. "Keep an eye on the status
   page" makes a watch routine: read-only tools, and silence unless something needs you. Pause, run or delete them
   from the computer panel — or tell the bot to stop one.
+- **Recorded workflow traces (first slice).** API-only controls start and stop a typed recording on a teammate's
+  existing browser page. The operator reviews the draft before saving it to SQLite; password, one-time-code and
+  other sensitive-looking fields are redacted automatically. Local-computer recordings continue across window
+  relaunches. Replay and routine scheduling are not part of this slice. See [docs/workflows.md](docs/workflows.md).
 - **Shared skills.** Drop a Markdown playbook into `<data>/skills/` and every teammate sees it and reads it
   before work it covers. Memory and routines stay with each teammate; skills are shared.
 - **See the work, stop the work.** Every step on its computer — the command, the page, the click — shows live
@@ -235,7 +239,8 @@ resource limits), and on Windows it is still the only way to give a teammate a s
 [docs/local-computers.md](docs/local-computers.md).
 
 More in [docs/faq.md](docs/faq.md) · [docs/multi-bot.md](docs/multi-bot.md) · [docs/always-on.md](docs/always-on.md) ·
-[docs/security.md](docs/security.md) · [docs/comparison.md](docs/comparison.md) · [CHANGELOG.md](CHANGELOG.md)
+[docs/security.md](docs/security.md) · [docs/workflows.md](docs/workflows.md) · [docs/comparison.md](docs/comparison.md) ·
+[CHANGELOG.md](CHANGELOG.md)
 
 ## Disclaimer
 

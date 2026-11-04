@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { Hono } from 'hono'
 import { listActions, recordAction, type ActionTrigger } from './actions.js'
@@ -18,7 +19,7 @@ import {
 import { createHub, type GatewayEvent, type Hub, type Presence } from './hub.js'
 import type { LLM } from './llm.js'
 import { appendMemoryRule, listMemoryRules, readMemory, removeMemoryRule } from './memory.js'
-import type { ComputerKind } from './computer.js'
+import type { BotComputer, ComputerKind } from './computer.js'
 import type { Pool } from './pool.js'
 import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
@@ -29,6 +30,8 @@ import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
 import { createTurnQueue } from './turns.js'
+import type { WorkflowRecording } from './workflow-recorder.js'
+import { listWorkflowTraces, parseWorkflowTrace, readWorkflowTrace, saveWorkflowTrace, type WorkflowTrace } from './workflows.js'
 
 /** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
 export type ComputersInfo = {
@@ -71,6 +74,18 @@ export type GatewayApp = {
 }
 
 type QuestionPayload = { question: string; options: string[]; multi: boolean; status: string; answer?: string[] }
+type WorkflowDraft = { id: string; trace: WorkflowTrace }
+type ActiveWorkflowRecording = {
+  recorder: WorkflowRecording | null
+  stopping: Promise<WorkflowTrace> | null
+  draft: WorkflowDraft | null
+  releaseTurns: () => void
+  timeout: ReturnType<typeof setTimeout> | null
+  cancelled: boolean
+  released: boolean
+}
+
+export const WORKFLOW_RECORDING_MAX_MS = 15 * 60_000
 
 /** 每条 routine 记住最近这么多个投递编号 */
 const MAX_DELIVERIES = 500
@@ -180,8 +195,22 @@ export function createApp(deps: AppDeps): GatewayApp {
   }
   const lastSent = new Map<string, Presence>()
   const routinesInFlight = new Set<number>()
+  const routineBotsInFlight = new Map<string, number>()
   /** 已落库、还没交给某个回合去回答的用户消息（按线程） */
   const waiting = new Map<string, Set<number>>()
+  const workflowRecordings = new Map<string, ActiveWorkflowRecording>()
+  const workflowDrafts = new Map<string, WorkflowDraft>()
+  const releaseWorkflowRecording = (botId: string, active: ActiveWorkflowRecording) => {
+    if (active.timeout) clearTimeout(active.timeout)
+    active.timeout = null
+    if (workflowRecordings.get(botId) === active) workflowRecordings.delete(botId)
+    if (!active.released) {
+      active.released = true
+      active.releaseTurns()
+    }
+  }
+  const stopWorkflowRecording = (active: ActiveWorkflowRecording, recorder: WorkflowRecording) =>
+    active.stopping ??= Promise.resolve().then(() => recorder.stop())
 
   if (deps.token) {
     app.use('*', authMiddleware(deps.token, deps.allowedOrigins))
@@ -514,6 +543,7 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (!bot) return 'gone'
     if (routinesInFlight.has(fresh.id)) return 'skipped'
     routinesInFlight.add(fresh.id)
+    routineBotsInFlight.set(bot.id, (routineBotsInFlight.get(bot.id) ?? 0) + 1)
     try {
       markRoutineRun(db, fresh.id, now().getTime())
       const threadId = ensureDmThread(db, bot.id)
@@ -546,6 +576,9 @@ export function createApp(deps: AppDeps): GatewayApp {
       return 'ran'
     } finally {
       routinesInFlight.delete(fresh.id)
+      const remaining = (routineBotsInFlight.get(bot.id) ?? 1) - 1
+      if (remaining === 0) routineBotsInFlight.delete(bot.id)
+      else routineBotsInFlight.set(bot.id, remaining)
     }
   }
 
@@ -574,7 +607,10 @@ export function createApp(deps: AppDeps): GatewayApp {
     const memory = dataDir ? await listMemoryRules(dataDir, botId) : []
     const skills = dataDir ? await listSkills(skillsDir(dataDir)) : []
     const actions = listActions(db, botId, 30)
-    const base = { botId, routines, usage, rules, memory, skills, actions }
+    const base = {
+      botId, routines, usage, rules, memory, skills, actions,
+      workflowRecording: workflowRecordings.has(botId), workflowDraft: workflowDrafts.has(botId),
+    }
     if (!pool) return c.json({ ...base, running: false, vncUrl: null })
     try {
       const computer = await pool.get(botId)
@@ -588,6 +624,168 @@ export function createApp(deps: AppDeps): GatewayApp {
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
       return c.json({ ...base, running: false, vncUrl: null, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+
+  app.post('/api/bots/:botId/workflows/recording', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    if (!pool) return c.json({ error: 'workflow recording is unavailable' }, 409)
+    if (workflowDrafts.has(botId)) return c.json({ error: 'review or discard the pending workflow draft first' }, 409)
+    if (workflowRecordings.has(botId)) return c.json({ error: 'a workflow is already being recorded' }, 409)
+    const body = (await c.req.json().catch(() => null)) as { title?: unknown; intent?: unknown } | null
+    let title = typeof body?.title === 'string' ? body.title.trim() : ''
+    if (!title || title.length > 120) return c.json({ error: 'title must be 1 to 120 characters' }, 400)
+    if (body?.intent !== undefined && (typeof body.intent !== 'string' || body.intent.length > 500)) {
+      return c.json({ error: 'intent must be at most 500 characters' }, 400)
+    }
+    let intent: string | undefined
+    try {
+      const validated = parseWorkflowTrace({
+        format: 'opengrokbot.workflow', version: 1, title,
+        ...(typeof body?.intent === 'string' && body.intent.trim() ? { intent: body.intent.trim() } : {}),
+        steps: [],
+      })
+      title = validated.title
+      intent = validated.intent
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : 'invalid workflow metadata' }, 400)
+    }
+    if (routineBotsInFlight.has(botId)) return c.json({ error: 'the teammate is busy' }, 409)
+    const releaseTurns = turns.hold(botId)
+    if (!releaseTurns) return c.json({ error: 'the teammate is busy' }, 409)
+    const active: ActiveWorkflowRecording = {
+      recorder: null, stopping: null, draft: null, releaseTurns, timeout: null, cancelled: false, released: false,
+    }
+    workflowRecordings.set(botId, active)
+    let computer: BotComputer
+    try {
+      computer = await pool.get(botId)
+    } catch {
+      releaseWorkflowRecording(botId, active)
+      return c.json({ error: 'the bot browser is unavailable' }, 503)
+    }
+    if (active.cancelled || workflowRecordings.get(botId) !== active) {
+      releaseWorkflowRecording(botId, active)
+      return c.json({ error: 'workflow recording was cancelled before it started' }, 409)
+    }
+    if (!computer.startWorkflowRecording) {
+      releaseWorkflowRecording(botId, active)
+      return c.json({ error: 'this computer cannot record workflows' }, 409)
+    }
+    try {
+      const recorder = await computer.startWorkflowRecording(title, intent)
+      if (active.cancelled || workflowRecordings.get(botId) !== active) {
+        await recorder.stop().catch(() => {})
+        releaseWorkflowRecording(botId, active)
+        return c.json({ error: 'workflow recording was cancelled before it started' }, 409)
+      }
+      active.recorder = recorder
+      active.timeout = setTimeout(() => {
+        const stopping = stopWorkflowRecording(active, recorder)
+        void stopping.then((trace) => {
+          const draftTrace = parseWorkflowTrace({ ...trace, truncated: true })
+          active.draft = { id: active.draft?.id ?? randomUUID(), trace: draftTrace }
+          workflowDrafts.set(botId, active.draft)
+        }).catch(() => {}).finally(() => releaseWorkflowRecording(botId, active))
+      }, WORKFLOW_RECORDING_MAX_MS)
+      active.timeout.unref?.()
+      return c.json({ ok: true, recording: true }, 202)
+    } catch (error) {
+      releaseWorkflowRecording(botId, active)
+      return c.json({ error: error instanceof Error ? error.message : 'could not start workflow recording' }, 409)
+    }
+  })
+
+  app.post('/api/bots/:botId/workflows/recording/stop', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const pending = workflowDrafts.get(botId)
+    if (pending) return c.json(pending)
+    const active = workflowRecordings.get(botId)
+    if (!active) return c.json({ error: 'no workflow is being recorded' }, 409)
+    const recorder = active.recorder
+    if (!recorder) return c.json({ error: 'workflow recording is still starting' }, 409)
+    const stopping = stopWorkflowRecording(active, recorder)
+    try {
+      const trace = await stopping
+      if (active.cancelled) return c.json({ error: 'workflow recording was cancelled' }, 409)
+      active.draft ??= { id: randomUUID(), trace }
+      workflowDrafts.set(botId, active.draft)
+      releaseWorkflowRecording(botId, active)
+      return c.json(active.draft)
+    } catch (error) {
+      active.stopping = null
+      releaseWorkflowRecording(botId, active)
+      return c.json({ error: error instanceof Error ? error.message : 'could not stop workflow recording' }, 500)
+    }
+  })
+
+  app.delete('/api/bots/:botId/workflows/recording', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const active = workflowRecordings.get(botId)
+    if (!active) return c.json({ error: 'no workflow is being recorded' }, 409)
+    active.cancelled = true
+    if (active.recorder) {
+      const stopping = stopWorkflowRecording(active, active.recorder)
+      await stopping.catch(() => {})
+    }
+    if (active.draft && workflowDrafts.get(botId) === active.draft) workflowDrafts.delete(botId)
+    releaseWorkflowRecording(botId, active)
+    return c.body(null, 204)
+  })
+
+  app.post('/api/bots/:botId/workflows', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const body = (await c.req.json().catch(() => null)) as { draftId?: unknown; trace?: unknown } | null
+    if (typeof body?.draftId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.draftId)) {
+      return c.json({ error: 'a workflow draft id is required' }, 400)
+    }
+    const draftId = body.draftId.toLowerCase()
+    const pending = workflowDrafts.get(botId)
+    if (!pending || pending.id !== draftId) {
+      const existing = readWorkflowTrace(db, botId, draftId)
+      return existing ? c.json({ id: draftId, trace: existing }) : c.json({ error: 'unknown workflow draft' }, 409)
+    }
+    try {
+      const saved = saveWorkflowTrace(db, botId, body.trace, pending.id)
+      if (workflowDrafts.get(botId) === pending) workflowDrafts.delete(botId)
+      return c.json(saved, 201)
+    } catch (error) {
+      const status = error instanceof TypeError ? 400 : 500
+      return c.json({ error: error instanceof Error ? error.message : 'could not save workflow trace' }, status)
+    }
+  })
+
+  app.delete('/api/bots/:botId/workflows/drafts/:draftId', (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    const draft = workflowDrafts.get(botId)
+    if (!draft || draft.id !== c.req.param('draftId')) return c.json({ error: 'unknown workflow draft' }, 404)
+    workflowDrafts.delete(botId)
+    return c.body(null, 204)
+  })
+
+  app.get('/api/bots/:botId/workflows', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    try {
+      return c.json(listWorkflowTraces(db, botId))
+    } catch {
+      return c.json({ error: 'could not read workflow traces' }, 500)
+    }
+  })
+
+  app.get('/api/bots/:botId/workflows/:workflowId', async (c) => {
+    const botId = c.req.param('botId')
+    if (!botById(botId)) return c.json({ error: 'unknown bot' }, 404)
+    try {
+      const trace = readWorkflowTrace(db, botId, c.req.param('workflowId'))
+      return trace ? c.json(trace) : c.json({ error: 'unknown workflow' }, 404)
+    } catch {
+      return c.json({ error: 'could not read workflow trace' }, 400)
     }
   })
 
@@ -862,6 +1060,6 @@ export function createApp(deps: AppDeps): GatewayApp {
     hub,
     hello: () => ({ type: 'hello', statuses: presenceSnapshot() }),
     runRoutine,
-    isBusy: (botId) => turns.isBusy(botId),
+    isBusy: (botId) => turns.isBusy(botId) || workflowRecordings.has(botId),
   }
 }
