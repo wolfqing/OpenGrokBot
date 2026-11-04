@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import nodePath, { dirname, join, relative, sep } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createBrowserSession, pageOperations, type BrowserLike, type ContextLike } from './browser-page.js'
 import type { BotComputer, ShellResult } from './computer.js'
@@ -35,17 +35,27 @@ export type LocalComputerOptions = {
 }
 
 /**
+ * Windows 上这些名字指向设备而不是文件（CON 是控制台，读它会一直等输入；NUL、COM1……），
+ * 在哪个目录里、带不带扩展名都一样。名字末尾的点和空格 Windows 会忽略，比较前先去掉。
+ */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i
+
+/**
  * 把 bot 给的路径落到 workspace 里：相对路径按 workspace 解析，/workspace/... 换成真实目录，
  * 其它绝对路径一律不认。只看字符串；符号链接逃逸由 confined() 再查一遍。
+ * Windows 上另外不认设备名和带冒号的名字（冒号会写进文件的备用数据流）。path 参数让测试能在别的系统上按 Windows 的规则跑。
  */
-export function workspacePath(workspaceDir: string, given: string): string | null {
-  const root = resolve(workspaceDir)
+export function workspacePath(workspaceDir: string, given: string, path: typeof nodePath = nodePath): string | null {
+  const root = path.resolve(workspaceDir)
   let p = given.trim()
   if (p === VIRTUAL_ROOT || p.startsWith(`${VIRTUAL_ROOT}/`)) p = p.slice(VIRTUAL_ROOT.length).replace(/^\/+/, '') || '.'
-  else if (isAbsolute(p)) return null
-  const full = resolve(root, p)
-  const rel = relative(root, full)
-  if (rel.startsWith('..') || isAbsolute(rel)) return null
+  else if (path.isAbsolute(p)) return null
+  const full = path.resolve(root, p)
+  const rel = path.relative(root, full)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+  if (path.sep === '\\' && rel && rel.split('\\').some((name) => name.includes(':') || WINDOWS_DEVICE.test(name.replace(/[. ]+$/, '')))) {
+    return null
+  }
   return full
 }
 

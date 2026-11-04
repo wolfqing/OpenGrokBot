@@ -1,0 +1,19 @@
+# AppArmor profile that lets bubblewrap create the user namespace it sandboxes commands in.
+#
+# Ubuntu 23.10 and later stop unprivileged programs from creating user namespaces unless an AppArmor
+# profile allows it (kernel.apparmor_restrict_unprivileged_userns = 1), so bwrap fails and OpenGrokBot's
+# switch for commands on a local computer refuses to turn on. This profile allows exactly that for
+# /usr/bin/bwrap and nothing else; the rest of the system keeps the restriction.
+#
+#   sudo cp deploy/linux/bwrap.apparmor /etc/apparmor.d/bwrap
+#   sudo apparmor_parser -r /etc/apparmor.d/bwrap
+#
+# CI applies this same file before the local computer smoke test on Ubuntu.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+
+  include if exists <local/bwrap>
+}

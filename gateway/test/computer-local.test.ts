@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix, win32 } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLocalBackend } from '../src/backend.js'
 import type { BrowserLike } from '../src/browser-page.js'
@@ -31,15 +31,54 @@ function fakeBrowser() {
 }
 
 describe('workspacePath', () => {
+  // 这组用 POSIX 的规则，在哪个系统上跑结果都一样；Windows 的规则在下一组
+  const ws = (given: string) => workspacePath('/data/workspaces/bob', given, posix)
+
   it('maps relative paths and /workspace/... into the folder, and refuses everything else', () => {
-    expect(workspacePath('/data/workspaces/bob', 'notes.md')).toBe('/data/workspaces/bob/notes.md')
-    expect(workspacePath('/data/workspaces/bob', '/workspace/out/report.md')).toBe('/data/workspaces/bob/out/report.md')
-    expect(workspacePath('/data/workspaces/bob', '/workspace')).toBe('/data/workspaces/bob')
-    expect(workspacePath('/data/workspaces/bob', '')).toBe('/data/workspaces/bob')
-    expect(workspacePath('/data/workspaces/bob', '../alice/notes.md')).toBeNull()
-    expect(workspacePath('/data/workspaces/bob', '/workspace/../alice')).toBeNull()
-    expect(workspacePath('/data/workspaces/bob', '/etc/passwd')).toBeNull()
-    expect(workspacePath('/data/workspaces/bob', '/workspaces/bob/x')).toBeNull()
+    expect(ws('notes.md')).toBe('/data/workspaces/bob/notes.md')
+    expect(ws('/workspace/out/report.md')).toBe('/data/workspaces/bob/out/report.md')
+    expect(ws('/workspace')).toBe('/data/workspaces/bob')
+    expect(ws('')).toBe('/data/workspaces/bob')
+    expect(ws('../alice/notes.md')).toBeNull()
+    expect(ws('/workspace/../alice')).toBeNull()
+    expect(ws('/etc/passwd')).toBeNull()
+    expect(ws('/workspaces/bob/x')).toBeNull()
+  })
+
+  it('keeps names like CON and colons legal outside Windows', () => {
+    expect(ws('con.txt')).toBe('/data/workspaces/bob/con.txt')
+    expect(ws('notes:old.md')).toBe('/data/workspaces/bob/notes:old.md')
+  })
+})
+
+describe('workspacePath on Windows', () => {
+  const ws = (given: string) => workspacePath('C:\\data\\workspaces\\bob', given, win32)
+
+  it('maps relative paths and /workspace/... into the folder', () => {
+    expect(ws('notes.md')).toBe('C:\\data\\workspaces\\bob\\notes.md')
+    expect(ws('out\\report.md')).toBe('C:\\data\\workspaces\\bob\\out\\report.md')
+    expect(ws('/workspace/out/report.md')).toBe('C:\\data\\workspaces\\bob\\out\\report.md')
+    expect(ws('/workspace')).toBe('C:\\data\\workspaces\\bob')
+  })
+
+  it('refuses other drives, network shares, absolute paths and climbing out', () => {
+    for (const escape of [
+      'C:\\Windows\\win.ini', 'D:\\secret.txt', 'D:secret.txt', '\\\\server\\share\\x', '//server/share/x',
+      '\\Users\\ana\\.ssh\\id_rsa', '..\\alice\\notes.md', 'out\\..\\..\\alice', '/etc/passwd',
+    ]) expect(ws(escape), escape).toBeNull()
+  })
+
+  it('refuses device names, whatever the case, extension or trailing dots', () => {
+    for (const device of ['CON', 'con', 'nul', 'NUL.txt', 'aux.md', 'com1', 'LPT9.log', 'con.', 'CON ', 'out\\prn', 'conin$']) {
+      expect(ws(device), device).toBeNull()
+    }
+    expect(ws('console.md')).toBe('C:\\data\\workspaces\\bob\\console.md')
+    expect(ws('com10.txt')).toBe('C:\\data\\workspaces\\bob\\com10.txt')
+  })
+
+  it('refuses colons, which would write into an alternate data stream', () => {
+    expect(ws('notes.md:hidden')).toBeNull()
+    expect(ws('notes.md::$DATA')).toBeNull()
   })
 })
 

@@ -38,7 +38,34 @@ sudo cp deploy/systemd/opengrokbot.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now opengrokbot
 ```
 
-Both templates set `OPENGROKBOT_QUIET_TOKEN=1`, so the token never lands in a log file. Sign in with the token
+On Ubuntu 23.10 and later, bubblewrap also needs the AppArmor profile in
+[`deploy/linux/bwrap.apparmor`](../deploy/linux/bwrap.apparmor): those releases stop unprivileged programs from
+creating the user namespace it sandboxes commands in, and the switch for commands refuses to turn on until the
+sandbox passes its self-check. The profile allows that for `/usr/bin/bwrap` alone:
+
+```bash
+sudo cp deploy/linux/bwrap.apparmor /etc/apparmor.d/bwrap
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+A local teammate's sign-in window needs a desktop session. On a server with no display, give teammates Docker
+computers, or run the gateway in a desktop session (a VNC or remote-desktop login) if you want local ones.
+
+**Windows.** Build once (`pnpm install; pnpm build`), keep the key in a user environment variable, and register a
+Task Scheduler task that starts the gateway when you sign in:
+
+```powershell
+setx OPENGROKBOT_API_KEY "sk-…"
+powershell -ExecutionPolicy Bypass -File deploy\windows\install-task.ps1
+Start-ScheduledTask -TaskName 'OpenGrokBot gateway'
+```
+
+The task runs [`deploy/windows/start-gateway.ps1`](../deploy/windows/start-gateway.ps1) as you, in your session —
+which is what lets a local teammate's sign-in window appear on your desktop — and restarts it if it stops. The log
+is `%LOCALAPPDATA%\OpenGrokBot\gateway.log`. Remove it with `install-task.ps1 -Uninstall`. For Docker computers,
+let Docker Desktop start when you sign in.
+
+All the templates set `OPENGROKBOT_QUIET_TOKEN=1`, so the token never lands in a log file. Sign in with the token
 in `gateway/data/auth-token`: `http://localhost:4747/auth?token=<that token>`.
 
 ## Reaching it from another machine

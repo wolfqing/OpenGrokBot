@@ -1,6 +1,6 @@
 # Teammates' computers without Docker
 
-> **Status: the local computer has shipped for macOS and Linux** (step 1 below). The desktop app, the first-run
+> **Status: the local computer has shipped for macOS and Linux, and for Windows without commands** (step 1 below). The desktop app, the first-run
 > wizard and the Apple container backend are still plans. The two questions this page once left open were settled
 > on 2026-10-30 (see [Decided](#decided)).
 
@@ -15,7 +15,7 @@ and picks one per machine:
 
 | Backend | What you install | Isolation | Runs on |
 |---|---|---|---|
-| **Local** (shipped; the default when Docker is not running) | Nothing: an existing Chrome/Edge/Chromium, or a Chrome for Testing downloaded on first use | Browser: a separate profile per teammate. Commands: off by default; when on, an OS sandbox that confines them to the teammate's own folder | macOS (Intel and Apple silicon) and Linux; Windows later |
+| **Local** (shipped; the default when Docker is not running) | Nothing: an existing Chrome/Edge/Chromium, or a Chrome for Testing downloaded on first use | Browser: a separate profile per teammate. Commands: off by default; when on, an OS sandbox that confines them to the teammate's own folder | macOS (Intel and Apple silicon) and Linux; Windows with the browser and folder, no commands |
 | **Apple container** | Apple's signed `container` package (one admin password) | A lightweight VM per teammate | macOS 26 on Apple silicon |
 | **Docker** (today) | Docker Desktop, or Docker on a server | A container per teammate | Anywhere Docker runs |
 
@@ -65,8 +65,13 @@ The interface gets a Chinese translation. The desktop technology is not decided 
 
 - **Shell commands are off by default in local mode.** It is the safest and simplest default, and most teammates
   mostly need the browser. Turning them on is a per-teammate switch, and they still run inside the OS sandbox.
-- **The first version does not cover Windows.** It has no sandbox as mature as Seatbelt or bubblewrap, and
-  half-supporting it would make the default experience worse. Windows comes after macOS and Linux are solid;
-  until then Docker remains the way to run teammates there.
+- **The first version did not cover Windows.** It has no sandbox as mature as Seatbelt or bubblewrap, and
+  half-supporting it would have made the default experience worse.
+- **Windows gets the browser and the folder, not commands** (decided 2026-11-03, once macOS and Linux were proven in
+  CI). The browser and file parts need no OS sandbox: Chromium sandboxes itself, and file access is the gateway's
+  own check, which on Windows also refuses other drives, network shares, device names such as `CON`, and alternate
+  data streams. Commands stay off because nothing on Windows confines them as well as Seatbelt or bubblewrap; a
+  teammate that needs a shell there gets a Docker computer. CI runs the local-computer smoke test on Windows,
+  macOS and Linux on every change.
 
 Ideas and objections are welcome in the issues.
