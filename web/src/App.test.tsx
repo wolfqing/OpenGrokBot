@@ -91,6 +91,20 @@ describe('App', () => {
     expect(screen.getByText(/Scout …/)).toBeInTheDocument()
   })
 
+  it('ignores live events it does not know (a newer gateway), and keeps showing messages', async () => {
+    mockGateway()
+    render(<App />)
+    const socket = await ready()
+    await act(async () => {
+      socket.emit({ type: 'setup.browser', browser: { state: 'downloading', item: 'chromium', percent: 10, totalMiB: 185.8 } })
+      socket.emit({
+        type: 'message', threadId: 'dm:researcher',
+        message: { id: 7, thread_id: 'dm:researcher', sender: 'researcher', kind: 'text', content: 'still here', payload: null, created_at: 7 },
+      })
+    })
+    await waitFor(() => expect(document.querySelector('.thread-scroll')!.textContent).toContain('still here'))
+  })
+
   it('keeps the newest line as the sidebar preview when an older card updates in place', async () => {
     mockGateway()
     render(<App />)

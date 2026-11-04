@@ -84,9 +84,17 @@ export type SpawnLike = (
  * 下载 Chrome for Testing（约 150 MB）到 browsers 目录。只装完整版、不装 headless shell：
  * 接管登录时要以有窗口的方式打开同一个浏览器。镜像站用 OPENGROKBOT_BROWSER_MIRROR（给 playwright 的下载主机）。
  */
+/** item：在下哪一样（先 chromium、再 ffmpeg，每样都从 0% 走起） */
+export type DownloadProgress = { item: string | null; percent: number; totalMiB: number }
+
+/** 安装器没有终端时每 10% 打一行：`|■■■■    |  10% of 185.8 MiB`；每样开头一行 `Downloading … (playwright chromium v1248) from …` */
+const PROGRESS = /(\d{1,3})% of ([\d.]+) MiB/
+const ITEM = /^Downloading .+ \(playwright ([\w-]+) v\d+\)/
+
 export async function installBrowser(dir: string, opts: {
   mirror?: string
   log?: (line: string) => void
+  onProgress?: (p: DownloadProgress) => void
   spawnImpl?: SpawnLike
   cliPath?: string
 } & FsDeps = {}): Promise<string> {
@@ -98,9 +106,20 @@ export async function installBrowser(dir: string, opts: {
   const spawnImpl = opts.spawnImpl ?? (spawn as unknown as SpawnLike)
   log(`downloading a browser for local teammates into ${dir}${opts.mirror ? ` via ${opts.mirror}` : ''} …`)
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawnImpl(process.execPath, [cli, 'install', 'chromium', '--no-shell', '--no-progress'], { env, stdio: 'pipe' })
+    const child = spawnImpl(process.execPath, [cli, 'install', 'chromium', '--no-shell'], { env, stdio: 'pipe' })
     let tail = ''
-    const keep = (chunk: unknown) => { tail = (tail + String(chunk)).slice(-2000) }
+    let partial = ''
+    let item: string | null = null
+    const keep = (chunk: unknown) => {
+      tail = (tail + String(chunk)).slice(-2000)
+      const lines = (partial + String(chunk)).split(/[\r\n]/)
+      partial = lines.pop() ?? ''
+      for (const line of lines) {
+        item = ITEM.exec(line)?.[1] ?? item
+        const m = PROGRESS.exec(line)
+        if (m) opts.onProgress?.({ item, percent: Number(m[1]), totalMiB: Number(m[2]) })
+      }
+    }
     child.stdout?.on('data', keep)
     child.stderr?.on('data', keep)
     child.on('error', (err) => reject(err instanceof Error ? err : new Error(String(err))))
@@ -114,4 +133,90 @@ export async function installBrowser(dir: string, opts: {
   if (!found) throw new Error(`the browser download finished but no executable turned up under ${dir}`)
   log(`browser ready: ${found}`)
   return found
+}
+
+export type BrowserStatus =
+  | { state: 'found'; executablePath: string; source: BrowserFound['source'] }
+  | { state: 'missing' }
+  | { state: 'downloading'; item: string | null; percent: number | null; totalMiB: number | null }
+  | { state: 'failed'; error: string }
+
+export type BrowserProvisioner = {
+  status(): BrowserStatus
+  /** 找到就用，找不到就下载；同时来的请求共用一次下载 */
+  ensure(): Promise<string>
+  onChange(listener: (s: BrowserStatus) => void): () => void
+}
+
+/**
+ * 本机模式的浏览器只有一个来源：第一次要电脑时、向导里点「先下载」时，都走这里，不会两头同时往一个目录里下。
+ * 镜像每次下载前现读（向导里刚勾上的镜像不用重启就能用）。
+ */
+export function createBrowserProvisioner(opts: {
+  dataDir: string
+  /** OPENGROKBOT_BROWSER；空 = 自己找 */
+  browser: string
+  mirror: () => string
+  log?: (line: string) => void
+  find?: () => BrowserFound | null
+  install?: typeof installBrowser
+}): BrowserProvisioner {
+  const log = opts.log ?? (() => {})
+  const find = opts.find ?? (() => findBrowser({ dataDir: opts.dataDir, env: { OPENGROKBOT_BROWSER: opts.browser } }))
+  const install = opts.install ?? installBrowser
+  const listeners = new Set<(s: BrowserStatus) => void>()
+  let downloading: { item: string | null; percent: number | null; totalMiB: number | null } | null = null
+  let lastError = ''
+  let inflight: Promise<string> | null = null
+
+  const status = (): BrowserStatus => {
+    if (downloading) return { state: 'downloading', ...downloading }
+    let found: BrowserFound | null
+    try {
+      found = find()
+    } catch (err) {
+      return { state: 'failed', error: err instanceof Error ? err.message : String(err) }
+    }
+    if (found) return { state: 'found', ...found }
+    return lastError ? { state: 'failed', error: lastError } : { state: 'missing' }
+  }
+  const changed = () => {
+    const s = status()
+    for (const l of listeners) l(s)
+  }
+
+  async function provision(): Promise<string> {
+    const found = find() // 操作者指定的浏览器不存在时这里直接抛，不去下载
+    if (found) {
+      log(`local teammates use the ${found.source} browser at ${found.executablePath}`)
+      return found.executablePath
+    }
+    log('no Chromium-based browser on this machine')
+    downloading = { item: null, percent: null, totalMiB: null }
+    lastError = ''
+    changed()
+    try {
+      const mirror = opts.mirror()
+      return await install(browsersDir(opts.dataDir), {
+        ...(mirror ? { mirror } : {}),
+        log,
+        onProgress: (p) => { downloading = p; changed() },
+      })
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
+      throw err
+    } finally {
+      downloading = null
+      changed()
+    }
+  }
+
+  return {
+    status,
+    ensure: () => (inflight ??= provision().finally(() => { inflight = null })),
+    onChange(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
 }

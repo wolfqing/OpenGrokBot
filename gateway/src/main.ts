@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws'
 import { parseA2AAllow } from './a2a.js'
 import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
+import { createBrowserProvisioner } from './browsers.js'
 import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
 import { botShellEnabled, openDb } from './db.js'
@@ -29,7 +30,7 @@ const db = openDb(startup.dbPath, {
   onMigrate: (from, to) => console.log(`[gateway] database schema v${from} → v${to}`),
 })
 // 界面上存的设置（库里）和 key 文件（<data>/llm-key）叠到启动配置上；设了环境变量的项仍以环境变量为准。
-// 模型和看图每次现读（改了下一次调用就生效）；电脑种类、浏览器镜像只在这里读一次，改了要重启
+// 模型和看图每次现读（改了下一次调用就生效），浏览器镜像下载前现读；电脑种类只在这里读一次，改了要重启
 const live = () => currentConfig(startup, process.env, db)
 const config = live()
 // 预置样板来自版本库，用户新雇的同事住在数据目录
@@ -44,6 +45,13 @@ const llm = createLiveLLM(live)
 // 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
 const sandbox = detectSandbox()
+// 本机模式的浏览器：第一次要电脑时和向导里「先下载」共用这一个，不会两头同时下
+const browser = createBrowserProvisioner({
+  dataDir: config.dataDir,
+  browser: config.browser,
+  mirror: () => live().browserMirror,
+  log: (line) => console.log(`[gateway] ${line}`),
+})
 const { backend, reason: backendReason } = await chooseBackend(config.computers, {
   docker: () => createDockerBackend(docker, {
     dataDir: config.dataDir,
@@ -51,8 +59,7 @@ const { backend, reason: backendReason } = await chooseBackend(config.computers,
   }),
   local: () => createLocalBackend({
     dataDir: config.dataDir,
-    browser: config.browser,
-    browserMirror: config.browserMirror,
+    resolveBrowser: () => browser.ensure(),
     log: (line) => console.log(`[gateway] ${line}`),
     // 命令行按同事开关（存数据库）；开了也只在系统沙箱里跑，没沙箱就没有命令行
     shell: { enabled: (botId) => botShellEnabled(db, botId), sandbox },
@@ -93,6 +100,7 @@ const gateway = createApp({
   maxSteps: config.maxSteps,
   turnMinutes: config.turnMinutes,
   settings: { env: process.env, startedWith: config },
+  setup: { browser, dockerReachable: () => dockerReachable(docker, 1_500) },
 })
 const { app, hub } = gateway
 

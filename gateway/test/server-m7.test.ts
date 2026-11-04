@@ -2,13 +2,14 @@ import { existsSync, mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import type { BrowserProvisioner, BrowserStatus } from '../src/browsers.js'
 import { createFakeComputer } from '../src/computer.js'
 import { loadConfig } from '../src/config.js'
 import { ensureDmThread, openDb, upsertBot } from '../src/db.js'
 import type { AssistantTurn, ChatMsg, LLM } from '../src/llm.js'
 import { createPool } from '../src/pool.js'
 import { createApp } from '../src/server.js'
-import { SETTING_DEFAULTS, type Settings } from '../src/settings.js'
+import { SETTING_DEFAULTS, saveSettings, type Settings } from '../src/settings.js'
 
 const bot = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
 const toolTurn = (name: string, args: unknown, id = 'c1'): AssistantTurn =>
@@ -193,5 +194,76 @@ describe('/api/settings/providers', () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'nope' }),
     })
     expect(bad.status).toBe(400)
+  })
+})
+
+describe('/api/setup', () => {
+  function setup(opts: { status?: BrowserStatus; kind?: 'local' | 'docker'; timeZone?: string; docker?: boolean } = {}) {
+    const db = openDb(':memory:')
+    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-setup-'))
+    let status: BrowserStatus = opts.status ?? { state: 'missing' }
+    const listeners: ((s: BrowserStatus) => void)[] = []
+    let finish!: () => void
+    const ensure = vi.fn(() => {
+      status = { state: 'downloading', item: null, percent: null, totalMiB: null }
+      listeners.forEach((l) => l(status))
+      return new Promise<string>((r) => { finish = () => { status = { state: 'found', executablePath: '/x/chrome', source: 'downloaded' }; listeners.forEach((l) => l(status)); r('/x/chrome') } })
+    })
+    const browser: BrowserProvisioner = { status: () => status, ensure, onChange: (l) => { listeners.push(l); return () => {} } }
+    const startedWith = { ...loadConfig({ OPENGROKBOT_DATA: dataDir }), timeZone: opts.timeZone ?? 'Europe/Berlin' }
+    const gateway = createApp({
+      db, llm: { chat: async () => textTurn }, dataDir,
+      computers: { kind: opts.kind ?? 'local', sandbox: { available: false, why: 'no sandbox here' } },
+      settings: { env: {}, startedWith },
+      setup: { browser, dockerReachable: async () => opts.docker ?? false },
+    })
+    const sent: unknown[] = []
+    gateway.hub.add({ send: (d) => sent.push(JSON.parse(d)) })
+    return { db, dataDir, gateway, ensure, sent, finish: () => finish() }
+  }
+  const get = async (g: ReturnType<typeof setup>) => (await g.gateway.app.request('/api/setup')).json() as Promise<Record<string, any>>
+
+  it('says a fresh install needs the wizard, and what the computers have to work with', async () => {
+    const s = setup({ docker: true })
+    expect(await get(s)).toEqual({
+      needsSetup: true,
+      demo: false,
+      computers: {
+        kind: 'local', choice: 'auto',
+        docker: { reachable: true },
+        browser: { state: 'missing' },
+        download: { approxMB: 190, onDiskMB: 370 },
+        browserMirror: { current: '', suggested: null },
+        sandbox: { available: false, why: 'no sandbox here' },
+      },
+    })
+  })
+
+  it('stops asking once the demo is picked', async () => {
+    const s = setup()
+    saveSettings(s.db, { model: 'stub' })
+    expect(await get(s)).toMatchObject({ needsSetup: false, demo: true })
+  })
+
+  it('suggests the npmmirror mirror in a mainland China time zone, and says whose it is', async () => {
+    const s = setup({ timeZone: 'Asia/Shanghai' })
+    expect((await get(s)).computers.browserMirror).toEqual({
+      current: '', suggested: { url: 'https://cdn.npmmirror.com/binaries/playwright', owner: 'npmmirror.com' },
+    })
+  })
+
+  it('downloads the browser ahead of time, once, and pushes progress to the live connection', async () => {
+    const s = setup()
+    const post = () => s.gateway.app.request('/api/setup/browser', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    const first = await post()
+    expect(first.status).toBe(202)
+    expect(await first.json()).toEqual({ browser: { state: 'downloading', item: null, percent: null, totalMiB: null } })
+    expect(s.ensure).toHaveBeenCalledTimes(1)
+    s.finish()
+    await vi.waitFor(() => expect(s.sent).toContainEqual({ type: 'setup.browser', browser: { state: 'found', executablePath: '/x/chrome', source: 'downloaded' } }))
+    expect(s.sent[0]).toEqual({ type: 'setup.browser', browser: { state: 'downloading', item: null, percent: null, totalMiB: null } })
+    const again = await post()
+    expect(again.status).toBe(200)
+    expect(s.ensure).toHaveBeenCalledTimes(1) // 已经有了就不再下
   })
 })

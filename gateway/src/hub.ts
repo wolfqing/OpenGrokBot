@@ -1,3 +1,4 @@
+import type { BrowserStatus } from './browsers.js'
 import type { MessageRow } from './db.js'
 
 /**
@@ -10,6 +11,8 @@ export type GatewayEvent =
   | { type: 'message'; threadId: string; message: MessageRow }
   | { type: 'status'; botId: string; state: Presence }
   | { type: 'hello'; statuses: Record<string, Presence> }
+  /** 本机模式的浏览器状态（下载进度）；向导里用 */
+  | { type: 'setup.browser'; browser: BrowserStatus }
 
 type WsLike = { send(data: string): void }
 

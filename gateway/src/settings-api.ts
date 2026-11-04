@@ -16,8 +16,8 @@ export type SettingsDeps = {
   fetchImpl?: typeof fetch
 }
 
-/** 只在启动时读一次的设置，改了要重启网关 */
-const RESTART_KEYS = ['computers', 'browserMirror'] as const
+/** 只在启动时读一次的设置，改了要重启网关（浏览器镜像下载前现读，不在其列） */
+const RESTART_KEYS = ['computers'] as const
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 

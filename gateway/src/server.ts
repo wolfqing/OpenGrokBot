@@ -29,6 +29,7 @@ import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
 import { mountSettings, type SettingsDeps } from './settings-api.js'
+import { mountSetup, type SetupDeps } from './setup-api.js'
 import { createTurnQueue } from './turns.js'
 
 /** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
@@ -63,6 +64,8 @@ export type AppDeps = {
   turnMinutes?: number
   /** 设置页的路由（读写设置、测试连接）；不传就不挂 */
   settings?: SettingsDeps
+  /** 首次启动向导要的（浏览器、Docker 情况）；和 settings 一起传才挂 /api/setup */
+  setup?: SetupDeps
 }
 
 export type GatewayApp = {
@@ -193,6 +196,9 @@ export function createApp(deps: AppDeps): GatewayApp {
   }
   app.get('/api/session', (c) => c.json({ ok: true }))
   if (deps.settings) mountSettings(app, { ...deps.settings, db })
+  if (deps.settings && deps.setup) {
+    mountSetup(app, { ...deps.settings, ...deps.setup, db, hub, ...(deps.computers ? { computers: deps.computers } : {}) })
+  }
 
   const botById = (id: string) => db.prepare('SELECT * FROM bots WHERE id = ?').get(id) as BotRow | undefined
   const computerKind: ComputerKind = deps.computers?.kind ?? 'docker'

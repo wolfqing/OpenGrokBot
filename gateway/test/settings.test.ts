@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { openDb } from '../src/db.js'
 import {
-  SETTING_DEFAULTS, applySettings, currentConfig, readApiKey, readSavedSettings, resolveApiKey, resolveSettings, saveApiKey, saveSettings,
+  SETTING_DEFAULTS, applySettings, currentConfig, needsSetup, readApiKey, readSavedSettings, resolveApiKey, resolveSettings, saveApiKey, saveSettings,
 } from '../src/settings.js'
 
 describe('settings', () => {
@@ -163,5 +163,32 @@ describe('the chosen provider', () => {
     expect(currentConfig(startup, {}, db).extraBody).toEqual({})
     saveSettings(db, { provider: 'openai', baseURL: 'https://api.openai.com/v1', model: 'gpt-6-luna' })
     expect(currentConfig(startup, {}, db).extraBody).toEqual({ reasoning_effort: 'none' })
+  })
+})
+
+describe('needsSetup', () => {
+  let dir: string
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ogb-setup-')) })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('is true on a fresh install, and false once there is a key, a keyless provider or the demo', () => {
+    const db = openDb(':memory:')
+    expect(needsSetup({}, db, dir)).toBe(true)
+    saveSettings(db, { provider: 'deepseek' }) // 选了服务商、还没粘 key
+    expect(needsSetup({}, db, dir)).toBe(true)
+    saveApiKey(dir, 'sk-abc')
+    expect(needsSetup({}, db, dir)).toBe(false)
+    saveApiKey(dir, '')
+    saveSettings(db, { provider: 'ollama' })
+    expect(needsSetup({}, db, dir)).toBe(false)
+    saveSettings(db, { provider: null, model: 'stub' })
+    expect(needsSetup({}, db, dir)).toBe(false)
+  })
+
+  it('stays out of the way of anyone who configured the model with env vars', () => {
+    const db = openDb(':memory:')
+    for (const env of [{ OPENGROKBOT_API_KEY: 'sk-x' }, { OPENGROKBOT_MODEL: 'stub' }, { OPENGROKBOT_API_BASE: 'http://localhost:11434/v1' }]) {
+      expect(needsSetup(env, db, dir)).toBe(false)
+    }
   })
 })

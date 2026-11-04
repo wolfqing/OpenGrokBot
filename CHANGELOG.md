@@ -29,6 +29,14 @@ still change behaviour.
   A preset can add request fields the provider needs: DeepSeek and Qwen get thinking turned off; OpenAI's GPT-6
   models only call tools on Chat Completions with `reasoning_effort: "none"`. The connection test sends the same
   fields, and treats a 400 that names the key (xAI's answer to a wrong key) as `bad_key`.
+- `GET /api/setup` tells the coming first-run wizard whether it is needed and what the computers have to work
+  with. It is not needed once there is a key, a provider that needs none, the demo model, or any model env var,
+  so existing setups never see it. It reports Docker, the sandbox, the browser found or missing, and how big the
+  download is (about 190 MB, 370 MB on disk). In a mainland China time zone it suggests the npmmirror.com
+  mirror. `POST /api/setup/browser` downloads the browser ahead of time, and `/ws` pushes `setup.browser`
+  progress (which item, percent, size) as it goes.
+- The first local computer and the wizard share one browser download instead of possibly running two into the
+  same folder. The browser mirror is read when the download starts, so changing it no longer needs a restart.
 
 ### Security
 

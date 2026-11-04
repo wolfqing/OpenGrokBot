@@ -195,3 +195,12 @@ export type GatewayEvent =
   | { type: 'message'; threadId: string; message: Message }
   | { type: 'status'; botId: string; state: BotStatus }
   | { type: 'hello'; statuses: Record<string, BotStatus> }
+  /** 本机模式的浏览器：找到了、缺着、下载中（进度）、下载失败。向导里用 */
+  | { type: 'setup.browser'; browser: BrowserStatus }
+
+export type BrowserStatus =
+  | { state: 'found'; executablePath: string; source: 'env' | 'system' | 'downloaded' }
+  | { state: 'missing' }
+  /** item：在下哪一样（chromium、ffmpeg……），每样都从 0% 走起 */
+  | { state: 'downloading'; item: string | null; percent: number | null; totalMiB: number | null }
+  | { state: 'failed'; error: string }

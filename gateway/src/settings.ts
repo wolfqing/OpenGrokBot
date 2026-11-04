@@ -221,3 +221,16 @@ export function resolveApiKey(env: Record<string, string | undefined>, dataDir: 
   const key = readApiKey(dataDir)
   return key ? { key, source: 'file' } : { key: '', source: 'none' }
 }
+
+/** 配了这些环境变量的人是用环境变量管模型的（源码版老用户），向导不出来打扰 */
+const MODEL_ENV = ['OPENGROKBOT_API_KEY', 'OPENGROKBOT_API_BASE', 'OPENGROKBOT_MODEL']
+
+/** 要不要出首次启动向导：没 key、不是不要 key 的服务商、也没选演示模式 */
+export function needsSetup(env: Record<string, string | undefined>, db: Db, dataDir: string): boolean {
+  if (MODEL_ENV.some((name) => envSet(env, name))) return false
+  const { values } = resolveSettings(env, readSavedSettings(db))
+  if (values.model === 'stub') return false
+  if (resolveApiKey(env, dataDir).source !== 'none') return false
+  const provider = providerById(values.provider)
+  return !(provider && !provider.needsKey)
+}

@@ -142,6 +142,7 @@ export default function App() {
         setStatuses((s) => applyStatus(s, e.botId, e.state, watchingRef.current.includes(e.botId), posted))
         return
       }
+      if (e.type !== 'message') return // 向导之类的事件不归这里管；更新的网关发来不认识的也一样
       if (e.message.sender !== 'user' && e.message.kind !== 'activity') postedRef.current.add(e.message.sender)
       // 就地更新的旧消息（activity 卡片收尾、审批 chip 翻转）不该顶掉更新的那条预览
       setConversations((cs) => cs.map((c) => (
