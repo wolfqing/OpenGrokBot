@@ -114,3 +114,25 @@ describe('checkConnection', () => {
     expect(calls).toHaveLength(0)
   })
 })
+
+describe('checkConnection with provider fields', () => {
+  it('sends the same provider-specific fields the gateway will send', async () => {
+    const { fetchImpl, calls } = fakeProvider({ models: [modelsOk], chat: [chatOk] })
+    await checkConnection({ ...target, extraBody: { thinking: { type: 'disabled' }, model: 'nope' } }, { fetchImpl })
+    const chat = calls.find((c) => c.url.endsWith('/chat/completions'))!
+    expect(chat.body).toMatchObject({ thinking: { type: 'disabled' }, model: 'chat-1' })
+  })
+})
+
+describe('providers that answer a bad key with 400', () => {
+  // xAI 实测（2026-11-03）：/models 和对话都回 400 + 「Incorrect API key provided」
+  const xaiBadKey = { status: 400, body: { code: 'invalid-argument', error: 'Incorrect API key provided. You can obtain an API key from https://console.x.ai.' } }
+
+  it('still calls it a bad key, and stops before the model call', async () => {
+    const { fetchImpl, calls } = fakeProvider({ models: [xaiBadKey] })
+    expect(await checkConnection(target, { fetchImpl })).toMatchObject({ ok: false, code: 'bad_key', step: 'models', status: 400 })
+    expect(calls).toHaveLength(1)
+    const chat = fakeProvider({ models: [modelsOk], chat: [xaiBadKey] })
+    expect(await checkConnection(target, { fetchImpl: chat.fetchImpl })).toMatchObject({ code: 'bad_key', step: 'chat' })
+  })
+})

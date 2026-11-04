@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import type { Config } from './config.js'
 import type { Db } from './db.js'
 import { checkConnection, listModels } from './llm-check.js'
+import { PROVIDERS, providerById } from './providers.js'
 import {
   checkSettings, currentConfig, lockedKeys, maskKey, parseSetting, readSavedSettings, resolveApiKey, resolveSettings,
   saveApiKey, saveSettings, validApiKey, type SettingError, type SettingKey,
@@ -38,6 +39,7 @@ export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db }): void 
   }
 
   app.get('/api/settings', (c) => c.json(view()))
+  app.get('/api/settings/providers', (c) => c.json(PROVIDERS))
 
   app.put('/api/settings', async (c) => {
     const body = await c.req.json().catch(() => null)
@@ -74,6 +76,13 @@ export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db }): void 
     }
     const baseURL = pick('baseURL')
     const model = pick('model')
+    // 服务商字段跟 key 一样：换了地址又没说是哪家，就不带
+    let extraBody = baseURL === current.baseURL ? current.extraBody : {}
+    if (body.provider !== undefined) {
+      const p = parseSetting('provider', body.provider)
+      if (p === undefined) errors.push({ key: 'provider', code: 'invalid' })
+      else extraBody = providerById(p)?.request ?? {}
+    }
     let apiKey = baseURL === current.baseURL ? current.apiKey : ''
     if (body.apiKey !== undefined) {
       const k = typeof body.apiKey === 'string' ? body.apiKey.trim() : null
@@ -81,7 +90,7 @@ export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db }): void 
       else apiKey = k
     }
     if (errors.length) return c.json({ error: 'invalid_settings', errors }, 400)
-    return c.json(await checkConnection({ baseURL, apiKey, model }, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }))
+    return c.json(await checkConnection({ baseURL, apiKey, model, extraBody }, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }))
   })
 
   app.get('/api/settings/models', async (c) => {

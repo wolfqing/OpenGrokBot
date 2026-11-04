@@ -23,6 +23,12 @@ still change behaviour.
   sorts failures into codes (`bad_key`, `quota`, `rate_limited`, `model_not_found`, `unreachable`, `timeout`,
   `provider_error`). The saved key is only sent when the API base is unchanged, so one provider's key never goes
   to another. `GET /api/settings/models` lists the saved provider's models.
+- Provider presets (`GET /api/settings/providers`) for DeepSeek, Kimi, Qwen (Model Studio, Beijing), GLM, xAI,
+  OpenAI, OpenRouter, a local Ollama and any OpenAI-compatible endpoint: address, where to get a key, a default
+  model that calls tools, whether it takes images. They were checked against each provider's docs on 2026-11-03.
+  A preset can add request fields the provider needs: DeepSeek and Qwen get thinking turned off; OpenAI's GPT-6
+  models only call tools on Chat Completions with `reasoning_effort: "none"`. The connection test sends the same
+  fields, and treats a 400 that names the key (xAI's answer to a wrong key) as `bad_key`.
 
 ### Security
 

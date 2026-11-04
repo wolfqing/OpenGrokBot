@@ -379,3 +379,28 @@ describe('createLiveLLM', () => {
     await expect(llm.chat([{ role: 'user', content: 'hi' }], [])).rejects.toThrow(/llm-key/)
   })
 })
+
+describe('provider-specific request fields', () => {
+  it('adds them to every call, but never lets them replace the model, messages or tools', async () => {
+    let body: Record<string, unknown> = {}
+    const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init!.body))
+      return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }))
+    }) as typeof fetch
+    const config = { ...loadConfig({ OPENGROKBOT_MODEL: 'gpt-6-luna' }), extraBody: { reasoning_effort: 'none', model: 'hijacked', messages: [] } }
+    await createLLM(config, fakeFetch).chat([{ role: 'user', content: 'hi' }], toolDefs)
+    expect(body).toMatchObject({ reasoning_effort: 'none', model: 'gpt-6-luna' })
+    expect(body.messages).toHaveLength(1)
+    expect(body.tools).toHaveLength(1)
+  })
+
+  it('count as a change of client when they change', async () => {
+    let config = { ...loadConfig({}), extraBody: {} as Record<string, unknown> }
+    const make = vi.fn((c: Config) => createLLM(c, (async () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }))) as typeof fetch))
+    const llm = createLiveLLM(() => config, make)
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    config = { ...config, extraBody: { enable_thinking: false } }
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    expect(make).toHaveBeenCalledTimes(2)
+  })
+})

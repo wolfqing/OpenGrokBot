@@ -12,6 +12,8 @@ export type Config = {
   baseURL: string
   apiKey: string
   model: string
+  /** 所选服务商要额外带的请求字段（预设里来，见 providers.ts）；环境变量配的为空 */
+  extraBody: Record<string, unknown>
   /** 默认只听本机回环：局域网里的设备碰不到网关 */
   host: string
   port: number
@@ -64,6 +66,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     baseURL: env.OPENGROKBOT_API_BASE || 'https://api.x.ai/v1',
     apiKey: env.OPENGROKBOT_API_KEY || '',
     model: env.OPENGROKBOT_MODEL || 'grok-4',
+    extraBody: {},
     computers: parseComputerChoice(env.OPENGROKBOT_COMPUTERS),
     browser: (env.OPENGROKBOT_BROWSER || '').trim(),
     browserMirror: (env.OPENGROKBOT_BROWSER_MIRROR || '').trim(),

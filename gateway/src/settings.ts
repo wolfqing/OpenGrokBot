@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { ComputerChoice } from './backend.js'
 import { loadConfig, type Config } from './config.js'
 import type { Db } from './db.js'
+import { providerById } from './providers.js'
 
 /**
  * 操作者在界面上改的设置。存在 settings 表里；同名环境变量设了就以环境变量为准（界面上显示为锁定）。
@@ -59,7 +60,7 @@ const CONTROL = /[\u0000-\u001f\u007f]/
 
 /** 合法就返回规范化后的值，不合法返回 undefined */
 const PARSE: { [K in SettingKey]: (v: unknown) => Settings[K] | undefined } = {
-  provider: (v) => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(v) ? v : undefined,
+  provider: (v) => typeof v === 'string' && providerById(v) ? v : undefined,
   baseURL: (v) => httpUrl(v) ? v.replace(/\/+$/, '') : undefined,
   model: (v) => {
     if (typeof v !== 'string') return undefined
@@ -168,7 +169,8 @@ export function applySettings(config: Config, s: Settings, apiKey: string): Conf
 
 /** 此刻生效的配置：启动配置 + 库里的设置 + key 文件，环境变量照样优先。每次都现读，改了马上看得到。 */
 export function currentConfig(startup: Config, env: Record<string, string | undefined>, db: Db): Config {
-  return applySettings(startup, resolveSettings(env, readSavedSettings(db)).values, resolveApiKey(env, startup.dataDir).key)
+  const { values } = resolveSettings(env, readSavedSettings(db))
+  return { ...applySettings(startup, values, resolveApiKey(env, startup.dataDir).key), extraBody: providerById(values.provider)?.request ?? {} }
 }
 
 const keyPath = (dataDir: string) => join(dataDir, 'llm-key')

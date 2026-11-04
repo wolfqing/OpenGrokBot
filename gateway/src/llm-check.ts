@@ -14,6 +14,8 @@ type Opts = { fetchImpl?: typeof fetch; timeoutMs?: number }
 
 const DEFAULT_TIMEOUT_MS = 15_000
 const QUOTA = /quota|balance|insufficient|credit|billing|余额|欠费|额度/i
+/** 有的服务商（xAI）拿 400 回 key 不对 */
+const BAD_KEY = /api[ _-]?key|unauthori[sz]ed|authenticat|credential/i
 const NO_MODEL = /model.{0,40}(not[ _]?(found|exist)|does not exist|unknown|invalid)|(unknown|invalid|no such) model|模型不存在/i
 
 const endpoint = (baseURL: string, path: string) => `${baseURL.replace(/\/+$/, '')}${path}`
@@ -43,7 +45,9 @@ export async function listModels(target: Target, opts: Opts = {}): Promise<Model
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, opts.fetchImpl ?? fetch)
   if (!('res' in sent)) return sent
   const { res, text } = sent
-  if (res.status === 401 || res.status === 403) return { ok: false, code: 'bad_key', status: res.status, detail: scrub(text, target.apiKey) }
+  if (res.status === 401 || res.status === 403 || (res.status === 400 && BAD_KEY.test(text))) {
+    return { ok: false, code: 'bad_key', status: res.status, detail: scrub(text, target.apiKey) }
+  }
   if (!res.ok) return { ok: false, code: 'provider_error', status: res.status, detail: scrub(text, target.apiKey) }
   let data: unknown
   try {
@@ -62,12 +66,16 @@ function classify(status: number, text: string): CheckCode {
   if (status === 404) return 'model_not_found'
   if (status === 400 || status === 422) {
     if (NO_MODEL.test(text)) return 'model_not_found'
+    if (BAD_KEY.test(text)) return 'bad_key'
     if (QUOTA.test(text)) return 'quota'
   }
   return 'provider_error'
 }
 
-export async function checkConnection(target: Target & { model: string }, opts: Opts = {}): Promise<CheckResult> {
+export async function checkConnection(
+  target: Target & { model: string; extraBody?: Record<string, unknown> },
+  opts: Opts = {},
+): Promise<CheckResult> {
   if (target.model === 'stub') return { ok: true, models: [], modelListed: null }
   const fetchImpl = opts.fetchImpl ?? fetch
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -79,7 +87,8 @@ export async function checkConnection(target: Target & { model: string }, opts: 
   const ask = (limit: 'max_tokens' | 'max_completion_tokens') => send(endpoint(target.baseURL, '/chat/completions'), {
     method: 'POST',
     headers: headers(target.apiKey),
-    body: JSON.stringify({ model: target.model, messages: [{ role: 'user', content: 'Reply with OK.' }], [limit]: 16 }),
+    // 和网关真正发的一样带上服务商字段（比如关掉思考），测出来的才算数
+    body: JSON.stringify({ ...target.extraBody, model: target.model, messages: [{ role: 'user', content: 'Reply with OK.' }], [limit]: 16 }),
   }, target.apiKey, timeoutMs, fetchImpl)
   let sent = await ask('max_tokens')
   // 推理模型（如 OpenAI 的 o 系列）不收 max_tokens，要 max_completion_tokens

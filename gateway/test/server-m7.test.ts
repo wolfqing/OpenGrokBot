@@ -169,3 +169,29 @@ describe('/api/settings', () => {
     expect((await gateway.app.request('/api/settings')).status).toBe(401)
   })
 })
+
+describe('/api/settings/providers', () => {
+  it('lists the presets for the wizard, and the test uses a candidate provider\'s fields', async () => {
+    const db = openDb(':memory:')
+    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-providers-'))
+    const bodies: Record<string, unknown>[] = []
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (init?.body) bodies.push(JSON.parse(String(init.body)))
+      return String(url).endsWith('/models')
+        ? new Response(JSON.stringify({ data: [] }))
+        : new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'OK' } }] }))
+    }) as typeof fetch
+    const gateway = createApp({ db, llm: { chat: async () => textTurn }, dataDir, settings: { env: {}, startedWith: loadConfig({ OPENGROKBOT_DATA: dataDir }), fetchImpl } })
+    const list = await (await gateway.app.request('/api/settings/providers')).json() as { id: string }[]
+    expect(list.map((p) => p.id)).toContain('deepseek')
+    await gateway.app.request('/api/settings/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'deepseek', baseURL: 'https://api.deepseek.com', model: 'deepseek-flash', apiKey: 'sk-candidate-12345' }),
+    })
+    expect(bodies.at(-1)).toMatchObject({ model: 'deepseek-flash', thinking: { type: 'disabled' } })
+    const bad = await gateway.app.request('/api/settings/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'nope' }),
+    })
+    expect(bad.status).toBe(400)
+  })
+})

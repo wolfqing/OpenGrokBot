@@ -155,3 +155,13 @@ describe('currentConfig', () => {
       .toMatchObject({ model: 'qwen3', apiKey: 'sk-env', vision: true })
   })
 })
+
+describe('the chosen provider', () => {
+  it('brings its request fields along, and nothing when none is chosen', () => {
+    const db = openDb(':memory:')
+    const startup = loadConfig({ OPENGROKBOT_DATA: '/tmp/ogb-none' })
+    expect(currentConfig(startup, {}, db).extraBody).toEqual({})
+    saveSettings(db, { provider: 'openai', baseURL: 'https://api.openai.com/v1', model: 'gpt-6-luna' })
+    expect(currentConfig(startup, {}, db).extraBody).toEqual({ reasoning_effort: 'none' })
+  })
+})
