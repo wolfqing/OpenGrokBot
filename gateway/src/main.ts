@@ -92,6 +92,7 @@ const gateway = createApp({
   timeZone: config.timeZone,
   maxSteps: config.maxSteps,
   turnMinutes: config.turnMinutes,
+  settings: { env: process.env, startedWith: config },
 })
 const { app, hub } = gateway
 

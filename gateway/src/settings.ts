@@ -92,10 +92,15 @@ export function readSavedSettings(db: Db): Partial<Settings> {
   return out as Partial<Settings>
 }
 
-export type SettingError = { key: string; code: 'unknown_setting' | 'invalid' }
+/** 单项校验：合法返回规范化后的值，否则 undefined */
+export function parseSetting<K extends SettingKey>(key: K, value: unknown): Settings[K] | undefined {
+  return PARSE[key](value)
+}
 
-/** 存一批设置：null = 恢复默认。有一项不对就整批不存。 */
-export function saveSettings(db: Db, patch: Record<string, unknown>, now = Date.now()): { ok: true } | { ok: false; errors: SettingError[] } {
+export type SettingError = { key: string; code: 'unknown_setting' | 'invalid' | 'locked' }
+
+/** 只校验不写：null = 恢复默认 */
+export function checkSettings(patch: Record<string, unknown>): { errors: SettingError[]; writes: [SettingKey, unknown][] } {
   const errors: SettingError[] = []
   const writes: [SettingKey, unknown][] = []
   for (const [key, raw] of Object.entries(patch)) {
@@ -111,6 +116,12 @@ export function saveSettings(db: Db, patch: Record<string, unknown>, now = Date.
     if (v === undefined) errors.push({ key, code: 'invalid' })
     else writes.push([key, v])
   }
+  return { errors, writes }
+}
+
+/** 存一批设置：null = 恢复默认。有一项不对就整批不存。 */
+export function saveSettings(db: Db, patch: Record<string, unknown>, now = Date.now()): { ok: true } | { ok: false; errors: SettingError[] } {
+  const { errors, writes } = checkSettings(patch)
   if (errors.length) return { ok: false, errors }
   const put = db.prepare(
     'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
@@ -162,6 +173,25 @@ export function currentConfig(startup: Config, env: Record<string, string | unde
 
 const keyPath = (dataDir: string) => join(dataDir, 'llm-key')
 
+/** 要原样放进 Authorization 头：空白和控制字符会把头拆开 */
+export function validApiKey(key: string): boolean {
+  return key.length > 0 && key.length <= 4096 && !/[\s\u0000-\u001f\u007f]/.test(key)
+}
+
+/** 给界面看的样子：只露开头三个和末尾四个字符；太短的一个都不露 */
+export function maskKey(key: string): string {
+  if (!key) return ''
+  return key.length <= 12 ? '••••' : `${key.slice(0, 3)}…${key.slice(-4)}`
+}
+
+/** 哪些设置项被环境变量定死了（含 apiKey） */
+export function lockedKeys(env: Record<string, string | undefined>): Set<SettingKey | 'apiKey'> {
+  const out = new Set<SettingKey | 'apiKey'>()
+  for (const [key, name] of Object.entries(ENV)) if (envSet(env, name)) out.add(key as SettingKey)
+  if (envSet(env, API_KEY_ENV)) out.add('apiKey')
+  return out
+}
+
 export function readApiKey(dataDir: string): string {
   const path = keyPath(dataDir)
   return existsSync(path) ? readFileSync(path, 'utf8').trim() : ''
@@ -175,8 +205,7 @@ export function saveApiKey(dataDir: string, key: string): { ok: true } | { ok: f
     rmSync(path, { force: true })
     return { ok: true }
   }
-  // 要原样放进 Authorization 头：空白和控制字符会把头拆开
-  if (k.length > 4096 || /[\s\u0000-\u001f\u007f]/.test(k)) return { ok: false, code: 'invalid' }
+  if (!validApiKey(k)) return { ok: false, code: 'invalid' }
   mkdirSync(dataDir, { recursive: true })
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, `${k}\n`, { mode: 0o600 })

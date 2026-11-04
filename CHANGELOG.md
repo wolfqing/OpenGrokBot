@@ -15,6 +15,14 @@ still change behaviour.
 - Model settings apply without a restart: the API base, model, key and vision are read again before each model
   call, so a change takes effect on the next call while a call already in flight finishes as it started. The
   choice of computers and the browser mirror still apply at startup.
+- Settings API for the coming wizard and settings page. `GET /api/settings` returns each value and where it
+  comes from (`env`, `saved`, `default`); the key is only ever returned masked (`sk-…3456`), with its source
+  (`env`, `file`, `none`); `needsRestart` lists the saved changes that wait for a restart. `PUT /api/settings`
+  saves a batch, key included, or nothing at all: values pinned by env vars are refused as `locked`.
+  `POST /api/settings/test` tries a provider before you save, first `GET /models` and then a 16-token chat, and
+  sorts failures into codes (`bad_key`, `quota`, `rate_limited`, `model_not_found`, `unreachable`, `timeout`,
+  `provider_error`). The saved key is only sent when the API base is unchanged, so one provider's key never goes
+  to another. `GET /api/settings/models` lists the saved provider's models.
 
 ### Security
 
