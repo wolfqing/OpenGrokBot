@@ -51,11 +51,11 @@ export const PROVIDERS: Provider[] = [
     docsUrl: 'https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash.md', checked: '2026-11-03',
   },
   {
-    // grok-4.3：官方说工具调用稳、收图片，推理默认 low；grok-4.7 更强也更贵
+    // grok-4.7：收图片、支持工具调用，官方「其余一切用 4.7」；推理默认 high、关不掉。更省的是 grok-4.3（推理可关、价格约一半）
     id: 'xai', name: 'xAI Grok', region: 'global',
     baseURL: 'https://api.x.ai/v1', needsKey: true, keyUrl: 'https://console.x.ai/team/default/api-keys',
-    defaultModel: 'grok-4.3', vision: true, request: {},
-    docsUrl: 'https://docs.x.ai/developers/models/grok-4.3', checked: '2026-11-03',
+    defaultModel: 'grok-4.7', vision: true, request: {},
+    docsUrl: 'https://docs.x.ai/developers/models/grok-4.7', checked: '2026-11-03',
   },
   {
     // GPT-6 系列在 Chat Completions 上调工具：gpt-6-luna 要 reasoning_effort=none，其余要 Responses API

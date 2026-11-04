@@ -12,7 +12,7 @@ Wants=network-online.target docker.service
 Type=simple
 User=opengrokbot
 WorkingDirectory=/opt/OpenGrokBot
-Environment=OPENGROKBOT_MODEL=grok-4
+Environment=OPENGROKBOT_MODEL=grok-4.7
 Environment=OPENGROKBOT_QUIET_TOKEN=1
 EnvironmentFile=-/etc/opengrokbot.env
 ExecStart=/usr/bin/node gateway/dist/main.js

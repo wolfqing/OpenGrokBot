@@ -129,7 +129,7 @@ reaches the gateway without that token.
 Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a local Ollama):
 
 ```bash
-OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
+OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4.7 pnpm dev
 ```
 
 The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers,
@@ -145,7 +145,7 @@ pnpm start` and the launchd / systemd templates in [docs/always-on.md](docs/alwa
 |---|---|---|
 | `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
 | `OPENGROKBOT_API_KEY` | — | Your key. Never written to disk by this repo |
-| `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENGROKBOT_MODEL` | `grok-4.7` | `stub` runs offline with no key |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
 | `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running, else local) |
 | `OPENGROKBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome/Edge/Chromium are looked for, then one is downloaded |

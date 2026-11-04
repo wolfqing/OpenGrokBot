@@ -23,7 +23,7 @@
     <key>OPENGROKBOT_API_KEY</key>
     <string>REPLACE_ME</string>
     <key>OPENGROKBOT_MODEL</key>
-    <string>grok-4</string>
+    <string>grok-4.7</string>
     <!-- The log is a file: keep the gateway token out of it. Sign in with the one in gateway/data/auth-token. -->
     <key>OPENGROKBOT_QUIET_TOKEN</key>
     <string>1</string>

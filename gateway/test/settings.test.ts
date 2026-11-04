@@ -90,7 +90,7 @@ describe('settings', () => {
     const config = loadConfig({ OPENGROKBOT_DATA: '/tmp/ogb-x' })
     const merged = applySettings(config, resolveSettings({}, { model: 'deepseek-chat', computers: 'local' }).values, 'sk-file')
     expect(merged).toMatchObject({ model: 'deepseek-chat', computers: 'local', apiKey: 'sk-file', dataDir: '/tmp/ogb-x', port: 4747 })
-    expect(config.model).toBe('grok-4') // 原来的不动
+    expect(config.model).toBe('grok-4.7') // 原来的不动
   })
 })
 
@@ -147,7 +147,7 @@ describe('currentConfig', () => {
   it('sees a saved setting and a new key file right away, and env vars still win', () => {
     const db = openDb(':memory:')
     const startup = loadConfig({ OPENGROKBOT_DATA: dir })
-    expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'grok-4', apiKey: '', vision: false })
+    expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'grok-4.7', apiKey: '', vision: false })
     saveSettings(db, { model: 'deepseek-chat', vision: true })
     saveApiKey(dir, 'sk-file')
     expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'deepseek-chat', apiKey: 'sk-file', vision: true, dataDir: dir })

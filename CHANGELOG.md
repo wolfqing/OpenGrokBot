@@ -60,6 +60,9 @@ still change behaviour.
 
 ### Changed
 
+- The default model is now `grok-4.7` (was `grok-4`, which no longer appears in xAI's model list). If you never
+  set `OPENGROKBOT_MODEL`, the gateway starts asking xAI for `grok-4.7`; it reasons by default and costs more per
+  token than the older Grok models. Set `OPENGROKBOT_MODEL` to keep a different model.
 - The READMEs describe local computers wherever they still assumed Docker: the FAQ no longer says Docker is
   required, the computer and security sections say how a local computer differs from a container (files kept to
   its folder, commands off by default, no resource limits), and the roadmap marks computers without Docker as

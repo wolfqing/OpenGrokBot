@@ -29,7 +29,7 @@ export type SettingSource = 'env' | 'saved' | 'default'
 export const SETTING_DEFAULTS: Settings = {
   provider: '',
   baseURL: 'https://api.x.ai/v1',
-  model: 'grok-4',
+  model: 'grok-4.7',
   vision: false,
   language: '',
   computers: 'auto',

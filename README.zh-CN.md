@@ -118,7 +118,7 @@ gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?to
 接真模型（任何 OpenAI 兼容的都行：xAI、Kimi、DeepSeek、本地 Ollama）：
 
 ```bash
-OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
+OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4.7 pnpm dev
 ```
 
 gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答就用 Docker，否则用本机模式
@@ -133,7 +133,7 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。细节见 [d
 |---|---|---|
 | `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | 任何 OpenAI 兼容端点 |
 | `OPENGROKBOT_API_KEY` | — | 你的 key，本仓库不会把它写进任何文件 |
-| `OPENGROKBOT_MODEL` | `grok-4` | 填 `stub` 可离线零 key 运行 |
+| `OPENGROKBOT_MODEL` | `grok-4.7` | 填 `stub` 可离线零 key 运行 |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite、bot 数据、工作区、gateway 令牌 |
 | `OPENGROKBOT_COMPUTERS` | `auto` | `docker`、`local`，或 `auto`（Docker 在跑就用 Docker，否则本机） |
 | `OPENGROKBOT_BROWSER` | *(自动找)* | 本机电脑用的浏览器；不填就找 Chrome / Edge / Chromium，都没有就下载一个 |

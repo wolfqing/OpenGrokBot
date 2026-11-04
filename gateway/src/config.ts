@@ -65,7 +65,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     baseURL: env.OPENGROKBOT_API_BASE || 'https://api.x.ai/v1',
     apiKey: env.OPENGROKBOT_API_KEY || '',
-    model: env.OPENGROKBOT_MODEL || 'grok-4',
+    model: env.OPENGROKBOT_MODEL || 'grok-4.7',
     extraBody: {},
     computers: parseComputerChoice(env.OPENGROKBOT_COMPUTERS),
     browser: (env.OPENGROKBOT_BROWSER || '').trim(),

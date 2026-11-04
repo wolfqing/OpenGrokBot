@@ -91,7 +91,7 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
 |---|---|---|
 | `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
 | `OPENGROKBOT_API_KEY` | — | Your key; never written to disk |
-| `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENGROKBOT_MODEL` | `grok-4.7` | `stub` runs offline with no key |
 | `OPENGROKBOT_HOST` / `OPENGROKBOT_PORT` | `127.0.0.1` / `4747` | Where the gateway listens |
 | `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the token |
 | `OPENGROKBOT_TOKEN` | *(generated)* | Pin the gateway token instead of generating one |
