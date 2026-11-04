@@ -42,6 +42,8 @@ describe('workflow trace schema', () => {
     const token = `github_pat_${'a'.repeat(36)}`
     expect(sanitizeWorkflowUrl(`https://example.test/reset/${token}/continue?next=dashboard`))
       .toBe('https://example.test/reset/:redacted/continue?next=')
+    expect(sanitizeWorkflowUrl('https://example.test/orders/123e4567-e89b-12d3-a456-426614174000'))
+      .toBe('https://example.test/orders/:redacted')
 
     const code = parseWorkflowStep({
       type: 'fill',

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { PageLike } from './browser-page.js'
+import type { CdpSessionLike, PageLike } from './browser-page.js'
 import {
   MAX_WORKFLOW_STEPS, MAX_WORKFLOW_TRACE_BYTES, parseWorkflowStep, parseWorkflowTrace, sanitizeWorkflowUrl,
   type WorkflowTrace,
@@ -8,28 +8,51 @@ import {
 export type WorkflowRecording = {
   reattach(page: PageLike): Promise<void>
   detach?(): Promise<void>
+  markIncomplete?(): void
   stop(): Promise<WorkflowTrace>
 }
 
-type RecordablePage = PageLike & Required<Pick<PageLike, 'evaluate' | 'exposeBinding' | 'on' | 'off' | 'mainFrame'>>
-type PageEvent = 'framenavigated' | 'close' | 'popup'
 type PageListener = (value?: unknown) => void
+type CdpListener = (value: unknown) => void
+
+type CdpContext = {
+  newCDPSession(page: unknown): Promise<CdpSessionLike>
+}
 
 type Attachment = {
   page: RecordablePage
-  binding: { dispose(): Promise<void> }
+  session: CdpSessionLike
   closed: boolean
-  onNavigate: PageListener
+  detaching: boolean
+  mainFrameId: string | null
+  documentKey: string | null
+  contextId: number | null
+  worldTask: { key: string; promise: Promise<void> } | null
+  detachTask: Promise<void> | null
+  onFrameNavigated: CdpListener
+  onSameDocumentNavigation: CdpListener
+  onBindingCalled: CdpListener
   onClose: PageListener
   onPopup: PageListener
 }
 
+type RecordablePage = Omit<PageLike, 'context' | 'on' | 'off'> & {
+  context(): CdpContext
+  on(event: 'close' | 'popup', listener: PageListener): void
+  off(event: 'close' | 'popup', listener: PageListener): void
+}
+
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
 function canRecord(page: PageLike): page is RecordablePage {
-  return typeof page.evaluate === 'function'
-    && typeof page.exposeBinding === 'function'
+  return typeof page.context === 'function'
+    && typeof page.context().newCDPSession === 'function'
     && typeof page.on === 'function'
     && typeof page.off === 'function'
-    && typeof page.mainFrame === 'function'
 }
 
 function captureScript(bindingName: string, marker: string, capability: string): string {
@@ -40,11 +63,10 @@ function captureScript(bindingName: string, marker: string, capability: string):
     if (previous && typeof previous.cleanup === 'function') await previous.cleanup(capability);
     const bindingName = ${JSON.stringify(bindingName)};
     const binding = window[bindingName];
-    try { delete window[bindingName]; } catch { /* The capability still protects a non-configurable binding. */ }
     const pending = new Set();
     const emit = (event) => {
       if (typeof binding !== 'function') return Promise.resolve();
-      const operation = Promise.resolve(binding({ ...event, isTrusted: true, __proof: capability })).catch(() => {});
+      const operation = Promise.resolve(binding(JSON.stringify({ ...event, isTrusted: true, __proof: capability }))).catch(() => {});
       pending.add(operation);
       void operation.finally(() => pending.delete(operation));
       return operation;
@@ -231,6 +253,7 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
   const capability = randomBytes(32).toString('hex')
   const bindingName = `__opengrokbot_workflow_${recordingId}`
   const marker = `__opengrokbot_workflow_state_${recordingId}`
+  const worldName = `opengrokbot-workflow-world-${recordingId}`
   let active = true
   let current: Attachment | null = null
   let stopped: WorkflowTrace | null = null
@@ -286,16 +309,49 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     }
   }
 
-  const detach = async (attachment: Attachment) => {
-    attachment.page.off('framenavigated', attachment.onNavigate)
-    attachment.page.off('close', attachment.onClose)
-    attachment.page.off('popup', attachment.onPopup)
-    try {
-      if (!attachment.closed) await attachment.page.evaluate(removeCaptureScript(marker, capability))
-    } finally {
-      if (current === attachment) current = null
-      await attachment.binding.dispose().catch(() => {})
+  const evaluateInWorld = async (session: CdpSessionLike, contextId: number, expression: string) => {
+    const response = objectValue(await session.send('Runtime.evaluate', {
+      expression, contextId, awaitPromise: true, returnByValue: true,
+    }))
+    const exception = objectValue(response?.exceptionDetails)
+    if (exception) {
+      const message = typeof exception.text === 'string' ? exception.text : 'isolated workflow script failed'
+      throw new Error(message)
     }
+  }
+
+  const detach = (attachment: Attachment): Promise<void> => {
+    if (attachment.detachTask) return attachment.detachTask
+    attachment.detaching = true
+    const task = (async () => {
+      if (attachment.worldTask) await attachment.worldTask.promise.catch(() => {})
+      if (!attachment.closed && attachment.contextId !== null) {
+        try {
+          await evaluateInWorld(attachment.session, attachment.contextId, removeCaptureScript(marker, capability))
+        } catch {
+          trace.truncated = true
+        }
+      }
+      try {
+        await attachment.session.send('Runtime.removeBinding', { name: bindingName })
+      } catch {
+        trace.truncated = true
+      }
+      try { attachment.page.off('close', attachment.onClose) } catch { trace.truncated = true }
+      try { attachment.page.off('popup', attachment.onPopup) } catch { trace.truncated = true }
+      try { attachment.session.off?.('Page.frameNavigated', attachment.onFrameNavigated) } catch { trace.truncated = true }
+      try { attachment.session.off?.('Page.navigatedWithinDocument', attachment.onSameDocumentNavigation) } catch { trace.truncated = true }
+      try { attachment.session.off?.('Runtime.bindingCalled', attachment.onBindingCalled) } catch { trace.truncated = true }
+      if (current === attachment) current = null
+      attachment.contextId = null
+      try {
+        await attachment.session.detach()
+      } catch {
+        trace.truncated = true
+      }
+    })()
+    attachment.detachTask = task
+    return task
   }
 
   const attach = async (candidate: PageLike) => {
@@ -308,13 +364,75 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     lastAction = null
     if (current) await detach(current)
 
+    const session = await candidate.context().newCDPSession(candidate)
     let attachment: Attachment | null = null
-    const binding = await candidate.exposeBinding(bindingName, async (source, event) => {
-      if (!active || !attachment || current !== attachment) return
-      const origin = source as { frame?: unknown } | null
-      if (!origin || origin.frame !== page.mainFrame() || !event || typeof event !== 'object' || Array.isArray(event)) return
-      const submitted = event as Record<string, unknown>
-      if (submitted.__proof !== capability || submitted.isTrusted !== true
+
+    const ensureWorld = async (frameId: string, loaderId: string, url: string) => {
+      const target = attachment
+      if (!target || !active || target.closed || target.detaching || current !== target) return
+      const key = `${frameId}:${loaderId || url}`
+      target.mainFrameId = frameId
+      if (target.documentKey === key && target.contextId !== null) return
+      if (target.worldTask?.key === key) return target.worldTask.promise
+      target.documentKey = key
+      target.contextId = null
+      const promise = (async () => {
+        try {
+          const response = objectValue(await target.session.send('Page.createIsolatedWorld', {
+            frameId, worldName, grantUniversalAccess: false,
+          }))
+          const contextId = response?.executionContextId
+          if (typeof contextId !== 'number' || !Number.isSafeInteger(contextId)) {
+            throw new Error('Chromium did not create the isolated workflow world')
+          }
+          if (current !== target || target.documentKey !== key) return
+          target.contextId = contextId
+          await evaluateInWorld(target.session, contextId, captureScript(bindingName, marker, capability))
+        } catch (error) {
+          if (current !== target || target.documentKey !== key) return
+          target.contextId = null
+          trace.truncated = true
+          throw error
+        }
+      })()
+      const worldTask = { key, promise }
+      target.worldTask = worldTask
+      try {
+        await promise
+      } finally {
+        if (target.worldTask === worldTask) target.worldTask = null
+      }
+    }
+
+    const onFrameNavigated: CdpListener = (value) => {
+      const target = attachment
+      const frame = objectValue(objectValue(value)?.frame)
+      if (!active || !target || current !== target || target.detaching || !frame
+        || typeof frame.id !== 'string' || frame.parentId !== undefined) return
+      const url = typeof frame.url === 'string' ? frame.url : ''
+      const cleanUrl = sanitizeWorkflowUrl(url)
+      if (cleanUrl) append({ type: 'navigate', url: cleanUrl })
+      void ensureWorld(frame.id, typeof frame.loaderId === 'string' ? frame.loaderId : '', url).catch(() => {})
+    }
+
+    const onSameDocumentNavigation: CdpListener = (value) => {
+      const target = attachment
+      const event = objectValue(value)
+      if (!active || !target || current !== target || target.detaching || !event
+        || event.frameId !== target.mainFrameId || typeof event.url !== 'string') return
+      const url = sanitizeWorkflowUrl(event.url)
+      if (url) append({ type: 'navigate', url })
+    }
+
+    const onBindingCalled: CdpListener = (value) => {
+      const target = attachment
+      const event = objectValue(value)
+      if (!active || !target || target.closed || current !== target || !event
+        || event.name !== bindingName || event.executionContextId !== target.contextId
+        || typeof event.payload !== 'string') return
+      let submitted: Record<string, unknown> | null = null
+      try { submitted = objectValue(JSON.parse(event.payload)) } catch { return }
+      if (!submitted || submitted.__proof !== capability || submitted.isTrusted !== true
         || !['click', 'check', 'uncheck', 'press', 'fill', 'select'].includes(String(submitted.type))) return
       append({
         type: submitted.type,
@@ -322,46 +440,57 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
         ...(submitted.value !== undefined ? { value: submitted.value } : {}),
         ...(submitted.key !== undefined ? { key: submitted.key } : {}),
       })
-    })
-      .catch((error: unknown) => {
-        trace.truncated = true
-        throw error
-      })
-    const page = candidate
-    const onNavigate: PageListener = (frame) => {
-      if (!active || !attachment || current !== attachment) return
-      if (frame !== page.mainFrame()) return
-      const url = sanitizeWorkflowUrl(page.url())
-      if (url) append({ type: 'navigate', url })
-      void page.evaluate(captureScript(bindingName, marker, capability))
-        .then(async () => { if (!active || current !== attachment) await page.evaluate(removeCaptureScript(marker, capability)).catch(() => {}) })
-        .catch(() => {})
     }
+
     const onClose: PageListener = () => {
-      if (!attachment) return
-      attachment.closed = true
+      const target = attachment
+      if (!target) return
+      target.closed = true
       trace.truncated = true
       lastAction = null
-      page.off('framenavigated', onNavigate)
-      page.off('close', onClose)
-      page.off('popup', onPopup)
-      if (current === attachment) current = null
-      void binding.dispose().catch(() => {})
+      void detach(target)
     }
     const onPopup: PageListener = () => {
       if (!active || !attachment || current !== attachment) return
       append({ type: 'unrecorded-popup' })
     }
-    attachment = { page, binding, closed: false, onNavigate, onClose, onPopup }
+
+    attachment = {
+      page: candidate,
+      session,
+      closed: false,
+      detaching: false,
+      mainFrameId: null,
+      documentKey: null,
+      contextId: null,
+      worldTask: null,
+      detachTask: null,
+      onFrameNavigated,
+      onSameDocumentNavigation,
+      onBindingCalled,
+      onClose,
+      onPopup,
+    }
     current = attachment
-    page.on('framenavigated', onNavigate)
-    page.on('close', onClose)
-    page.on('popup', onPopup)
-    const url = sanitizeWorkflowUrl(page.url())
-    if (url) append({ type: 'navigate', url })
+    candidate.on('close', onClose)
+    candidate.on('popup', onPopup)
+    session.on('Page.frameNavigated', onFrameNavigated)
+    session.on('Page.navigatedWithinDocument', onSameDocumentNavigation)
+    session.on('Runtime.bindingCalled', onBindingCalled)
     try {
-      await page.evaluate(captureScript(bindingName, marker, capability))
+      await session.send('Runtime.enable')
+      await session.send('Runtime.addBinding', { name: bindingName, executionContextName: worldName })
+      await session.send('Page.enable')
+      const frameTree = objectValue(objectValue(await session.send('Page.getFrameTree'))?.frameTree)
+      const frame = objectValue(frameTree?.frame)
+      if (!frame || typeof frame.id !== 'string' || typeof frame.url !== 'string') {
+        throw new Error('Chromium did not return a main frame for workflow recording')
+      }
+      const initialUrl = sanitizeWorkflowUrl(frame.url)
+      if (initialUrl) append({ type: 'navigate', url: initialUrl })
+      await ensureWorld(frame.id, typeof frame.loaderId === 'string' ? frame.loaderId : '', frame.url)
     } catch (error) {
+      trace.truncated = true
       await detach(attachment)
       throw error
     }
@@ -373,6 +502,9 @@ export async function createWorkflowRecorder(page: PageLike, title: string, inte
     reattach: attach,
     async detach() {
       if (current) await detach(current)
+    },
+    markIncomplete() {
+      trace.truncated = true
     },
     stop() {
       if (stopped) return Promise.resolve(stopped)

@@ -115,7 +115,9 @@ values to the gateway. Password and one-time-code fields, credit-card autocomple
 sensitive terms such as `secret`, `token`, or `api key`, known credential formats, and high-entropy strings are
 stored as redacted values without their text. The gateway validates every event again and re-applies field-name and
 credential-pattern checks before a draft is returned or a saved trace is written. URL user info and fragments are
-removed; query keys are retained with empty values. Only HTTP and HTTPS navigation is recorded.
+removed; query keys are retained with empty values. High-entropy path segments, including UUIDs, are replaced with
+`:redacted`; those navigation steps cannot be replayed as the original record-specific URL. Only HTTP and HTTPS
+navigation is recorded.
 
 V1 is bounded to 1,000 steps, 120 title characters, 500 intent characters, 2,000 input characters per step, and
 5 MB per trace. Secret detection relies on field metadata and credential-pattern checks; avoid entering secrets

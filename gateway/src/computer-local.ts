@@ -18,6 +18,18 @@ const MAX_FILE_BYTES = 16 * 1024 * 1024
 /** bot 的提示词和工具说明里都叫 /workspace；本机模式把它映射到这位同事的文件夹 */
 const VIRTUAL_ROOT = '/workspace'
 
+type ScreencastFrame = { data: string; sessionId: number; metadata: { deviceWidth: number; deviceHeight: number } }
+
+function isScreencastFrame(value: unknown): value is ScreencastFrame {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  if (!('data' in value) || !('sessionId' in value) || !('metadata' in value)) return false
+  const metadata = value.metadata
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return false
+  if (!('deviceWidth' in metadata) || !('deviceHeight' in metadata)) return false
+  return typeof value.data === 'string' && typeof value.sessionId === 'number'
+    && typeof metadata.deviceWidth === 'number' && typeof metadata.deviceHeight === 'number'
+}
+
 export type LocalLaunch = (opts: { profileDir: string; executablePath: string; headless: boolean }) => Promise<BrowserLike>
 
 export type LocalShell = {
@@ -110,7 +122,11 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
   async function relaunch(nextHeadless: boolean): Promise<void> {
     let url: string | undefined
     if (session.state() === 'open') url = await session.page().then((p) => p.url()).catch(() => undefined)
-    await activeWorkflowRecording?.detach?.()
+    try {
+      await activeWorkflowRecording?.detach?.()
+    } catch {
+      activeWorkflowRecording?.markIncomplete?.()
+    }
     await session.dispose()
     endStreams()
     headless = nextHeadless
@@ -132,12 +148,12 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       if (!context.newCDPSession) throw new Error('this browser cannot stream its screen')
       const page = await session.page()
       const cdp = await context.newCDPSession(page)
-      type Frame = { data: string; sessionId: number; metadata: { deviceWidth: number; deviceHeight: number } }
       let stopped = false
       const end = () => { stopped = true; hooks.onEnd?.() }
       watchers.add(end)
-      cdp.on('Page.screencastFrame', (frame: Frame) => {
-        if (stopped) return
+      cdp.on('Page.screencastFrame', (value) => {
+        if (stopped || !isScreencastFrame(value)) return
+        const frame = value
         onFrame({ data: frame.data, width: frame.metadata.deviceWidth, height: frame.metadata.deviceHeight })
         // 不确认上一帧，Chromium 就不发下一帧——借这一点把帧率压在 10 帧/秒上下，面板和网关都轻松
         setTimeout(() => { void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {}) }, 100)
@@ -193,6 +209,7 @@ export function createLocalComputer(opts: LocalComputerOptions): BotComputer {
       const active: WorkflowRecording = {
         reattach: (page) => recorder.reattach(page),
         async detach() { await recorder.detach?.() },
+        markIncomplete() { recorder.markIncomplete?.() },
         async stop() {
           try {
             return await recorder.stop()

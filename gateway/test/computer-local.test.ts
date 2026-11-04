@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLocalBackend } from '../src/backend.js'
-import type { BrowserLike, PageLike } from '../src/browser-page.js'
+import type { BrowserLike, CdpSessionLike, PageLike } from '../src/browser-page.js'
 import { createLocalComputer, workspacePath, type LocalLaunch } from '../src/computer-local.js'
 
 let dir: string
@@ -205,54 +205,95 @@ describe('LocalComputer window for signing in', () => {
   it('keeps workflow capture attached through show and hide relaunches', async () => {
     type PageHarness = {
       page: PageLike
-      bindings: Map<string, (source: unknown, event: unknown) => void | Promise<void>>
-      mainFrame: object
+      bindings: Set<string>
       scripts: string[]
-      fire(event: Record<string, unknown>, binding?: (source: unknown, event: unknown) => void | Promise<void>): Promise<void>
+      fire(event: Record<string, unknown>): Promise<void>
       close(): void
     }
-    const state = { url: 'about:blank', open: false, launches: 0, failNextBinding: false }
+    const state = { url: 'about:blank', open: false, launches: 0, failNextBinding: false, failNextCleanup: false }
     const operations: string[] = []
     let current: PageHarness | null = null
     const makePage = (): PageHarness => {
-      const listeners = new Map<'framenavigated' | 'close' | 'popup', Set<(value?: unknown) => void>>([
+      const pageListeners = new Map<'framenavigated' | 'close' | 'popup', Set<(value?: unknown) => void>>([
         ['framenavigated', new Set()], ['close', new Set()], ['popup', new Set()],
       ])
-      const bindings = new Map<string, (source: unknown, event: unknown) => void | Promise<void>>()
+      const cdpListeners = new Map<string, Set<(value: unknown) => void>>()
+      const bindings = new Set<string>()
       const scripts: string[] = []
-      const mainFrame = {}
+      const frameId = `main-${state.launches}`
+      let bindingName = ''
+      let contextId = 0
+      let documentVersion = 0
+      const session: CdpSessionLike = {
+        on(event, listener) {
+          const listeners = cdpListeners.get(event) ?? new Set<(value: unknown) => void>()
+          listeners.add(listener)
+          cdpListeners.set(event, listeners)
+        },
+        off(event, listener) { cdpListeners.get(event)?.delete(listener) },
+        async send(method, params) {
+          if (method === 'Runtime.addBinding') {
+            if (state.failNextBinding) {
+              state.failNextBinding = false
+              throw new Error('binding unavailable')
+            }
+            if (typeof params?.name === 'string') {
+              bindingName = params.name
+              bindings.add(bindingName)
+            }
+          }
+          if (method === 'Page.getFrameTree') {
+            return { frameTree: { frame: { id: frameId, url: state.url, loaderId: `document-${documentVersion}` } } }
+          }
+          if (method === 'Page.createIsolatedWorld') return { executionContextId: ++contextId }
+          if (method === 'Runtime.evaluate' && typeof params?.expression === 'string') {
+            scripts.push(params.expression)
+            if (params.expression.includes('state.cleanup')) {
+              operations.push(`cleanup-${state.launches}`)
+              if (state.failNextCleanup) {
+                state.failNextCleanup = false
+                throw new Error('page did not respond to recorder cleanup')
+              }
+            }
+          }
+          if (method === 'Runtime.removeBinding' && typeof params?.name === 'string') bindings.delete(params.name)
+          return {}
+        },
+        async detach() {},
+      }
+      const emitNavigation = (url: string) => {
+        documentVersion += 1
+        for (const listener of cdpListeners.get('Page.frameNavigated') ?? []) {
+          listener({ frame: { id: frameId, url, loaderId: `document-${documentVersion}` } })
+        }
+      }
       const page: PageLike = {
-        async goto(url) { state.url = url; for (const listener of listeners.get('framenavigated') ?? []) listener(mainFrame) },
+        async goto(url) { state.url = url; emitNavigation(url) },
         async title() { return 'Example' },
         url: () => state.url,
         async innerText() { return '' },
         async screenshot() { return Buffer.from('PNG') },
         async click() {},
-        async evaluate(script) { scripts.push(script); if (script.includes('state.cleanup')) operations.push(`cleanup-${state.launches}`); return undefined },
-        async exposeBinding(name, callback) {
-          if (state.failNextBinding) {
-            state.failNextBinding = false
-            throw new Error('binding unavailable')
-          }
-          bindings.set(name, callback)
-          return { async dispose() { bindings.delete(name) } }
-        },
-        on(event, listener) { listeners.get(event)?.add(listener) },
-        off(event, listener) { listeners.get(event)?.delete(listener) },
-        mainFrame: () => mainFrame,
+        context: () => ({ newCDPSession: async () => session }),
+        on(event, listener) { pageListeners.get(event)?.add(listener) },
+        off(event, listener) { pageListeners.get(event)?.delete(listener) },
         viewportSize: () => ({ width: 1280, height: 800 }),
       }
       return {
         page,
         bindings,
-        mainFrame,
         scripts,
-        async fire(event, binding = bindings.values().next().value!) {
+        async fire(event) {
           const capability = scripts[0]?.match(/const capability = "([a-f0-9]+)";/)?.[1]
           if (!capability) throw new Error('recorder did not install its event capability')
-          await binding({ frame: mainFrame }, { ...event, isTrusted: true, __proof: capability })
+          for (const listener of cdpListeners.get('Runtime.bindingCalled') ?? []) {
+            listener({
+              name: bindingName, executionContextId: contextId,
+              payload: JSON.stringify({ ...event, isTrusted: true, __proof: capability }),
+            })
+          }
         },
-        close: () => { for (const listener of listeners.get('close') ?? []) listener() },
+        close: () => { for (const listener of pageListeners.get('close') ?? []) listener() },
       }
     }
     const browser: BrowserLike = {
@@ -276,8 +317,7 @@ describe('LocalComputer window for signing in', () => {
       await c.goto('https://example.test/start')
       const recorder = await c.startWorkflowRecording!('Window transitions')
       const initial = current!
-      const initialBinding = initial.bindings.values().next().value!
-      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Before show' }] } }, initialBinding)
+      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Before show' }] } })
 
       await c.showWindow!()
       const shown = current!
@@ -289,14 +329,19 @@ describe('LocalComputer window for signing in', () => {
       const hidden = current!
       expect(hidden).not.toBe(shown)
       expect(operations.slice(2, 4)).toEqual(['cleanup-2', 'close-2'])
-      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Stale event' }] } }, initialBinding)
+      await initial.fire({ type: 'click', target: { candidates: [{ text: 'Stale event' }] } })
       await hidden.fire({ type: 'click', target: { candidates: [{ text: 'After hide' }] } })
+
+      state.failNextCleanup = true
+      await c.showWindow!()
+      expect(c.windowShown!()).toBe(true)
+      expect(state.failNextCleanup).toBe(false)
       state.failNextBinding = true
-      await expect(c.showWindow!()).rejects.toThrow('binding unavailable')
+      await expect(c.hideWindow!()).rejects.toThrow('binding unavailable')
       expect(state.url).toBe('https://example.test/start')
 
       const trace = await recorder.stop()
-      expect(state.launches).toBe(4)
+      expect(state.launches).toBe(5)
       expect(trace.truncated).toBe(true)
       expect(trace.steps.filter((step) => step.type === 'click')).toEqual([
         { type: 'click', target: { candidates: [{ text: 'Before show' }] } },
