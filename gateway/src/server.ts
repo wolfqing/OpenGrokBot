@@ -52,7 +52,8 @@ export type AppDeps = {
   allowedOrigins?: string[]
   /** 每个 bot 每天的 token 上限；0 或不传 = 不限 */
   dailyTokens?: number
-  vision?: boolean
+  /** 传函数就每个回合开始时现问一次（设置页改了不用重启） */
+  vision?: boolean | (() => boolean)
   timeZone?: string
   now?: () => Date
   /** 一个回合最多调几次模型；不传用 agent 的默认值 */
@@ -303,7 +304,7 @@ export function createApp(deps: AppDeps): GatewayApp {
         db, llm, bot, soul, manual, memory, routines, threadId, signal, now,
         origin: opts.origin,
         hop: opts.hop ?? 0,
-        vision: deps.vision === true,
+        vision: (typeof deps.vision === 'function' ? deps.vision() : deps.vision) === true,
         ...(deps.timeZone ? { timeZone: deps.timeZone } : {}),
         ...(deps.maxSteps ? { maxSteps: deps.maxSteps } : {}),
         ...(deps.turnMinutes !== undefined ? { turnTimeoutMs: deps.turnMinutes * 60_000 } : {}),

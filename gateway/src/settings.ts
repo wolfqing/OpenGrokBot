@@ -155,6 +155,11 @@ export function applySettings(config: Config, s: Settings, apiKey: string): Conf
   return { ...config, baseURL: s.baseURL, model: s.model, vision: s.vision, computers: s.computers, browserMirror: s.browserMirror, apiKey }
 }
 
+/** 此刻生效的配置：启动配置 + 库里的设置 + key 文件，环境变量照样优先。每次都现读，改了马上看得到。 */
+export function currentConfig(startup: Config, env: Record<string, string | undefined>, db: Db): Config {
+  return applySettings(startup, resolveSettings(env, readSavedSettings(db)).values, resolveApiKey(env, startup.dataDir).key)
+}
+
 const keyPath = (dataDir: string) => join(dataDir, 'llm-key')
 
 export function readApiKey(dataDir: string): string {

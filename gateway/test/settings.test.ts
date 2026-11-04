@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { openDb } from '../src/db.js'
 import {
-  SETTING_DEFAULTS, applySettings, readApiKey, readSavedSettings, resolveApiKey, resolveSettings, saveApiKey, saveSettings,
+  SETTING_DEFAULTS, applySettings, currentConfig, readApiKey, readSavedSettings, resolveApiKey, resolveSettings, saveApiKey, saveSettings,
 } from '../src/settings.js'
 
 describe('settings', () => {
@@ -136,5 +136,22 @@ describe('the API key file', () => {
     expect(resolveApiKey({}, dir)).toEqual({ key: 'sk-file', source: 'file' })
     saveApiKey(dir, '')
     expect(resolveApiKey({}, dir)).toEqual({ key: '', source: 'none' })
+  })
+})
+
+describe('currentConfig', () => {
+  let dir: string
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ogb-live-')) })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('sees a saved setting and a new key file right away, and env vars still win', () => {
+    const db = openDb(':memory:')
+    const startup = loadConfig({ OPENGROKBOT_DATA: dir })
+    expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'grok-4', apiKey: '', vision: false })
+    saveSettings(db, { model: 'deepseek-chat', vision: true })
+    saveApiKey(dir, 'sk-file')
+    expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'deepseek-chat', apiKey: 'sk-file', vision: true, dataDir: dir })
+    expect(currentConfig(startup, { OPENGROKBOT_MODEL: 'qwen3', OPENGROKBOT_API_KEY: 'sk-env' }, db))
+      .toMatchObject({ model: 'qwen3', apiKey: 'sk-env', vision: true })
   })
 })

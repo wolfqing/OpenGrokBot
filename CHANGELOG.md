@@ -9,9 +9,12 @@ still change behaviour.
 ### Added
 
 - The gateway keeps settings of its own (schema v5 adds a `settings` table): provider, API base, model, vision,
-  language, computers, browser mirror and update checks, read at startup. An env var still wins over a saved
-  value. The model API key can live in `<data>/llm-key` (mode `0600`, next to the gateway token, out of reach of
-  sandboxed commands and containers) instead of `OPENGROKBOT_API_KEY`. Nothing writes these from the UI yet.
+  language, computers, browser mirror and update checks. An env var still wins over a saved value. The model API
+  key can live in `<data>/llm-key` (mode `0600`, next to the gateway token, out of reach of sandboxed commands and
+  containers) instead of `OPENGROKBOT_API_KEY`. Nothing writes these from the UI yet.
+- Model settings apply without a restart: the API base, model, key and vision are read again before each model
+  call, so a change takes effect on the next call while a call already in flight finishes as it started. The
+  choice of computers and the browser mirror still apply at startup.
 
 ### Security
 

@@ -9,7 +9,7 @@ import { loadOrCreateToken, trustedOrigins } from './auth.js'
 import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
 import { botShellEnabled, openDb } from './db.js'
-import { createLLM } from './llm.js'
+import { createLiveLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
@@ -18,7 +18,7 @@ import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
-import { applySettings, readSavedSettings, resolveApiKey, resolveSettings } from './settings.js'
+import { currentConfig } from './settings.js'
 import { serveWeb } from './web.js'
 
 const startup = loadConfig()
@@ -28,12 +28,10 @@ const db = openDb(startup.dbPath, {
   onBackup: (file) => console.log(`[gateway] backed up the database before upgrading it → ${file}`),
   onMigrate: (from, to) => console.log(`[gateway] database schema v${from} → v${to}`),
 })
-// 界面上存的设置（库里）和 key 文件（<data>/llm-key）叠到启动配置上；设了环境变量的项仍以环境变量为准
-const config = applySettings(
-  startup,
-  resolveSettings(process.env, readSavedSettings(db)).values,
-  resolveApiKey(process.env, startup.dataDir).key,
-)
+// 界面上存的设置（库里）和 key 文件（<data>/llm-key）叠到启动配置上；设了环境变量的项仍以环境变量为准。
+// 模型和看图每次现读（改了下一次调用就生效）；电脑种类、浏览器镜像只在这里读一次，改了要重启
+const live = () => currentConfig(startup, process.env, db)
+const config = live()
 // 预置样板来自版本库，用户新雇的同事住在数据目录
 const bots = [
   ...seedTeammates(db, config.teammatesDir),
@@ -42,7 +40,7 @@ const bots = [
 seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
 if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
-const llm = createLLM(config)
+const llm = createLiveLLM(live)
 // 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
 const sandbox = detectSandbox()
@@ -90,7 +88,7 @@ const gateway = createApp({
   token,
   allowedOrigins: trustedOrigins(config),
   dailyTokens: config.dailyTokens,
-  vision: config.vision,
+  vision: () => live().vision,
   timeZone: config.timeZone,
   maxSteps: config.maxSteps,
   turnMinutes: config.turnMinutes,
