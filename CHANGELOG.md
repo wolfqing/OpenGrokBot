@@ -27,6 +27,14 @@ still change behaviour.
   if it cannot restrict the file, and an existing token is tightened on the next start.
 - A local computer's file tools refuse Windows device names (`CON`, `NUL`, `COM1`, … — reading `CON` would wait for
   input forever) and colons, which would write into an alternate data stream.
+- The gateway runs on hono 4.13.16 and `@hono/node-server` 2.1.6, which fix several advisories. The one that reached
+  the gateway: a client that dropped its connection while the gateway was still setting up a WebSocket (a screen
+  viewer while the teammate's browser starts, say) raised an unhandled socket error and stopped the process
+  (GHSA-qv5m-9pm6-hqp3). The server also no longer turns a backslash in the path into `/`, which could carry a
+  request past a reverse proxy's path rules (GHSA-jpvv-r467-5p4w). The rest do not apply here: the origin check
+  reads the `Host` header rather than the request URL (GHSA-7v5p-43qr-wch5), the token check is a single `*`
+  middleware, and the gateway uses neither `mount()` nor the form validator. ws 8.22.1, `@types/node` 26.6.6 and
+  `@vitejs/plugin-react` 6.2.1 came in the same update.
 
 ### Added
 
