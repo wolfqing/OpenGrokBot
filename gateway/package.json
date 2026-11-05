@@ -15,19 +15,19 @@
     "smoke:local": "tsx scripts/smoke-local.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.5",
+    "@hono/node-server": "^2.1.6",
     "@novnc/novnc": "1.7.0",
     "better-sqlite3": "^13.0.3",
     "croner": "^11.0.0",
     "dockerode": "^5.0.1",
-    "hono": "^4.13.14",
+    "hono": "^4.13.16",
     "playwright-core": "^1.64.1",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/dockerode": "^4.0.2",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
