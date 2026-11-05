@@ -19,8 +19,8 @@ describe('saveScreenshot', () => {
 describe('screenshotFilePath', () => {
   it('resolves well-formed names, new location first and the old workspace one as a fallback', () => {
     expect(screenshotFilePath('/data', 'researcher', '1786530000000.png')).toEqual([
-      '/data/bots/researcher/screenshots/1786530000000.png',
-      '/data/workspaces/researcher/screenshots/1786530000000.png',
+      join('/data', 'bots', 'researcher', 'screenshots', '1786530000000.png'),
+      join('/data', 'workspaces', 'researcher', 'screenshots', '1786530000000.png'),
     ])
   })
 
@@ -34,6 +34,6 @@ describe('screenshotFilePath', () => {
 
 describe('workspaceDir', () => {
   it('is per bot under the data dir', () => {
-    expect(workspaceDir('/data', 'researcher')).toBe('/data/workspaces/researcher')
+    expect(workspaceDir('/data', 'researcher')).toBe(join('/data', 'workspaces', 'researcher'))
   })
 })

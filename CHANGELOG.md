@@ -8,7 +8,7 @@ still change behaviour.
 
 ### Added
 
-- The gateway keeps settings of its own (schema v5 adds a `settings` table): provider, API base, model, vision,
+- The gateway keeps settings of its own (schema v6 adds a `settings` table): provider, API base, model, vision,
   language, computers, browser mirror and update checks. An env var still wins over a saved value. The model API
   key can live in `<data>/llm-key` (mode `0600`, next to the gateway token, out of reach of sandboxed commands and
   containers) instead of `OPENGROKBOT_API_KEY`. Nothing writes these from the UI yet.
@@ -43,6 +43,9 @@ still change behaviour.
   (`why`: `chosen`, `docker_running`, `docker_not_running`, `docker_image_missing`), and a choice made on the
   settings page is logged as such rather than as `OPENGROKBOT_COMPUTERS`. Settings ask for a restart only when
   it would change the computers: switching `auto` to `local` on a gateway that already runs local computers does not.
+- First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
+  saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
+  and routines remain out of scope.
 
 ### Security
 
@@ -53,6 +56,27 @@ still change behaviour.
   denied a short list of key folders and bubblewrap denied none of them. The self-check now also fails if a
   command can list the home directory, and the switch refuses to turn on when no self-check is wired.
 - `write_file` on a local computer opens the final path component without following symlinks.
+- On Windows the gateway token file is limited to your account: its access list is reset (which also clears entries
+  written on the file itself, such as the creator's default `SYSTEM` and `Administrators` grants), inherited access is
+  removed, and only your user (by SID) is granted. Before, `0600` did nothing there and the file kept whatever its folder allowed. Start-up warns
+  if it cannot restrict the file, and an existing token is tightened on the next start.
+- A local computer's file tools refuse Windows device names (`CON`, `NUL`, `COM1`, … — reading `CON` would wait for
+  input forever) and colons, which would write into an alternate data stream.
+
+### Added
+
+- **Local computers on Windows**, with the browser and the folder: the gateway finds Chrome, Edge, Chromium or Brave
+  where Windows installs them (for all users or just you) and otherwise downloads Chrome for Testing. Commands stay
+  off, because Windows has no sandbox as strong as Seatbelt or bubblewrap; a teammate that needs a shell there
+  gets a Docker computer.
+- **Start at sign-in on Windows**: `deploy/windows/install-task.ps1` registers a Task Scheduler task that runs the
+  gateway as you, in your session (so a sign-in window can appear), and restarts it if it stops.
+- **CI on Linux, macOS and Windows.** Typecheck, tests and build run on all three, and a new job runs the
+  local-computer smoke test on each against the runner's real Chrome — on Linux with bubblewrap and a virtual
+  display, on macOS with Seatbelt, on Windows with the extra path checks. The Windows job also installs and removes
+  the start-up task.
+- `deploy/linux/bwrap.apparmor`: the AppArmor profile bubblewrap needs on Ubuntu 23.10 and later, which otherwise
+  stop it from creating the user namespace it sandboxes commands in. CI applies the same file.
 
 ### Fixed
 
@@ -71,12 +95,24 @@ still change behaviour.
   working directory and `$HOME`; `/workspace` is the file tools' name for it); `ask_for_login` tells the model to
   stop and wait. The node the gateway runs on is first on a sandboxed command's PATH, so nvm-installed nodes work.
 - `running()` no longer counts a local computer whose browser the operator quit by hand.
+- Commands on a Linux local computer could never be turned on when a runtime manager (`~/.cargo/bin`, `~/.nvm`, …)
+  or the gateway's own folder sat in your home directory, which is the usual case: the sandbox self-check counted
+  bubblewrap's own mount points as a view of your home. It now ignores exactly the folders it binds back, and also
+  checks with a probe file it puts in your home and removes. Found by the new Linux CI job.
 
 ### Changed
 
 - The default model is now `grok-4.7` (was `grok-4`, which no longer appears in xAI's model list). If you never
   set `OPENGROKBOT_MODEL`, the gateway starts asking xAI for `grok-4.7`; it reasons by default and costs more per
   token than the older Grok models. Set `OPENGROKBOT_MODEL` to keep a different model.
+- `pnpm install` no longer compiles better-sqlite3. Its package carries prebuilt binaries for macOS, Linux and
+  Windows and loads them in preference anyway, so the compile was wasted everywhere and, on Windows, failed without
+  Visual Studio's C++ tools. Installing on Windows now needs no compiler.
+- `pnpm dev` works in PowerShell and cmd: the gateway's dev script set its default UI address with Unix shell
+  syntax, which Windows rejected; the default now lives in `gateway/scripts/dev.ts`.
+- Every file is checked out with LF line endings (`.gitattributes`). On Windows git would otherwise convert them, and
+  a bot image built from that checkout fails at `entrypoint.sh` with `/bin/bash^M: bad interpreter`.
+- The READMEs and docs give PowerShell versions of the commands and describe Windows local computers.
 - The READMEs describe local computers wherever they still assumed Docker: the FAQ no longer says Docker is
   required, the computer and security sections say how a local computer differs from a container (files kept to
   its folder, commands off by default, no resource limits), and the roadmap marks computers without Docker as

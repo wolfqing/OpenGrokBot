@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
 
@@ -26,7 +26,7 @@ describe('loadConfig', () => {
     })
     expect(c).toMatchObject({
       baseURL: 'http://localhost:11434/v1', apiKey: 'sk-test', model: 'qwen3',
-      port: 5050, dataDir: '/tmp/data', dbPath: '/tmp/x.db', teammatesDir: '/tmp/teammates',
+      port: 5050, dataDir: resolve('/tmp/data'), dbPath: resolve('/tmp/x.db'), teammatesDir: '/tmp/teammates',
     })
   })
 
@@ -80,11 +80,11 @@ describe('loadConfig', () => {
   it('turns a relative data dir into an absolute one (docker would read it as a volume name)', () => {
     const c = loadConfig({ OPENGROKBOT_DATA: 'data-stub' })
     expect(isAbsolute(c.dataDir)).toBe(true)
-    expect(c.dataDir.endsWith('/data-stub')).toBe(true)
+    expect(basename(c.dataDir)).toBe('data-stub')
     expect(isAbsolute(c.dbPath)).toBe(true)
   })
 
   it('defaults the db inside the data dir', () => {
-    expect(loadConfig({ OPENGROKBOT_DATA: '/tmp/data' }).dbPath).toBe('/tmp/data/opengrokbot.db')
+    expect(loadConfig({ OPENGROKBOT_DATA: '/tmp/data' }).dbPath).toBe(join(resolve('/tmp/data'), 'opengrokbot.db'))
   })
 })

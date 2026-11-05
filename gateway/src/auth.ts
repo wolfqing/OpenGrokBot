@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,18 +11,58 @@ export const SESSION_COOKIE = 'ogb_session'
  * 网关令牌放在数据目录里、只给本人读。它不在任何 bot 的 workspace 里，
  * 所以容器里的 bot（哪怕被网页注入了指令）拿不到它，也就放行不了自己的审批。
  */
-export function loadOrCreateToken(dataDir: string, explicit?: string): string {
+export function loadOrCreateToken(
+  dataDir: string,
+  explicit?: string,
+  opts: { restrict?: (path: string) => void; warn?: (line: string) => void } = {},
+): string {
   if (explicit?.trim()) return explicit.trim()
   const path = join(dataDir, 'auth-token')
+  const restrict = opts.restrict ?? restrictToOwner
+  const guard = () => {
+    try {
+      restrict(path)
+    } catch (err) {
+      // 收不紧也照常启动，但要让人知道：这个文件就是进网关的钥匙
+      ;(opts.warn ?? console.warn)(`[gateway] could not limit ${path} to your account: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
   if (existsSync(path)) {
     const existing = readFileSync(path, 'utf8').trim()
-    if (existing) return existing
+    if (existing) {
+      guard() // 老版本在 Windows 上建的令牌文件是继承来的权限，启动时顺手收紧
+      return existing
+    }
   }
   mkdirSync(dataDir, { recursive: true })
   const token = randomBytes(24).toString('base64url')
   writeFileSync(path, `${token}\n`, { mode: 0o600 })
-  chmodSync(path, 0o600) // umask 不该把它放宽
+  guard()
   return token
+}
+
+type RunFile = (file: string, args: string[], opts: { encoding: 'utf8'; windowsHide: boolean }) => string
+
+/**
+ * 只给本人读写。POSIX 上是 0600（umask 不该把它放宽）。Windows 上 chmod 只管「只读」标记，权限在 ACL 里：
+ * 先 /reset 把文件上直接写着的条目清掉（上级目录不往下传权限时，新文件会带上创建者的默认权限：SYSTEM、
+ * Administrators……都是直接条目，/inheritance:r 摘不掉），再去掉继承来的条目，只给当前用户。
+ * 用户按 SID 指定（whoami 给的），本地账户、域账户、微软账户都一样。
+ */
+export function restrictToOwner(
+  path: string,
+  platform: string = process.platform,
+  run: RunFile = (file, args, o) => execFileSync(file, args, o),
+): void {
+  if (platform !== 'win32') {
+    chmodSync(path, 0o600)
+    return
+  }
+  // whoami /user /fo csv /nh → "pc\\ana","S-1-5-21-…"
+  const sid = run('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }).trim().match(/"(S-1-[\d-]+)"\s*$/)?.[1]
+  if (!sid) throw new Error('whoami did not report a SID')
+  run('icacls', [path, '/reset'], { encoding: 'utf8', windowsHide: true })
+  run('icacls', [path, '/inheritance:r', '/grant:r', `*${sid}:F`], { encoding: 'utf8', windowsHide: true })
 }
 
 function sameToken(presented: string, token: string): boolean {

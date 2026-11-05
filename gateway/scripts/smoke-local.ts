@@ -33,6 +33,13 @@ check('a local computer', computer.kind === 'local' && (await computer.ping()))
 await computer.writeFile('notes/todo.md', '# from smoke\n')
 check('write+read file', (await computer.readFile('/workspace/notes/todo.md')).includes('from smoke'))
 check('files cannot leave the workspace', await rejects(computer.readFile('../../auth-token'), /escapes/) && await rejects(computer.readFile('/etc/passwd'), /escapes/))
+if (process.platform === 'win32') {
+  // Windows 特有的出口：系统目录、网络路径、设备名（读 CON 会一直等输入）、备用数据流（跨盘的写法由单元测试覆盖）
+  const windir = process.env.WINDIR ?? 'C:\\Windows'
+  const outs = [`${windir}\\win.ini`, '\\\\localhost\\c$\\Windows\\win.ini', '..\\..\\auth-token', 'con', 'NUL.txt', 'notes\\todo.md:hidden']
+  const refused = await Promise.all(outs.map((p) => rejects(computer.readFile(p), /escapes/)))
+  check('Windows paths cannot leave the workspace either', refused.every(Boolean), outs.filter((_, i) => !refused[i]).join(', ') || 'drives, shares, devices, streams')
+}
 
 const started = Date.now()
 const nav = await computer.goto('https://example.com')

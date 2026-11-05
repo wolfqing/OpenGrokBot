@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  bubblewrapArgs, detectSandbox, runSandboxed, sandboxEnv, sandboxHint, sandboxSelfCheck, sandboxedCommand, seatbeltProfile,
+  bubblewrapArgs, detectSandbox, homeLeaks, runSandboxed, sandboxEnv, sandboxHint, sandboxSelfCheck, sandboxedCommand, seatbeltProfile,
 } from '../src/sandbox.js'
 
 const have = (...paths: string[]) => (p: string) => paths.includes(p)
@@ -81,7 +81,8 @@ function leakySandbox(dir: string) {
   return { kind: 'seatbelt' as const, executable: script }
 }
 
-describe('sandboxSelfCheck', () => {
+// 假沙箱是个 #!/bin/sh 脚本；Windows 上没有沙箱，自检也就从来不跑
+describe.skipIf(process.platform === 'win32')('sandboxSelfCheck', () => {
   let dir: string
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ogb-sb-')) })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
@@ -141,4 +142,24 @@ describe.skipIf(!realSeatbelt)('Seatbelt for real (macOS only)', () => {
     const stopped = await runSandboxed('sleep 30', { sandbox, confinement: c, signal: ctrl.signal })
     expect(stopped.exitCode).not.toBe(0)
   }, 60_000)
+})
+
+describe('homeLeaks', () => {
+  const home = '/home/ana'
+  const putBack = ['/home/ana/.cargo/bin', '/home/ana/.local/bin', '/home/ana/Projects/OpenGrokBot/gateway/data/workspaces/bob']
+
+  it('ignores the mount points the sandbox binds back itself', () => {
+    // bubblewrap 的空家目录里，绑回来的工具链和工作区会留下它们的第一层名字
+    expect(homeLeaks('.cargo\n.local\nProjects\n', home, putBack)).toEqual([])
+    expect(homeLeaks('', home, putBack)).toEqual([])
+  })
+
+  it('reports anything else it can see in the home directory', () => {
+    expect(homeLeaks('.cargo\n.ssh\nDocuments\n.opengrokbot-sandbox-probe-42\n', home, putBack))
+      .toEqual(['.ssh', 'Documents', '.opengrokbot-sandbox-probe-42'])
+  })
+
+  it('does not treat paths outside the home directory as put back', () => {
+    expect(homeLeaks('tmp\n', home, ['/tmp/ogb/workspaces/bob'])).toEqual(['tmp'])
+  })
 })

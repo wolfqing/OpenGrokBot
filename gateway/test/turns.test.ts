@@ -57,6 +57,37 @@ describe('turn queue', () => {
     expect(q.isBusy('scout')).toBe(false)
   })
 
+  it('holds a bot lane for recording and drains queued work only after release', async () => {
+    const statuses: string[] = []
+    const q = createTurnQueue((bot, state) => statuses.push(`${bot}:${state}`))
+    const ran: string[] = []
+    const release = q.hold('scout')
+    expect(release).toBeTypeOf('function')
+    expect(q.isBusy('scout')).toBe(true)
+
+    const turn = q.run('scout', 'dm:scout', async () => { ran.push('turn') })
+    await tick()
+    expect(ran).toEqual([])
+
+    release!()
+    await turn
+    expect(ran).toEqual(['turn'])
+    expect(q.isBusy('scout')).toBe(false)
+    expect(statuses).toEqual(['scout:thinking', 'scout:idle'])
+  })
+
+  it('cannot reserve a bot lane while a turn is running', async () => {
+    const q = createTurnQueue(() => {})
+    const running = gate()
+    const turn = q.run('scout', 'dm:scout', async () => { await running.opened })
+    await tick()
+
+    expect(q.hold('scout')).toBeNull()
+
+    running.open()
+    await turn
+  })
+
   it('stops a thread: aborts its running turn and drops its queued ones, leaving others alone', async () => {
     const q = createTurnQueue(() => {})
     const ran: string[] = []

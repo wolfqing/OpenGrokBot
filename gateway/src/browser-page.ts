@@ -23,20 +23,28 @@ export type PageLike = {
   goBack?(opts?: unknown): Promise<unknown>
   waitForLoadState?(state?: string, opts?: unknown): Promise<void>
   evaluate?(script: string): Promise<unknown>
+  context?(): PageContextLike
+  mainFrame?(): unknown
+  on?(event: 'framenavigated' | 'close' | 'popup', listener: (value?: unknown) => void): void
+  off?(event: 'framenavigated' | 'close' | 'popup', listener: (value?: unknown) => void): void
   viewportSize(): { width: number; height: number } | null
 }
 
 /** 够用就好的 CDP 会话：本机模式用它拿浏览器画面 */
 export type CdpSessionLike = {
   send(method: string, params?: Record<string, unknown>): Promise<unknown>
-  on(event: string, listener: (params: never) => void): unknown
+  on(event: string, listener: (params: unknown) => void): unknown
+  off?(event: string, listener: (params: unknown) => void): unknown
   detach(): Promise<void>
 }
 
-export type ContextLike = {
+export type PageContextLike = {
+  newCDPSession?(page: unknown): Promise<CdpSessionLike>
+}
+
+export type ContextLike = PageContextLike & {
   pages(): PageLike[]
   newPage(): Promise<PageLike>
-  newCDPSession?(page: PageLike): Promise<CdpSessionLike>
 }
 
 export type BrowserLike = {

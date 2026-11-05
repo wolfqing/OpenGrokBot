@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+// Seatbelt 和 bubblewrap 只在 macOS / Linux 上有：规则里的路径一律按 POSIX 写，在哪台机器上算都一样
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path/posix'
 import type { ShellResult } from './computer.js'
 
 /**
@@ -224,6 +225,19 @@ const shQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`
  * 打开命令行之前先验货：沙箱里写自己的文件夹得成；写数据目录、读网关令牌、列家目录都得败。
  * 哪一条不对就不开——说「有沙箱」却拦不住，比没有沙箱更糟。
  */
+/**
+ * 家目录列表里不该出现的名字。bubblewrap 把家目录换成空的 tmpfs，再把工具链、工作区、临时目录按原路径绑回来，
+ * 于是这些挂载点的第一层名字（.cargo、.nvm、项目所在的 Projects……）一定会出现，而每个名字底下只有绑回来的那一支。
+ * 除此之外出现的任何东西，才是真的看见了你的文件。
+ */
+export function homeLeaks(listing: string, home: string, putBack: string[]): string[] {
+  const expected = new Set(putBack.map((p) => {
+    const rel = relative(home, p)
+    return rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel.split('/')[0]! : null
+  }).filter((name): name is string => name !== null))
+  return listing.split('\n').map((name) => name.trim()).filter((name) => name && !expected.has(name))
+}
+
 export async function sandboxSelfCheck(sandbox: Sandbox, c: Confinement): Promise<{ ok: true } | { ok: false; why: string }> {
   await mkdir(c.workspace, { recursive: true })
   await mkdir(c.tmp, { recursive: true })
@@ -231,8 +245,11 @@ export async function sandboxSelfCheck(sandbox: Sandbox, c: Confinement): Promis
   const inside = join(l.workspace, '.sandbox-probe')
   const outside = join(l.dataDir, `.sandbox-probe-${process.pid}`)
   const token = join(l.dataDir, 'auth-token')
+  // 家目录里临时放一个探针：哪怕你的家目录里恰好只有沙箱会绑回来的那几个名字，配错的沙箱也会露出它
+  const canary = join(l.home, `.opengrokbot-sandbox-probe-${process.pid}`)
   const run = (cmd: string) => runSandboxed(cmd, { sandbox, confinement: c, timeoutMs: 20_000 })
   try {
+    await writeFile(canary, 'probe\n').catch(() => {}) // 家目录不可写就只靠列表判断
     const wrote = await run(`echo ok > ${shQuote(inside)}`)
     if (wrote.exitCode !== 0 || !existsSync(inside)) {
       return { ok: false, why: `the sandbox could not even write inside the workspace (${wrote.stderr.trim() || `exit ${wrote.exitCode}`})` }
@@ -243,12 +260,14 @@ export async function sandboxSelfCheck(sandbox: Sandbox, c: Confinement): Promis
       const read = await run(`cat ${shQuote(token)}`)
       if (read.exitCode === 0 && read.stdout.trim()) return { ok: false, why: 'the sandbox let a command read the gateway token' }
     }
-    // Seatbelt 下 ls 直接报错；bubblewrap 下看到的是空的 tmpfs——两种都不该列出任何东西
+    // Seatbelt 下 ls 直接被拒，什么都列不出；bubblewrap 下只该看到它自己绑回来的那几个挂载点
     const home = await run(`ls -A ${shQuote(l.home)} 2>/dev/null`)
-    if (home.stdout.trim()) return { ok: false, why: 'the sandbox let a command read your home directory' }
+    const leaks = homeLeaks(home.stdout, l.home, [...l.toolchains, l.workspace, l.tmp])
+    if (leaks.length) return { ok: false, why: `the sandbox let a command read your home directory (it saw ${leaks.slice(0, 3).join(', ')})` }
     return { ok: true }
   } finally {
     await rm(inside, { force: true })
     await rm(outside, { force: true })
+    await rm(canary, { force: true })
   }
 }

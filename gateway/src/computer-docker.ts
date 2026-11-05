@@ -2,6 +2,7 @@ import { chromium } from 'playwright-core'
 import { createBrowserSession, pageOperations, type BrowserLike } from './browser-page.js'
 import type { BotComputer, ShellResult } from './computer.js'
 import type { Endpoints } from './containers.js'
+import { createWorkflowRecorder } from './workflow-recorder.js'
 
 export type DockerComputerDeps = {
   fetchImpl?: typeof fetch
@@ -82,6 +83,9 @@ export function createDockerComputer(endpoints: Endpoints, deps: DockerComputerD
     },
     async writeFile(path, content) {
       await post('/write', { path, content })
+    },
+    async startWorkflowRecording(title, intent) {
+      return createWorkflowRecorder(await session.page(), title, intent)
     },
     ...pageOperations(() => session.page()),
     dispose: () => session.dispose(),

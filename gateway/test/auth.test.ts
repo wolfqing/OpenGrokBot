@@ -1,9 +1,10 @@
-import { mkdtempSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createApproval, getApproval } from '../src/approvals.js'
-import { loadOrCreateToken } from '../src/auth.js'
+import { loadOrCreateToken, restrictToOwner } from '../src/auth.js'
 import { ensureDmThread, openDb, upsertBot } from '../src/db.js'
 import type { AssistantTurn, LLM } from '../src/llm.js'
 import { createApp } from '../src/server.js'
@@ -28,12 +29,56 @@ describe('loadOrCreateToken', () => {
     const first = loadOrCreateToken(dir)
     expect(first).toMatch(/^[A-Za-z0-9_-]{32,}$/)
     expect(loadOrCreateToken(dir)).toBe(first)
-    expect(statSync(join(dir, 'auth-token')).mode & 0o777).toBe(0o600)
+    // 0600 是 POSIX 的权限位；Windows 上看 ACL（见下面的 restrictToOwner）
+    if (process.platform !== 'win32') expect(statSync(join(dir, 'auth-token')).mode & 0o777).toBe(0o600)
   })
 
   it('lets an explicit token win', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ogb-auth-'))
     expect(loadOrCreateToken(dir, 'from-env-token')).toBe('from-env-token')
+  })
+})
+
+describe('restrictToOwner', () => {
+  it('on Windows, clears direct entries, drops inherited access and grants only the current user, by SID', () => {
+    const calls: { file: string; args: string[] }[] = []
+    const run = (file: string, args: string[]) => {
+      calls.push({ file, args })
+      return file === 'whoami' ? '"pc\\ana","S-1-5-21-111-222-333-1001"\r\n' : 'processed file: C:\\data\\auth-token'
+    }
+    restrictToOwner('C:\\data\\auth-token', 'win32', run)
+    expect(calls).toEqual([
+      { file: 'whoami', args: ['/user', '/fo', 'csv', '/nh'] },
+      { file: 'icacls', args: ['C:\\data\\auth-token', '/reset'] },
+      { file: 'icacls', args: ['C:\\data\\auth-token', '/inheritance:r', '/grant:r', '*S-1-5-21-111-222-333-1001:F'] },
+    ])
+  })
+
+  it('refuses to guess when whoami reports no SID', () => {
+    expect(() => restrictToOwner('C:\\x', 'win32', () => 'nothing useful')).toThrow(/SID/)
+  })
+
+  it('warns instead of failing start-up when the file cannot be restricted', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ogb-token-'))
+    const warnings: string[] = []
+    const token = loadOrCreateToken(dir, undefined, { restrict: () => { throw new Error('icacls missing') }, warn: (l) => warnings.push(l) })
+    expect(token).toMatch(/^[\w-]{20,}$/)
+    expect(warnings.join('\n')).toMatch(/could not limit .*auth-token to your account: icacls missing/)
+  })
+
+  it.skipIf(process.platform !== 'win32')('really leaves only the current user on the file (Windows)', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'ogb-acl-')), 'auth-token')
+    writeFileSync(file, 'secret\n')
+    // 先塞一条直接写在文件上的「Users 可读」：继承开关管不到它，得靠 /reset 清掉
+    execFileSync('icacls', [file, '/grant', '*S-1-5-32-545:R'], { encoding: 'utf8' })
+    restrictToOwner(file)
+    const sid = execFileSync('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' }).trim().match(/"(S-1-[\d-]+)"\s*$/)![1]!
+    const listing = execFileSync('icacls', [file], { encoding: 'utf8' })
+    const entries = listing.split(/\r?\n/).slice(0, -1).map((l) => l.replace(file, '').trim()).filter((l) => l.includes(':('))
+    expect(entries, listing).toHaveLength(1)
+    expect(entries[0], listing).not.toMatch(/\(I\)/) // 不再有继承来的条目
+    expect(listing).not.toMatch(/Everyone|BUILTIN\\Users|Authenticated Users/)
+    expect(sid).toMatch(/^S-1-/)
   })
 })
 

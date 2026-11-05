@@ -156,13 +156,33 @@ const MIGRATIONS: Migration[] = [
   `),
   // v4：本机电脑的命令行开关，按同事存（操作者在面板上做的决定，要看得见、能撤）
   (db) => db.exec(`ALTER TABLE bots ADD COLUMN shell_enabled INTEGER NOT NULL DEFAULT 0;`),
-  // v5：操作者在界面上改的设置（服务商、模型、语言……），值是 JSON；API key 不在这里，单独放 <data>/llm-key
+  // v5：recorded workflows belong beside routines and actions in the teammate database, not as loose files.
+  (db) => db.exec(`
+    CREATE TABLE IF NOT EXISTS workflows (
+      id TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      trace_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_workflows_bot ON workflows(bot_id, created_at DESC, id DESC);
+  `),
+  // v6：操作者在界面上改的设置（服务商、模型、语言……），值是 JSON；API key 不在这里，单独放 <data>/llm-key。
+  // m7-desktop 合并 main 之前把设置表当 v5 建过：那样的库停在 v5、没有 workflows，这里顺手补上（都是 IF NOT EXISTS）
   (db) => db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS workflows (
+      id TEXT PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      trace_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_workflows_bot ON workflows(bot_id, created_at DESC, id DESC);
   `),
 ]
 
