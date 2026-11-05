@@ -83,8 +83,9 @@ describe('workflow recorder in Chromium', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`)
       await page.waitForTimeout(450)
-      await page.getByLabel('Plan').click()
-      await page.keyboard.press('ArrowDown')
+      // Type-ahead changes a closed <select> on every platform; on macOS, ArrowDown only opens the native menu.
+      await page.getByLabel('Plan').focus()
+      await page.keyboard.type('P')
       await page.getByLabel('Search').fill('OpenGrok workflow')
       await page.getByLabel('Search').press('Enter')
       await page.waitForURL((url) => url.pathname === '/results')
