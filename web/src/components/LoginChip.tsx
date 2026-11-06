@@ -1,15 +1,17 @@
 import type { LoginPayload } from '../types'
+import { useT } from '../i18n'
 
 export function LoginChip({ payload, onOpenScreen }: {
   payload: LoginPayload
   onOpenScreen: () => void
 }) {
+  const t = useT()
   return (
     <div className="login-chip">
-      <div className="login-label">Needs you at the keyboard</div>
-      <div className="login-site">Sign in to {payload.site}</div>
+      <div className="login-label">{t('login.label')}</div>
+      <div className="login-site">{t('login.site', { site: payload.site })}</div>
       {payload.why ? <div className="login-why">{payload.why}</div> : null}
-      <button className="login-open" onClick={onOpenScreen}>Open the computer panel</button>
+      <button className="login-open" onClick={onOpenScreen}>{t('login.open')}</button>
     </div>
   )
 }

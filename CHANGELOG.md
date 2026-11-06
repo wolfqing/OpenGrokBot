@@ -43,6 +43,11 @@ still change behaviour.
   (`why`: `chosen`, `docker_running`, `docker_not_running`, `docker_image_missing`), and a choice made on the
   settings page is logged as such rather than as `OPENGROKBOT_COMPUTERS`. Settings ask for a restart only when
   it would change the computers: switching `auto` to `local` on a gateway that already runs local computers does not.
+- The UI speaks Chinese. Every label, button and hint in the web UI comes from a dictionary
+  (`web/src/i18n/en.ts`, with `zh-CN.ts` beside it); the language is the one saved in settings, otherwise the
+  browser's, otherwise English. Dates and numbers follow it too. A missing Chinese entry fails the build, and a
+  test checks that each translation fills in the same values as the English. Word choices are in
+  `web/src/i18n/GLOSSARY.md`. What teammates say, and reasons the gateway sends back, stay as they are for now.
 - First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
   saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
   and routines remain out of scope.

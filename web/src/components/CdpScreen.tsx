@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useT } from '../i18n'
 
 /**
  * 本机电脑的屏幕：网关把浏览器的截屏流一帧一条 JSON 推过来，这里换图就行。只看不操作——
@@ -7,8 +8,10 @@ import { useEffect, useState } from 'react'
  * 标签页藏到后面时也断开，省得后台还在收 10 帧/秒的图。
  */
 export function CdpScreen({ url, title }: { url: string; title: string }) {
+  const t = useT()
   const [frame, setFrame] = useState<string | null>(null)
-  const [status, setStatus] = useState('Connecting…')
+  // 状态存成键：换语言时跟着换，不留一句旧语言的「正在连接」
+  const [status, setStatus] = useState<'screen.connecting' | 'screen.reconnecting' | 'screen.none' | { error: string } | null>('screen.connecting')
 
   useEffect(() => {
     let closed = false
@@ -25,17 +28,17 @@ export function CdpScreen({ url, title }: { url: string; title: string }) {
           const m = JSON.parse(String(ev.data)) as { type: string; data?: string; error?: string }
           if (m.type === 'frame' && m.data) {
             setFrame(`data:image/jpeg;base64,${m.data}`)
-            setStatus('')
+            setStatus(null)
           } else if (m.type === 'error') {
             fatal = true
-            setStatus(m.error ?? 'No screen')
+            setStatus(m.error ? { error: m.error } : 'screen.none')
           }
         } catch { /* 忽略脏帧 */ }
       }
       ws.onclose = () => {
         ws = null
         if (closed || fatal) return
-        setStatus('Reconnecting…')
+        setStatus('screen.reconnecting')
         timer = setTimeout(open, Math.min(1000 * 2 ** retry++, 15000))
       }
     }
@@ -58,7 +61,7 @@ export function CdpScreen({ url, title }: { url: string; title: string }) {
       <div className="panel-screen panel-screen-cdp">
         {frame ? <img src={frame} alt={title} /> : null}
       </div>
-      {status ? <div className="panel-screen-status" role="status">{status}</div> : null}
+      {status ? <div className="panel-screen-status" role="status">{typeof status === 'string' ? t(status) : status.error}</div> : null}
     </>
   )
 }

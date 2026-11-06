@@ -1,33 +1,54 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
-  fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerShell, setComputerWindow, stopThread,
+  fetchLanguage, fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerShell, setComputerWindow, stopThread,
   updateRoutine,
 } from './api'
 import { ComputerPanel } from './components/ComputerPanel'
 import { NewBotForm } from './components/NewBotForm'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
+import { I18nProvider, browserLanguages, pickLang, useT, type Lang } from './i18n'
 import { applyHello, applyStatus, clearDone } from './presence'
 import type { BotStatus, ComputerInfo, Conversation, Message, RoutineAction } from './types'
 
 /** 网关锁着：告诉人去哪拿登录链接，而不是一片空白。 */
 function SignIn() {
+  const t = useT()
   return (
     <main className="signin">
       <div className="signin-card">
-        <div className="signin-title">This gateway is locked</div>
-        <p>
-          Open the sign-in link the gateway printed when it started. It looks like{' '}
-          <code>{location.origin}/auth?token=…</code> and signs this browser in for a year.
-        </p>
-        <p className="signin-hint">Lost it? The token is in <code>gateway/data/auth-token</code>.</p>
+        <div className="signin-title">{t('signin.title')}</div>
+        <p>{withCode(t('signin.body'), 'link', `${location.origin}/auth?token=…`)}</p>
+        <p className="signin-hint">{withCode(t('signin.hint'), 'path', 'gateway/data/auth-token')}</p>
       </div>
     </main>
   )
 }
 
+/** 句子里有一段要排成代码：按占位切开，代码段放进 <code>，语序由译文决定 */
+function withCode(text: string, name: string, code: string) {
+  const [before, after = ''] = text.split(`{${name}}`)
+  return <>{before}<code>{code}</code>{after}</>
+}
+
+/**
+ * 语言 = 设置里存的 → 否则跟浏览器。先按浏览器出一版（不等网络），设置拿回来再换；
+ * 锁着的网关拿不到设置，登录页就按浏览器的语言。
+ */
 export default function App() {
+  const [lang, setLang] = useState<Lang>(() => pickLang(undefined, browserLanguages()))
+  useEffect(() => {
+    let live = true
+    void fetchLanguage().then((saved) => { if (live) setLang(pickLang(saved, browserLanguages())) })
+    return () => { live = false }
+  }, [])
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
+  return <I18nProvider lang={lang}><Workspace /></I18nProvider>
+}
+
+function Workspace() {
+  const t = useT()
   const [signedOut, setSignedOut] = useState<boolean | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [roster, setRoster] = useState<Record<string, { name: string; emoji: string }>>({})
@@ -193,7 +214,7 @@ export default function App() {
   }
 
   const onRoutine = async (id: number, action: RoutineAction) => {
-    if (action === 'delete' && !window.confirm('Delete this routine? It will not fire again.')) return
+    if (action === 'delete' && !window.confirm(t('app.confirmDeleteRoutine'))) return
     try {
       await updateRoutine(id, action)
       if (panel) await loadPanel(panel.botId)
@@ -212,7 +233,7 @@ export default function App() {
   }
 
   const onForgetRule = async (rule: string) => {
-    if (!panel || !window.confirm(`Forget this rule?\n\n${rule}`)) return
+    if (!panel || !window.confirm(t('app.confirmForgetRule', { rule }))) return
     try {
       await forgetMemoryRule(panel.botId, rule)
       await loadPanel(panel.botId)
@@ -278,7 +299,7 @@ export default function App() {
           onStop={() => { if (threadId) stopThread(threadId).catch(guard) }}
         />
       ) : (
-        <main className="thread thread-empty">No teammates yet.</main>
+        <main className="thread thread-empty">{t('app.noTeammates')}</main>
       )}
       {panel ? (
         <ComputerPanel
@@ -295,7 +316,7 @@ export default function App() {
       {hiring ? (
         <div className="modal-scrim" onClick={() => setHiring(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">Hire a teammate</div>
+            <div className="modal-title">{t('app.hireTitle')}</div>
             <NewBotForm onCreate={(n, r) => void hire(n, r)} onCancel={() => setHiring(false)} error={hireError} />
           </div>
         </div>

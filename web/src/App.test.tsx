@@ -24,6 +24,8 @@ function mockGateway(opts: {
   computer?: unknown
   /** 不为空时，/computer 的响应等它兑现了才回（模拟电脑在醒） */
   computerGate?: Promise<void>
+  /** 设置里存的界面语言；不给 = 网关没有设置路由（老网关） */
+  language?: string
 } = {}) {
   const calls: string[] = []
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -33,6 +35,9 @@ function mockGateway(opts: {
     if (url === '/api/session') return json({ ok: opts.session === undefined }, opts.session ?? 200)
     if (url === '/api/conversations') return json(opts.conversations ?? [conversation({})])
     if (url === '/api/bots') return json([])
+    if (url === '/api/settings' && opts.language !== undefined) {
+      return opts.session === 401 ? json({ error: 'sign in' }, 401) : json({ values: { language: opts.language } })
+    }
     if (url.startsWith('/api/threads/')) return json(opts.messages ? await opts.messages(url) : [])
     if (url.includes('/computer')) {
       await opts.computerGate
@@ -62,6 +67,29 @@ beforeEach(() => {
   document.title = 'OpenGrokBot'
 })
 afterEach(() => { vi.unstubAllGlobals() })
+
+describe('App language', () => {
+  it('speaks the language saved in settings', async () => {
+    mockGateway({ conversations: [], language: 'zh-CN' })
+    render(<App />)
+    expect(await screen.findByText('还没有同事。')).toBeInTheDocument()
+    expect(document.documentElement.lang).toBe('zh-CN')
+  })
+
+  it('follows the browser when nothing is saved, even on the locked sign-in page', async () => {
+    vi.stubGlobal('navigator', { ...navigator, languages: ['zh-CN', 'en'], language: 'zh-CN' })
+    mockGateway({ session: 401, language: '' })
+    render(<App />)
+    expect(await screen.findByText('网关已上锁')).toBeInTheDocument()
+    expect(screen.getByText('gateway/data/auth-token')).toBeInTheDocument()
+  })
+
+  it('stays in English for an English browser and an old gateway without settings', async () => {
+    mockGateway({ conversations: [] })
+    render(<App />)
+    expect(await screen.findByText('No teammates yet.')).toBeInTheDocument()
+  })
+})
 
 describe('App', () => {
   it('asks the operator to sign in when the gateway is locked', async () => {

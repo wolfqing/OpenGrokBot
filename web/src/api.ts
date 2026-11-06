@@ -36,6 +36,18 @@ export async function checkSession(): Promise<boolean> {
   return res.status !== 401
 }
 
+/** 设置里存的界面语言；空串 = 跟浏览器。拿不到（老网关没有这个路由）就当没设 */
+export async function fetchLanguage(): Promise<string> {
+  try {
+    const res = await fetch('/api/settings')
+    if (!res.ok) return ''
+    const body = (await res.json()) as { values?: { language?: unknown } }
+    return typeof body.values?.language === 'string' ? body.values.language : ''
+  } catch {
+    return ''
+  }
+}
+
 export const fetchBots = () => getJson<Bot[]>('/api/bots')
 export const fetchConversations = () => getJson<Conversation[]>('/api/conversations')
 export const fetchMessages = (threadId: string) => getJson<Message[]>(`/api/threads/${encodeURIComponent(threadId)}/messages`)
