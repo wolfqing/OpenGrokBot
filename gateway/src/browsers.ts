@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, win32 } from 'node:path'
+import { CodedError } from './coded-error.js'
 
 /**
  * 本机模式要一个 Chromium 系浏览器。顺序：操作者指定的 → 机器上装好的（真 Chrome 优先，登录页对它最宽容）→
@@ -86,7 +87,7 @@ export function findBrowser(opts: {
   const env = opts.env ?? process.env
   const wanted = (env.OPENGROKBOT_BROWSER ?? '').trim()
   if (wanted) {
-    if (!exists(wanted)) throw new Error(`OPENGROKBOT_BROWSER points to ${wanted}, which does not exist`)
+    if (!exists(wanted)) throw new CodedError('browser_missing', `OPENGROKBOT_BROWSER points to ${wanted}, which does not exist`, { path: wanted })
     return { executablePath: wanted, source: 'env' }
   }
   for (const candidate of systemBrowsers(opts.platform ?? process.platform, env)) {
@@ -147,8 +148,11 @@ export async function installBrowser(dir: string, opts: {
     child.on('error', (err) => reject(err instanceof Error ? err : new Error(String(err))))
     child.on('exit', (code) => {
       if (code === 0) resolvePromise()
-      else reject(new Error(`browser download failed (exit ${String(code)}). ${tail.trim().split('\n').slice(-3).join(' ')}`.trim()
-        + '\nInstall Google Chrome instead, or point OPENGROKBOT_BROWSER at a Chromium-based browser.'))
+      else {
+        const detail = tail.trim().split('\n').slice(-3).join(' ')
+        reject(new CodedError('browser_download_failed', `browser download failed (exit ${String(code)}). ${detail}`.trim()
+          + '\nInstall Google Chrome instead, or point OPENGROKBOT_BROWSER at a Chromium-based browser.', { detail }))
+      }
     })
   })
   const found = findDownloadedBrowser(dir, opts)

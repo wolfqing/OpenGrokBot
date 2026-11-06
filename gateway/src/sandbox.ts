@@ -50,6 +50,15 @@ export function detectSandbox(platform: string = process.platform, exists: (p: s
 }
 
 /** 没有沙箱时告诉操作者怎么办 */
+/** 为什么没有沙箱，给界面翻译用；文字版是 sandboxHint */
+export type SandboxMissing = 'install_bwrap' | 'no_sandbox_exec' | 'unsupported_os'
+
+export function sandboxMissing(platform: string = process.platform): SandboxMissing {
+  if (platform === 'linux') return 'install_bwrap'
+  if (platform === 'darwin') return 'no_sandbox_exec'
+  return 'unsupported_os'
+}
+
 export function sandboxHint(platform: string = process.platform): string {
   if (platform === 'linux') return 'Install bubblewrap (apt install bubblewrap, or dnf install bubblewrap), then try again.'
   if (platform === 'darwin') return 'macOS normally ships /usr/bin/sandbox-exec; this machine seems to be missing it.'

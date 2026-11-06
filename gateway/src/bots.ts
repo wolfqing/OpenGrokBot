@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { CodedError } from './coded-error.js'
 import { ensureDmThread, ensureGroupThread, threadMembers, upsertBot, type BotRow, type Db } from './db.js'
 import { soulFrontmatter } from './soul.js'
 
@@ -29,13 +30,13 @@ export async function createBot(
   opts: { dataDir: string; name: string; role: string; groupId?: string },
 ): Promise<BotRow> {
   const name = opts.name.trim()
-  if (!name) throw new Error('A teammate needs a name.')
+  if (!name) throw new CodedError('name_required', 'A teammate needs a name.')
   const taken = db.prepare('SELECT id FROM bots WHERE lower(name) = lower(?)').get(name) as { id: string } | undefined
-  if (taken) throw new Error(`A teammate called ${name} already exists.`)
+  if (taken) throw new CodedError('name_taken', `A teammate called ${name} already exists.`, { name })
   // 中文等非拉丁名字拼不出 slug：名字照原样显示，id 用一个短随机串
   const id = slugifyBotId(name) || `mate-${randomBytes(3).toString('hex')}`
   if (db.prepare('SELECT id FROM bots WHERE id = ?').get(id)) {
-    throw new Error(`A teammate called ${id} already exists.`)
+    throw new CodedError('name_taken', `A teammate called ${id} already exists.`, { name: id })
   }
 
   // 用户新建的同事住在数据目录，不写进版本库里的预置样板

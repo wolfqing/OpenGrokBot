@@ -5,6 +5,20 @@ export class SignedOut extends Error {
   constructor() { super('sign in first') }
 }
 
+/** 网关拒了：message 是它的英文原话，code + params 让界面换成操作者的语言（认得的话） */
+export class ApiError extends Error {
+  readonly code: string | undefined
+  readonly params: Record<string, string | number> | undefined
+  readonly status: number
+  constructor(message: string, status: number, code?: string, params?: Record<string, string | number>) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.params = params
+  }
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(path, init)
   if (res.status === 401) throw new SignedOut()
@@ -17,15 +31,19 @@ async function getJson<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-async function send(method: string, path: string, body?: unknown): Promise<Response> {
+/**
+ * 默认 409 不算失败：审批被别处先定了、问题已经答过，这种「晚了一步」不值得报错。
+ * strict 时 409 也抛：开命令行被拒（没沙箱、自检失败）回的就是 409，原因要摆到面板上。
+ */
+async function send(method: string, path: string, body?: unknown, opts: { strict?: boolean } = {}): Promise<Response> {
   const res = await request(path, {
     method,
     headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
-  if (!res.ok && res.status !== 409) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string }
-    throw new Error(data.error ?? `${method} ${path} ${res.status}`)
+  if (!res.ok && (opts.strict || res.status !== 409)) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; params?: Record<string, string | number> }
+    throw new ApiError(data.error ?? `${method} ${path} ${res.status}`, res.status, data.code, data.params)
   }
   return res
 }
@@ -92,12 +110,12 @@ export async function forgetMemoryRule(botId: string, rule: string): Promise<voi
 
 /** 本机电脑：开关这位同事的命令行（开了也在沙箱里，只能写它自己的文件夹） */
 export async function setComputerShell(botId: string, enabled: boolean): Promise<void> {
-  await send('PATCH', `/api/bots/${encodeURIComponent(botId)}/computer`, { shell: enabled })
+  await send('PATCH', `/api/bots/${encodeURIComponent(botId)}/computer`, { shell: enabled }, { strict: true })
 }
 
 /** 本机电脑：登录完了把浏览器窗口收回后台（shown=false），或主动开出来（shown=true） */
 export async function setComputerWindow(botId: string, shown: boolean): Promise<void> {
-  await send('POST', `/api/bots/${encodeURIComponent(botId)}/computer/window`, { shown })
+  await send('POST', `/api/bots/${encodeURIComponent(botId)}/computer/window`, { shown }, { strict: true })
 }
 
 export async function updateRoutine(id: number, action: RoutineAction): Promise<void> {

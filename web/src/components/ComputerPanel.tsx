@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useT, type MessageKey, type T } from '../i18n'
+import { blockReasonText, describeSchedule, errorText, sandboxMissingText } from '../i18n/describe'
+import { ApiError } from '../api'
 import type { ActionEntry, ComputerInfo, ComputerRoutine, RoutineAction } from '../types'
 import { untilLabel } from './ApprovalChip'
 import { CdpScreen } from './CdpScreen'
@@ -161,7 +163,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
     try {
       await run()
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : String(err))
+      setProblem(err instanceof ApiError ? errorText(t, err) : err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(null)
     }
@@ -175,7 +177,9 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
       ) : (
         <div className="panel-offline">
           <div className="panel-offline-title">{t('panel.noScreen')}</div>
-          <div className="panel-offline-why">{info.error ?? t('panel.noComputer')}</div>
+          <div className="panel-offline-why">
+            {info.error ? errorText(t, { message: info.error, code: info.errorCode, params: info.errorParams }) : t('panel.noComputer')}
+          </div>
         </div>
       )}
       {info.window ? (
@@ -208,7 +212,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
               {t('panel.shellText')}
               {info.shell.available
                 ? t('panel.shellSafe')
-                : t('panel.shellUnavailable', { why: info.shell.why ?? t('panel.noSandbox') })}
+                : t('panel.shellUnavailable', { why: sandboxMissingText(t, info.shell.whyCode, info.shell.why ?? t('panel.noSandbox')) })}
               {busy === 'shell' ? t('panel.checkingSandbox') : ''}
             </span>
           </label>
@@ -228,7 +232,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
                 <div className="panel-routine-text">
                   <span className="panel-routine-name">{r.name}</span>
                   <span className="panel-routine-when">
-                    {r.human}
+                    {t.lang === 'en' ? r.human : describeSchedule(t, r.cron, Boolean(r.webhook_path))}
                     {r.mode === 'watch' ? <span className="panel-routine-tag">{t('panel.watchTag')}</span> : null}
                     {paused ? <span className="panel-routine-paused">{t('panel.paused')}</span> : null}
                   </span>
@@ -264,7 +268,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
                 <span className="panel-rule-scope">{rule.kind} → {rule.target}</span>
                 <span className="panel-routine-when">
                   {rule.applies === false
-                    ? t('panel.noLongerApplies', { why: rule.whyNot ?? t('panel.notOneDestination') })
+                    ? t('panel.noLongerApplies', { why: blockReasonText(t, rule.whyNotReason, rule.whyNot ?? t('panel.notOneDestination')) })
                     : untilLabel(rule.expiresAt, t)}
                 </span>
               </div>

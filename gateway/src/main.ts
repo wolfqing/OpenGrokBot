@@ -16,7 +16,7 @@ import { botImageReady } from './containers.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
 import { createScreenViewers, mountScreenProxy, screenRelay, screencastRelay } from './screen.js'
-import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
+import { detectSandbox, sandboxHint, sandboxMissing, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
@@ -91,7 +91,7 @@ const gateway = createApp({
     kind: backend.kind,
     why: backendWhy,
     reason: backendReason,
-    sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint() },
+    sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint(), whyCode: sandboxMissing() },
     checkSandbox: (botId) => sandbox
       ? sandboxSelfCheck(sandbox, { workspace: join(config.dataDir, 'workspaces', botId), tmp: join(config.dataDir, 'bots', botId, 'tmp'), dataDir: config.dataDir })
       : Promise.resolve({ ok: false as const, why: sandboxHint() }),

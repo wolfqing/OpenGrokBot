@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
+  ApiError, SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
   fetchLanguage, fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerShell, setComputerWindow, stopThread,
   updateRoutine,
 } from './api'
@@ -9,6 +9,7 @@ import { NewBotForm } from './components/NewBotForm'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
 import { I18nProvider, browserLanguages, pickLang, useT, type Lang } from './i18n'
+import { errorText } from './i18n/describe'
 import { applyHello, applyStatus, clearDone } from './presence'
 import type { BotStatus, ComputerInfo, Conversation, Message, RoutineAction } from './types'
 
@@ -267,7 +268,7 @@ function Workspace() {
       await loadRoster()
     } catch (err) {
       if (err instanceof SignedOut) setSignedOut(true)
-      else setHireError(err instanceof Error ? err.message : String(err))
+      else setHireError(err instanceof ApiError ? errorText(t, err) : err instanceof Error ? err.message : String(err))
     }
   }
 

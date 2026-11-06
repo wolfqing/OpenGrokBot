@@ -47,7 +47,14 @@ still change behaviour.
   (`web/src/i18n/en.ts`, with `zh-CN.ts` beside it); the language is the one saved in settings, otherwise the
   browser's, otherwise English. Dates and numbers follow it too. A missing Chinese entry fails the build, and a
   test checks that each translation fills in the same values as the English. Word choices are in
-  `web/src/i18n/GLOSSARY.md`. What teammates say, and reasons the gateway sends back, stay as they are for now.
+  `web/src/i18n/GLOSSARY.md`. What teammates say stays in their own words.
+- Reasons the gateway sends back now carry a code the UI translates, next to the same English as before: why a
+  computer did not start (Docker not running, bot image not built, browser missing or failed to download), why
+  commands cannot be turned on, why a release cannot become a rule, a taken teammate name. The lines the gateway
+  posts for a teammate (stopped, hit an error, over budget, paused at a limit) keep their English text for the
+  model and add a `notice` payload; schedules are described in the UI's language from the cron expression.
+- Teammates write in the operator's interface language when one is saved in settings, and otherwise in the
+  language the operator writes in.
 - First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
   saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
   and routines remain out of scope.
@@ -93,6 +100,8 @@ still change behaviour.
 
 ### Fixed
 
+- Turning on commands for a local computer when the sandbox was missing or failed its self-check left the switch
+  off without saying why: the UI treated the gateway's 409 as "already done". The reason now shows in the panel.
 - A machine with no Chrome, Edge or Chromium could not download a browser for its local teammates: the
   download failed at once with `ERR_PACKAGE_PATH_NOT_EXPORTED`, because playwright-core does not export its
   `cli.js`. The gateway now finds the installer through the package's own folder.

@@ -1,4 +1,5 @@
 import type { RoutinePayload } from '../types'
+import { describeSchedule } from '../i18n/describe'
 import { useT } from '../i18n'
 
 export function RoutineChip({ payload }: { payload: RoutinePayload }) {
@@ -8,7 +9,7 @@ export function RoutineChip({ payload }: { payload: RoutinePayload }) {
     <div className="routine-chip">
       <div className="routine-label">{t(watch ? 'routine.createdWatch' : 'routine.createdRoutine')}</div>
       <div className="routine-name">{watch ? '👁' : payload.webhook && !payload.cron ? '🔗' : '🕐'} {payload.name}</div>
-      <div className="routine-when">{payload.human}</div>
+      <div className="routine-when">{t.lang === 'en' ? payload.human : describeSchedule(t, payload.cron, Boolean(payload.webhook))}</div>
       {watch ? (
         <div className="routine-hint">{t('routine.watchHint')}</div>
       ) : null}

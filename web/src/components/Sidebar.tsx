@@ -3,6 +3,7 @@ import type {
   MemoryPayload, QuestionPayload, ReportPayload, RoutinePayload, ScreenshotPayload, WebhookPayload,
 } from '../types'
 import { useT, type MessageKey, type T } from '../i18n'
+import { isNotice, noticeText } from '../i18n/describe'
 
 /**
  * 单聊就是那位同事的状态。群只说「有人在干活」：等你、卡住、刚干完说的是某一位同事，
@@ -63,6 +64,10 @@ function preview(c: Conversation, t: T): string {
       return payload?.closing ?? (first ? `✓ ${first.system} → ${first.result}` : t('sidebar.preview.reportFiled'))
     }
     default:
+      if (m.kind === 'text' && isNotice(m.payload)) {
+        const n = m.payload
+        return n.notice === 'paused' && n.lead ? n.lead : noticeText(t, n)
+      }
       return m.content
   }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useT, type MessageKey, type T } from '../i18n'
 import type { ApprovalPayload, RuleDuration } from '../types'
+import { blockReasonText } from '../i18n/describe'
 
 const OUTCOME: Record<string, MessageKey> = { approved: 'approval.approved', discarded: 'approval.discarded' }
 
@@ -124,7 +125,7 @@ export function ApprovalChip({ payload, onDecide }: {
         </div>
       ) : null}
       {payload.rememberBlocked && !outcome ? (
-        <div className="approval-note">{t('approval.noAlways', { why: payload.rememberBlocked })}</div>
+        <div className="approval-note">{t('approval.noAlways', { why: blockReasonText(t, payload.rememberReason, payload.rememberBlocked) })}</div>
       ) : null}
       {items.length ? (
         <BatchItems

@@ -4,6 +4,7 @@ import type {
   Message, QuestionPayload, ReportPayload, RoutinePayload, RuleDuration, ScreenshotPayload, WebhookPayload,
 } from '../types'
 import { useT, type T } from '../i18n'
+import { isNotice, noticeText } from '../i18n/describe'
 import { ActivityChip } from './ActivityChip'
 import { ApprovalChip } from './ApprovalChip'
 import { BotRefChip } from './BotRefChip'
@@ -89,6 +90,16 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
   }
 
   const renderBody = (m: Message) => {
+    // 网关替同事说的固定话：按界面语言重说；收尾时同事自己交代的几行照原样（markdown）放在前面
+    if (m.kind === 'text' && isNotice(m.payload)) {
+      const n = m.payload
+      return (
+        <div className="bubble markdown">
+          {n.notice === 'paused' && n.lead ? <Markdown text={n.lead} /> : null}
+          <p>{noticeText(t, n)}</p>
+        </div>
+      )
+    }
     // 同事的话按 markdown 显示（模型天然写 markdown）；你自己打的字照原样显示，星号就是星号
     if (!m.payload) {
       return m.sender === 'user'

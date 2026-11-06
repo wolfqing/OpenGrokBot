@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type Docker from 'dockerode'
+import { CodedError } from './coded-error.js'
 
 export const BOT_IMAGE = 'opengrokbot/bot:dev'
 /** 所有 bot 电脑共用的网络：关掉容器之间的互访，谁也碰不到别人的 shim、CDP 和屏幕 */
@@ -185,7 +186,7 @@ function explainDockerDown(err: unknown): never {
   const code = (err as { code?: string }).code
   const message = err instanceof Error ? err.message : String(err)
   if (code === 'ECONNREFUSED' || code === 'ENOENT' || /docker\.sock/.test(message)) {
-    throw new Error('Docker is not running. Start Docker Desktop (or the docker service), then open this again.')
+    throw new CodedError('docker_down', 'Docker is not running. Start Docker Desktop (or the docker service), then open this again.')
   }
   throw err
 }
@@ -227,7 +228,9 @@ export async function ensureContainer(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if ((err as { statusCode?: number }).statusCode === 404 || /no such image/i.test(message)) {
-        throw new Error(`The bot computer image ${BOT_IMAGE} is not built yet. Run: docker build -t ${BOT_IMAGE} docker/bot`)
+        throw new CodedError('image_missing', `The bot computer image ${BOT_IMAGE} is not built yet. Run: docker build -t ${BOT_IMAGE} docker/bot`, {
+          image: BOT_IMAGE, command: `docker build -t ${BOT_IMAGE} docker/bot`,
+        })
       }
       throw err
     }
