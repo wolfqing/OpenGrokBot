@@ -211,6 +211,10 @@ describe('ensureContainer', () => {
     const { docker } = fakeDocker({ networks: [BOT_NETWORK], images: {} })
     await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok }))
       .rejects.toThrow(/docker build -t opensuperbot\/bot:dev docker\/bot/)
+    // 界面按这个码翻译，命令原样塞进译文
+    await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toMatchObject({
+      code: 'image_missing', params: { image: BOT_IMAGE, command: `docker build -t ${BOT_IMAGE} docker/bot` },
+    })
   })
 
   it('takes over the image built before the rename instead of asking for a rebuild', async () => {
@@ -239,6 +243,13 @@ describe('botImageReady', () => {
     const missing = { getImage: () => ({ inspect: async () => { throw Object.assign(new Error('no such image'), { statusCode: 404 }) } }) } as never
     expect(await botImageReady(has)).toBe(true)
     expect(await botImageReady(missing)).toBe(false)
+  })
+
+  it('counts the image built before the rename, taking it over, so auto keeps an old install on Docker', async () => {
+    const { docker, log } = fakeDocker({ images: { 'opengrokbot/bot:dev': 'sha256:legacy' } })
+    expect(await botImageReady(docker)).toBe(true)
+    expect(log).toEqual(['tag:opengrokbot/bot:dev->opensuperbot/bot:dev'])
+    expect(await botImageReady(fakeDocker({ images: {} }).docker)).toBe(false)
   })
 })
 

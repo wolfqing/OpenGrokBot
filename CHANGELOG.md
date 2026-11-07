@@ -42,11 +42,12 @@ place: see [Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot).
 - The first local computer and the wizard share one browser download instead of possibly running two into the
   same folder. The browser mirror is read when the download starts, so changing it no longer needs a restart.
 - With `computers` on `auto`, a gateway whose Docker is running but whose bot image is not built now uses local
-  computers, instead of handing out Docker computers that fail on first use. The log says why and gives the
-  `docker build` command. `GET /api/setup` adds `docker.imageReady` and the reason the computers were picked
-  (`why`: `chosen`, `docker_running`, `docker_not_running`, `docker_image_missing`), and a choice made on the
-  settings page is logged as such rather than as `OPENSUPERBOT_COMPUTERS`. Settings ask for a restart only when
-  it would change the computers: switching `auto` to `local` on a gateway that already runs local computers does not.
+  computers, instead of handing out Docker computers that fail on first use. An image built before the rename
+  (`opengrokbot/bot:dev`) counts as built. The log says why and gives the `docker build` command.
+  `GET /api/setup` adds `docker.imageReady` and the reason the computers were picked (`why`: `chosen`,
+  `docker_running`, `docker_not_running`, `docker_image_missing`), and a choice made on the settings page is
+  logged as such rather than as `OPENSUPERBOT_COMPUTERS`. Settings ask for a restart only when it would change
+  the computers: switching `auto` to `local` on a gateway that already runs local computers does not.
 - The UI speaks Chinese. Every label, button and hint in the web UI comes from a dictionary
   (`web/src/i18n/en.ts`, with `zh-CN.ts` beside it); the language is the one saved in settings, otherwise the
   browser's, otherwise English. Dates and numbers follow it too. A missing Chinese entry fails the build, and a
