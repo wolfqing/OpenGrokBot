@@ -1,6 +1,9 @@
-# OpenGrokBot 🦞🤖
+# OpenSuperBot 🦞🤖
 
 > 一支随时在线的 AI 同事班子，**每个人一台自己的电脑**——跑在你自己的机器上，凭证在你自己手里。
+
+*原名 OpenGrokBot。已经装过的直接升级，什么都不会坏，细节见
+[Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot)。*
 
 [English](README.md) · [中文](README.zh-CN.md)
 
@@ -69,7 +72,7 @@ Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹�
   记忆和 routine 各归各，技能大家共用。
 - **看得见在干什么，也停得下来。** 它在电脑上的每一步——跑的命令、开的网页、点的按钮——实时显示在一张卡片里，
   回合结束后折叠成一行。停止按钮随时结束这一轮。每一个动作还会记进日志，连同是谁让它开始的，在电脑面板里能看。
-- **想要的话，还有预算。** `OPENGROKBOT_DAILY_TOKENS` 给每位同事设每日 token 上限，面板里能看到今天用了多少。
+- **想要的话，还有预算。** `OPENSUPERBOT_DAILY_TOKENS` 给每位同事设每日 token 上限，面板里能看到今天用了多少。
 
 **电脑**
 
@@ -79,7 +82,7 @@ Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹�
 - `browser_goto` / `browser_extract`（附页面上的链接）/ `browser_click` / `browser_type` / `browser_press` /
   `browser_scroll` / `browser_back` 操作真正的 Chromium——登录墙后面的站点和表单都能干，这是纯 API/MCP
   方案做不到的。容器镜像里装好了中文和 emoji 字体。
-- `browser_screenshot` 把它看到的画面贴进聊天当证据；开 `OPENGROKBOT_VISION=1` 后也会给支持看图的模型看。
+- `browser_screenshot` 把它看到的画面贴进聊天当证据；开 `OPENSUPERBOT_VISION=1` 后也会给支持看图的模型看。
 - **接管登录。** 撞上登录墙时，bot 调 `ask_for_login` 而不是问你要密码。你在**它的**浏览器里登录一次——容器的话
   从线程里打开它的屏幕；本机电脑的话，它的浏览器会以普通窗口弹到你桌面上——会话就留在它的 profile 里，重启也还在。
 - 电脑按需启动，闲置一小时自动停机，下次用时连同登录态原样回来。容器有内存 / CPU / 进程数上限，也碰不到别的同事
@@ -102,18 +105,18 @@ Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹�
 命令行的同事，请给它一台 Docker 电脑。
 
 ```bash
-git clone https://github.com/wolfqing/OpenGrokBot.git
-cd OpenGrokBot
+git clone https://github.com/wolfqing/OpenSuperBot.git
+cd OpenSuperBot
 pnpm install
 ```
 
 不用任何 API key 就能试——内置的脚本化假模型能把每条链路都跑通：
 
 ```bash
-OPENGROKBOT_MODEL=stub pnpm dev
+OPENSUPERBOT_MODEL=stub pnpm dev
 ```
 
-Windows 上在 PowerShell 里：`$env:OPENGROKBOT_MODEL = 'stub'; pnpm dev`。
+Windows 上在 PowerShell 里：`$env:OPENSUPERBOT_MODEL = 'stub'; pnpm dev`。
 
 gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?token=…`。每个浏览器打开一次即可；没有这个
 令牌，什么都连不上 gateway。
@@ -121,13 +124,13 @@ gateway 启动时会打印一条登录链接——`http://localhost:5173/auth?to
 接真模型（任何 OpenAI 兼容的都行：xAI、Kimi、DeepSeek、本地 Ollama）：
 
 ```bash
-OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
+OPENSUPERBOT_API_KEY=sk-… OPENSUPERBOT_MODEL=grok-4 pnpm dev
 ```
 
-（PowerShell：`$env:OPENGROKBOT_API_KEY = 'sk-…'; $env:OPENGROKBOT_MODEL = 'grok-4'; pnpm dev`。）
+（PowerShell：`$env:OPENSUPERBOT_API_KEY = 'sk-…'; $env:OPENSUPERBOT_MODEL = 'grok-4'; pnpm dev`。）
 
 gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答就用 Docker，否则用本机模式
-（`OPENGROKBOT_COMPUTERS=docker|local` 可以强制）。用 Docker 要先建镜像：`docker build -t opengrokbot/bot:dev docker/bot`。
+（`OPENSUPERBOT_COMPUTERS=docker|local` 可以强制）。用 Docker 要先建镜像：`docker build -t opensuperbot/bot:dev docker/bot`。
 本机电脑上**命令行默认关着**，在那位同事的电脑面板里按需打开；打开后命令跑在系统沙箱里（macOS 用 Seatbelt，
 Linux 用 bubblewrap），只能写这位同事自己的文件夹。Windows 没有同样可靠的沙箱，那里这个开关一直关着。
 细节见 [docs/local-computers.md](docs/local-computers.md)。
@@ -137,23 +140,23 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。Windows 没�
 
 | 环境变量 | 默认值 | 作用 |
 |---|---|---|
-| `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | 任何 OpenAI 兼容端点 |
-| `OPENGROKBOT_API_KEY` | — | 你的 key，本仓库不会把它写进任何文件 |
-| `OPENGROKBOT_MODEL` | `grok-4` | 填 `stub` 可离线零 key 运行 |
-| `OPENGROKBOT_DATA` | `gateway/data` | SQLite、bot 数据、工作区、gateway 令牌 |
-| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`、`local`，或 `auto`（Docker 在跑就用 Docker，否则本机） |
-| `OPENGROKBOT_BROWSER` | *(自动找)* | 本机电脑用的浏览器；不填就找 Chrome / Edge / Chromium，都没有就下载一个 |
-| `OPENGROKBOT_BROWSER_MIRROR` | *(官方)* | 下载那个浏览器用的镜像主机，国内网络用 |
-| `OPENGROKBOT_A2A_ALLOW` | *(空)* | 同级交接，如 `researcher>market-watch` |
-| `OPENGROKBOT_DAILY_TOKENS` | `0`（不限） | 每位同事每天的 token 预算 |
-| `OPENGROKBOT_VISION` | *(关)* | 把截图喂回给模型看 |
+| `OPENSUPERBOT_API_BASE` | `https://api.x.ai/v1` | 任何 OpenAI 兼容端点 |
+| `OPENSUPERBOT_API_KEY` | — | 你的 key，本仓库不会把它写进任何文件 |
+| `OPENSUPERBOT_MODEL` | `grok-4` | 填 `stub` 可离线零 key 运行 |
+| `OPENSUPERBOT_DATA` | `gateway/data` | SQLite、bot 数据、工作区、gateway 令牌 |
+| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`、`local`，或 `auto`（Docker 在跑就用 Docker，否则本机） |
+| `OPENSUPERBOT_BROWSER` | *(自动找)* | 本机电脑用的浏览器；不填就找 Chrome / Edge / Chromium，都没有就下载一个 |
+| `OPENSUPERBOT_BROWSER_MIRROR` | *(官方)* | 下载那个浏览器用的镜像主机，国内网络用 |
+| `OPENSUPERBOT_A2A_ALLOW` | *(空)* | 同级交接，如 `researcher>market-watch` |
+| `OPENSUPERBOT_DAILY_TOKENS` | `0`（不限） | 每位同事每天的 token 预算 |
+| `OPENSUPERBOT_VISION` | *(关)* | 把截图喂回给模型看 |
 
 其余设置——监听地址、闲置停机、单台电脑的资源上限、超时——见
 [docs/always-on.md](docs/always-on.md#configuration)。
 
 国内网络：用 Docker 的话挂镜像源构建——`docker build --build-arg APT_MIRROR=mirrors.aliyun.com …`（某个源不稳就换
 `mirrors.huaweicloud.com` 或 `mirrors.tuna.tsinghua.edu.cn`；apt 会自动重试，单个包最多等 5 分钟）；本机电脑需要
-下载浏览器的话，设 `OPENGROKBOT_BROWSER_MIRROR=https://cdn.npmmirror.com/binaries/playwright`。
+下载浏览器的话，设 `OPENSUPERBOT_BROWSER_MIRROR=https://cdn.npmmirror.com/binaries/playwright`。
 
 ## 安全不是脚注，是全部理由
 
@@ -175,7 +178,7 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。Windows 没�
 
 ## 成本
 
-| | Grok Bot | OpenGrokBot |
+| | Grok Bot | OpenSuperBot |
 |---|---|---|
 | 软件 | 需要 SuperGrok 或 Cursor 付费订阅，用量另计 | $0（一路 MIT） |
 | 算力 | 含（xAI 的云） | 你现有的 Mac / 小主机 / ~$5 VPS |
@@ -187,7 +190,7 @@ Linux 用 bubblewrap），只能写这位同事自己的文件夹。Windows 没�
 
 ## 姊妹项目：Grok Desktop
 
-OpenGrokBot 管的是你不在电脑前时发生的工作。你自己泡在 Grok 里的那些时间，可以用
+OpenSuperBot 管的是你不在电脑前时发生的工作。你自己泡在 Grok 里的那些时间，可以用
 **[Grok Desktop](https://github.com/wolfqing/GrokDesktop)**：macOS 14+ 的原生 SwiftUI 窗口，Chat 内嵌 grok.com，
 Build 驱动你本机的 `grok` 命令行——会话按项目分组，Markdown、计划、diff、实时终端都在右侧检查器里，Imagine
 也不用离开窗口。免费、社区作品、非 xAI 官方产品。[下载最新版本](https://github.com/wolfqing/GrokDesktop/releases/latest)。

@@ -16,7 +16,7 @@ describe('createLLM (openai-compatible)', () => {
         } }],
       }))
     }) as typeof fetch
-    const llm = createLLM(loadConfig({ OPENGROKBOT_API_KEY: 'sk-x' }), fakeFetch)
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_API_KEY: 'sk-x' }), fakeFetch)
     const turn = await llm.chat([{ role: 'user', content: 'hi' }], toolDefs)
     expect(captured!.url).toBe('https://api.x.ai/v1/chat/completions')
     expect((captured!.init.headers as Record<string, string>).Authorization).toBe('Bearer sk-x')
@@ -79,7 +79,7 @@ describe('createLLM resilience', () => {
     const hang = ((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init!.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
     })) as typeof fetch
-    const llm = createLLM(loadConfig({ OPENGROKBOT_LLM_TIMEOUT_MS: '20', OPENGROKBOT_LLM_RETRIES: '0' }), hang, async () => {})
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_LLM_TIMEOUT_MS: '20', OPENSUPERBOT_LLM_RETRIES: '0' }), hang, async () => {})
     await expect(llm.chat(hi, [])).rejects.toThrow(/timed out/i)
   })
 
@@ -149,7 +149,7 @@ describe('tool choice', () => {
 
 describe('stub model', () => {
   it('ignores the time note the gateway appends to the last message', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const turn = await llm.chat([{
       role: 'user',
       content: 'from now on quiet accounts wait for my read\n\n(Current time: Sunday 2026-09-27 22:40, Asia/Shanghai. Routine cron expressions run in this timezone.)',
@@ -158,7 +158,7 @@ describe('stub model', () => {
   })
 
   it('first replies with a report tool call, then closes with text', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const messages: ChatMsg[] = [{ role: 'user', content: 'do the thing' }]
     const first = await llm.chat(messages, toolDefs)
     expect(first.toolCalls).toHaveLength(1)
@@ -171,7 +171,7 @@ describe('stub model', () => {
   })
 
   it('drives goto → screenshot → closing text when the user names a site', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const messages: ChatMsg[] = [{ role: 'user', content: 'open example.com and show me' }]
 
     const goto = await llm.chat(messages, toolDefs)
@@ -190,7 +190,7 @@ describe('stub model', () => {
   })
 
   it('holds outward actions, saves rules and schedules routines on cue', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
 
     const hold = await llm.chat([{ role: 'user', content: 'send the replies for me' }], toolDefs)
     expect(hold.toolCalls[0]!.name).toBe('hold_for_approval')
@@ -205,7 +205,7 @@ describe('stub model', () => {
   })
 
   it('carries out an approved action instead of holding it again', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const approved = await llm.chat(
       [{ role: 'user', content: 'Your operator approved: send the 4 queued drafts. Carry it out now and report what actually happened.' }],
       toolDefs,
@@ -222,7 +222,7 @@ describe('stub model', () => {
   })
 
   it('reports only the part of a batch you approved, and stays quiet on a watch run', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const batch = await llm.chat(
       [{ role: 'user', content: 'Your operator approved: send the renewal reminder — for exactly these 2 of 3 items:\n1. Globex\n2. Hooli' }],
       toolDefs,
@@ -237,7 +237,7 @@ describe('stub model', () => {
   })
 
   it('closes each workflow path with a short line instead of looping', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const closings = await Promise.all([
       "Held for your operator's approval. Stop here — do not perform it.",
       'Routine "Morning digest" scheduled (every day at 09:00).',
@@ -250,7 +250,7 @@ describe('stub model', () => {
   })
 
   it('plays its part in a group round and picks up handoffs', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
 
     const member = await llm.chat(
       [{ role: 'user', content: 'Your operator asked the group: "where are we?". Answer for your own patch only, in two lines or less.' }],
@@ -273,7 +273,7 @@ describe('stub model', () => {
   })
 
   it('hands off when the operator names a teammate, before treating it as an outward action', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
 
     const byName = await llm.chat([{ role: 'user', content: 'ask ticker to price the tiers' }], toolDefs)
     expect(byName.toolCalls[0]!.name).toBe('message_bot')
@@ -293,7 +293,7 @@ describe('stub model', () => {
   })
 
   it('asks for a takeover at a login wall instead of guessing credentials', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const asked = await llm.chat([{ role: 'user', content: 'work my zendesk queue' }], toolDefs)
     expect(asked.toolCalls[0]!.name).toBe('ask_for_login')
     expect((asked.toolCalls[0]!.args as { site: string }).site).toBe('Zendesk')
@@ -310,7 +310,7 @@ describe('stub model', () => {
   })
 
   it('keeps full urls as written', async () => {
-    const llm = createLLM(loadConfig({ OPENGROKBOT_MODEL: 'stub' }))
+    const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const turn = await llm.chat([{ role: 'user', content: 'check https://news.ycombinator.com/news please' }], toolDefs)
     expect(turn.toolCalls[0]!.args).toEqual({ url: 'https://news.ycombinator.com/news' })
   })

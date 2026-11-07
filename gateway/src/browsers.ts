@@ -84,9 +84,9 @@ export function findBrowser(opts: {
 } & FsDeps): BrowserFound | null {
   const exists = opts.exists ?? existsSync
   const env = opts.env ?? process.env
-  const wanted = (env.OPENGROKBOT_BROWSER ?? '').trim()
+  const wanted = (env.OPENSUPERBOT_BROWSER ?? '').trim()
   if (wanted) {
-    if (!exists(wanted)) throw new Error(`OPENGROKBOT_BROWSER points to ${wanted}, which does not exist`)
+    if (!exists(wanted)) throw new Error(`OPENSUPERBOT_BROWSER points to ${wanted}, which does not exist`)
     return { executablePath: wanted, source: 'env' }
   }
   for (const candidate of systemBrowsers(opts.platform ?? process.platform, env)) {
@@ -104,7 +104,7 @@ export type SpawnLike = (
 
 /**
  * 下载 Chrome for Testing（约 150 MB）到 browsers 目录。只装完整版、不装 headless shell：
- * 接管登录时要以有窗口的方式打开同一个浏览器。镜像站用 OPENGROKBOT_BROWSER_MIRROR（给 playwright 的下载主机）。
+ * 接管登录时要以有窗口的方式打开同一个浏览器。镜像站用 OPENSUPERBOT_BROWSER_MIRROR（给 playwright 的下载主机）。
  */
 export async function installBrowser(dir: string, opts: {
   mirror?: string
@@ -129,7 +129,7 @@ export async function installBrowser(dir: string, opts: {
     child.on('exit', (code) => {
       if (code === 0) resolvePromise()
       else reject(new Error(`browser download failed (exit ${String(code)}). ${tail.trim().split('\n').slice(-3).join(' ')}`.trim()
-        + '\nInstall Google Chrome instead, or point OPENGROKBOT_BROWSER at a Chromium-based browser.'))
+        + '\nInstall Google Chrome instead, or point OPENSUPERBOT_BROWSER at a Chromium-based browser.'))
     })
   })
   const found = findDownloadedBrowser(dir, opts)

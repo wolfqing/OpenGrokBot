@@ -167,7 +167,7 @@ export default function App() {
 
   const waiting = conversations.reduce((sum, c) => sum + (c.pending ?? 0), 0)
   useEffect(() => {
-    document.title = waiting ? `(${waiting}) OpenGrokBot` : 'OpenGrokBot'
+    document.title = waiting ? `(${waiting}) OpenSuperBot` : 'OpenSuperBot'
   }, [waiting])
 
   /** 拉一次面板数据；只在面板还开给同一位同事时才放进去 */

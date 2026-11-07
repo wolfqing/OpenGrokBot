@@ -73,7 +73,7 @@ export function Sidebar({ conversations, selectedId, statuses, onSelect, onNewBo
   return (
     <aside className="sidebar">
       <div className="sidebar-title">
-        <span>OpenGrokBot</span>
+        <span>OpenSuperBot</span>
         <button className="sidebar-new" onClick={onNewBot} aria-label="Hire a teammate" title="Hire a teammate">+</button>
       </div>
       {conversations.map((c) => {

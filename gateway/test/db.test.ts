@@ -127,7 +127,7 @@ describe('listConversations', () => {
 })
 
 describe('schema migrations', () => {
-  const tempDb = () => join(mkdtempSync(join(tmpdir(), 'ogb-db-')), 'test.db')
+  const tempDb = () => join(mkdtempSync(join(tmpdir(), 'osb-db-')), 'test.db')
 
   it('stamps a fresh database with the current schema version', () => {
     const db = openDb(':memory:')
@@ -187,7 +187,7 @@ describe('schema migrations', () => {
     const future = new Database(path)
     future.pragma(`user_version = ${SCHEMA_VERSION + 7}`)
     future.close()
-    expect(() => openDb(path)).toThrow(/newer OpenGrokBot/)
+    expect(() => openDb(path)).toThrow(/newer OpenSuperBot/)
   })
 })
 

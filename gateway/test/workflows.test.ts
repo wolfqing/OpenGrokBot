@@ -14,7 +14,7 @@ const dbWithBot = () => {
 describe('workflow trace schema', () => {
   it('redacts sensitive fields and credentials while retaining safe form data', () => {
     const trace = parseWorkflowTrace({
-      format: 'opengrokbot.workflow',
+      format: 'opensuperbot.workflow',
       version: 1,
       title: '  Sign in  ',
       steps: [
@@ -88,7 +88,7 @@ describe('workflow trace schema', () => {
 
   it('supports optional intent and page/frame references on traces and steps', () => {
     const trace = parseWorkflowTrace({
-      format: 'opengrokbot.workflow', version: 1, title: 'Create invoice', intent: 'Create a monthly invoice',
+      format: 'opensuperbot.workflow', version: 1, title: 'Create invoice', intent: 'Create a monthly invoice',
       steps: [{ type: 'click', intent: 'Open billing', page: 'main', frame: 'billing-form', target: { candidates: [{ text: 'Billing' }] } }],
     })
     expect(trace.intent).toBe('Create a monthly invoice')
@@ -110,17 +110,22 @@ describe('workflow trace schema', () => {
     }
     expect(() => sanitizeWorkflowUrl('javascript:alert(1)')).not.toThrow()
     expect(sanitizeWorkflowUrl('javascript:alert(1)')).toBeNull()
-    expect(() => parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 2, title: 'x', steps: [] }))
+    expect(() => parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 2, title: 'x', steps: [] }))
       .toThrow(/unsupported workflow trace format/)
+    expect(() => parseWorkflowTrace({ format: 'someone-else.workflow', version: 1, title: 'x', steps: [] }))
+      .toThrow(/unsupported workflow trace format/)
+    // 改名前录下的流程照读，读进来就是新名字
+    expect(parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title: 'Old one', steps: [] }))
+      .toEqual({ format: 'opensuperbot.workflow', version: 1, title: 'Old one', steps: [] })
     expect(() => parseWorkflowStep({ type: 'click', target: { candidates: [{ label: 'Continue', text: 'Continue' }] } }))
       .toThrow(/one strategy/)
     expect(() => parseWorkflowStep({ type: 'click', target: { candidates: [{ css: '#secret-value' }] } }))
       .toThrow(/structural fallback/)
     expect(() => parseWorkflowStep({ type: 'click', target: { candidates: [{ text: 'Bearer do-not-store-this-secret' }] } }))
       .toThrow(/ordered locator candidates/)
-    expect(() => parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title: 'x', steps: [{ type: 'click' }] }))
+    expect(() => parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 1, title: 'x', steps: [{ type: 'click' }] }))
       .toThrow(/workflow target/)
-    expect(() => parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title: 'x', intent: 'Bearer abcdefghijkl', steps: [] }))
+    expect(() => parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 1, title: 'x', intent: 'Bearer abcdefghijkl', steps: [] }))
       .toThrow(/intent may not contain secrets/)
     expect(() => parseWorkflowStep({ type: 'navigate', url: 'file:///etc/passwd' })).toThrow(/workflow URL/)
     expect(() => parseWorkflowStep({ type: 'click', page: '../private', target: { candidates: [{ text: 'Continue' }] } }))
@@ -147,7 +152,7 @@ describe('workflow trace schema', () => {
     const db = dbWithBot()
     try {
       const saved = saveWorkflowTrace(db, 'researcher', {
-        format: 'opengrokbot.workflow', version: 1, title: 'Contact form', steps: [
+        format: 'opensuperbot.workflow', version: 1, title: 'Contact form', steps: [
           { type: 'fill', target: { candidates: [{ label: 'API token' }] }, value: { kind: 'literal', text: 'never-written-to-disk' } },
         ],
       })

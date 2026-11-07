@@ -2,15 +2,34 @@
 
 What changed, release by release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/) while the project is pre-1.0, so a minor version can
-still change behaviour.
+still change behaviour. The project was called OpenGrokBot until November 2026, so entries before that use the old
+names.
 
 ## [Unreleased]
+
+**OpenGrokBot is now OpenSuperBot**, a name that no longer borrows xAI's "Grok". Existing installs upgrade in
+place: see [Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot).
 
 ### Added
 
 - First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
   saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
   and routines remain out of scope.
+
+### Changed
+
+- Renamed to OpenSuperBot. Environment variables are `OPENSUPERBOT_*`, the packages `@opensuperbot/*`, the bot image
+  `opensuperbot/bot:dev`, its containers `opensuperbot-<id>`, the webhook header `X-OpenSuperBot-Key` and the workflow
+  format `opensuperbot.workflow`. The start-up templates are `ai.opensuperbot.gateway` (launchd),
+  `opensuperbot.service` (systemd) and the `OpenSuperBot gateway` task (Windows).
+- Nothing breaks for an existing install:
+  - `OPENGROKBOT_*` variables are still read when the new name is unset, and start-up lists the old names it saw.
+  - An existing `opengrokbot.db` stays in use.
+  - The old sign-in cookie and the `X-OpenGrokBot-Key` header are still accepted, and workflows saved as
+    `opengrokbot.workflow` still load.
+  - Docker computers named `opengrokbot-<id>` are replaced on first use; sign-ins live in the workspace, so they
+    carry over. An image built as `opengrokbot/bot:dev` is tagged with the new name instead of rebuilt.
+  - Running `install-task.ps1` again removes the old Windows task, so two gateways never fight over the port.
 
 ### Security
 
@@ -353,10 +372,10 @@ A self-hosted Grok Bot alternative assembled from OpenClaw: three preconfigured 
 Ticker) with strict boundaries, agent-to-agent handoffs, any model provider, a one-command setup that never
 overwrites an existing OpenClaw config, a Docker/VPS path and an honest comparison with Grok Bot.
 
-[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/wolfqing/OpenGrokBot/releases/tag/v0.1.0
+[Unreleased]: https://github.com/wolfqing/OpenSuperBot/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/wolfqing/OpenSuperBot/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/wolfqing/OpenSuperBot/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/wolfqing/OpenSuperBot/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/wolfqing/OpenSuperBot/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/wolfqing/OpenSuperBot/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/wolfqing/OpenSuperBot/releases/tag/v0.1.0

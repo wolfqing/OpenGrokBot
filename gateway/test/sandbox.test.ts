@@ -38,10 +38,10 @@ describe('the confinement rules', () => {
   })
 
   it('Seatbelt: a data dir under the home dir is hidden by the home rule alone', () => {
-    const under = { workspace: '/Users/op/ogb/data/workspaces/bob', tmp: '/Users/op/ogb/data/bots/bob/tmp', dataDir: '/Users/op/ogb/data', home: '/Users/op', exists: () => false }
+    const under = { workspace: '/Users/op/osb/data/workspaces/bob', tmp: '/Users/op/osb/data/bots/bob/tmp', dataDir: '/Users/op/osb/data', home: '/Users/op', exists: () => false }
     const profile = seatbeltProfile(under)
     expect(profile).toContain('(deny file-read* (subpath "/Users/op"))')
-    expect(profile).toContain('(literal "/Users/op/ogb/data/workspaces")')
+    expect(profile).toContain('(literal "/Users/op/osb/data/workspaces")')
     expect(profile).not.toContain('(allow file-read* (subpath')
   })
 
@@ -57,7 +57,7 @@ describe('the confinement rules', () => {
     expect(args.indexOf('--tmpfs')).toBeLessThan(args.indexOf('--ro-bind', 5))
     expect(args.lastIndexOf('--tmpfs')).toBeLessThan(args.indexOf('--bind'))
     expect(args.slice(-2)).toEqual(['--chdir', '/data/workspaces/bob'])
-    const under = bubblewrapArgs({ workspace: '/home/op/ogb/data/workspaces/bob', tmp: '/home/op/ogb/data/bots/bob/tmp', dataDir: '/home/op/ogb/data', home: '/home/op', exists: () => false })
+    const under = bubblewrapArgs({ workspace: '/home/op/osb/data/workspaces/bob', tmp: '/home/op/osb/data/bots/bob/tmp', dataDir: '/home/op/osb/data', home: '/home/op', exists: () => false })
     expect(under.filter((a) => a === '--tmpfs')).toHaveLength(2) // /tmp 和家目录；数据目录在家里，不用再遮
   })
 
@@ -84,7 +84,7 @@ function leakySandbox(dir: string) {
 // 假沙箱是个 #!/bin/sh 脚本；Windows 上没有沙箱，自检也就从来不跑
 describe.skipIf(process.platform === 'win32')('sandboxSelfCheck', () => {
   let dir: string
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ogb-sb-')) })
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'osb-sb-')) })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
   it('refuses a sandbox that lets a command write outside the workspace', async () => {
@@ -99,7 +99,7 @@ const realSeatbelt = process.platform === 'darwin' && existsSync('/usr/bin/sandb
 describe.skipIf(!realSeatbelt)('Seatbelt for real (macOS only)', () => {
   let dir: string
   const sandbox = { kind: 'seatbelt' as const, executable: '/usr/bin/sandbox-exec' }
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ogb-sb-real-')) })
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'osb-sb-real-')) })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
   const confinementIn = (root: string) => ({ workspace: join(root, 'data/workspaces/bob'), tmp: join(root, 'data/bots/bob/tmp'), dataDir: join(root, 'data') })
 
@@ -142,7 +142,7 @@ describe.skipIf(!realSeatbelt)('Seatbelt for real (macOS only)', () => {
 
 describe('homeLeaks', () => {
   const home = '/home/ana'
-  const putBack = ['/home/ana/.cargo/bin', '/home/ana/.local/bin', '/home/ana/Projects/OpenGrokBot/gateway/data/workspaces/bob']
+  const putBack = ['/home/ana/.cargo/bin', '/home/ana/.local/bin', '/home/ana/Projects/OpenSuperBot/gateway/data/workspaces/bob']
 
   it('ignores the mount points the sandbox binds back itself', () => {
     // bubblewrap 的空家目录里，绑回来的工具链和工作区会留下它们的第一层名字
@@ -151,11 +151,11 @@ describe('homeLeaks', () => {
   })
 
   it('reports anything else it can see in the home directory', () => {
-    expect(homeLeaks('.cargo\n.ssh\nDocuments\n.opengrokbot-sandbox-probe-42\n', home, putBack))
-      .toEqual(['.ssh', 'Documents', '.opengrokbot-sandbox-probe-42'])
+    expect(homeLeaks('.cargo\n.ssh\nDocuments\n.opensuperbot-sandbox-probe-42\n', home, putBack))
+      .toEqual(['.ssh', 'Documents', '.opensuperbot-sandbox-probe-42'])
   })
 
   it('does not treat paths outside the home directory as put back', () => {
-    expect(homeLeaks('tmp\n', home, ['/tmp/ogb/workspaces/bob'])).toEqual(['tmp'])
+    expect(homeLeaks('tmp\n', home, ['/tmp/osb/workspaces/bob'])).toEqual(['tmp'])
   })
 })

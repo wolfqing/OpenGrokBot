@@ -1,5 +1,5 @@
 {
-  "name": "@opengrokbot/web",
+  "name": "@opensuperbot/web",
   "private": true,
   "type": "module",
   "scripts": {

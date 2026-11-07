@@ -1,6 +1,9 @@
-# OpenGrokBot 🦞🤖
+# OpenSuperBot 🦞🤖
 
 > Always-on AI teammates, each with **its own computer** — running on your hardware, with your credentials, under your roof.
+
+*Formerly OpenGrokBot. Upgrading an existing install? Nothing breaks — see
+[Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot).*
 
 [English](README.md) · [中文](README.zh-CN.md)
 
@@ -77,7 +80,7 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 - **See the work, stop the work.** Every step on its computer — the command, the page, the click — shows live
   in one card that folds away when the turn ends. A stop button ends the turn. Every action also lands in a log
   you can read from the computer panel, with what started it.
-- **A budget, if you want one.** `OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; the panel
+- **A budget, if you want one.** `OPENSUPERBOT_DAILY_TOKENS` caps each teammate's model use per day; the panel
   shows today's count.
 
 **The computer**
@@ -89,7 +92,7 @@ Every line below is implemented and covered by tests — nothing here is a roadm
 - `browser_goto` / `browser_extract` (with the page's links) / `browser_click` / `browser_type` /
   `browser_press` / `browser_scroll` / `browser_back` against a real Chromium — so login-walled sites and forms
   work, which pure API/MCP setups cannot do. The container image ships CJK and emoji fonts.
-- `browser_screenshot` posts what the bot saw into the thread as evidence — and, with `OPENGROKBOT_VISION=1`,
+- `browser_screenshot` posts what the bot saw into the thread as evidence — and, with `OPENSUPERBOT_VISION=1`,
   shows it to a vision model too.
 - **Takeover login.** At a login wall the bot calls `ask_for_login` instead of asking for a password. You sign
   in once in *its* browser — through its screen in the thread for a container, or in a normal window that opens
@@ -117,18 +120,18 @@ Linux and Windows; on Windows they get the browser and the folder but no command
 shell there gets a Docker computer.
 
 ```bash
-git clone https://github.com/wolfqing/OpenGrokBot.git
-cd OpenGrokBot
+git clone https://github.com/wolfqing/OpenSuperBot.git
+cd OpenSuperBot
 pnpm install
 ```
 
 Try it with no API key at all — a scripted stub model drives every path end to end:
 
 ```bash
-OPENGROKBOT_MODEL=stub pnpm dev
+OPENSUPERBOT_MODEL=stub pnpm dev
 ```
 
-On Windows, in PowerShell: `$env:OPENGROKBOT_MODEL = 'stub'; pnpm dev`.
+On Windows, in PowerShell: `$env:OPENSUPERBOT_MODEL = 'stub'; pnpm dev`.
 
 The gateway prints a sign-in link — `http://localhost:5173/auth?token=…`. Open it once per browser; nothing
 reaches the gateway without that token.
@@ -136,14 +139,14 @@ reaches the gateway without that token.
 Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a local Ollama):
 
 ```bash
-OPENGROKBOT_API_KEY=sk-… OPENGROKBOT_MODEL=grok-4 pnpm dev
+OPENSUPERBOT_API_KEY=sk-… OPENSUPERBOT_MODEL=grok-4 pnpm dev
 ```
 
-(PowerShell: `$env:OPENGROKBOT_API_KEY = 'sk-…'; $env:OPENGROKBOT_MODEL = 'grok-4'; pnpm dev`.)
+(PowerShell: `$env:OPENSUPERBOT_API_KEY = 'sk-…'; $env:OPENSUPERBOT_MODEL = 'grok-4'; pnpm dev`.)
 
 The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers,
-local otherwise (`OPENGROKBOT_COMPUTERS=docker|local` forces one). For Docker, build the image first:
-`docker build -t opengrokbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
+local otherwise (`OPENSUPERBOT_COMPUTERS=docker|local` forces one). For Docker, build the image first:
+`docker build -t opensuperbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
 for that teammate in its computer panel; then they run in an OS sandbox (Seatbelt on macOS, bubblewrap on Linux)
 that can write only that teammate's folder. Windows has no sandbox that strong, so there the switch stays off.
 Details in [docs/local-computers.md](docs/local-computers.md).
@@ -153,21 +156,21 @@ pnpm start` and the launchd / systemd / Windows Task Scheduler templates in [doc
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
-| `OPENGROKBOT_API_KEY` | — | Your key. Never written to disk by this repo |
-| `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
-| `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
-| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running, else local) |
-| `OPENGROKBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome/Edge/Chromium are looked for, then one is downloaded |
-| `OPENGROKBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser, for slow-network regions |
-| `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
-| `OPENGROKBOT_DAILY_TOKENS` | `0` (off) | Per-teammate daily token budget |
-| `OPENGROKBOT_VISION` | *(off)* | Show the model its own screenshots |
+| `OPENSUPERBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
+| `OPENSUPERBOT_API_KEY` | — | Your key. Never written to disk by this repo |
+| `OPENSUPERBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENSUPERBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
+| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running, else local) |
+| `OPENSUPERBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome/Edge/Chromium are looked for, then one is downloaded |
+| `OPENSUPERBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser, for slow-network regions |
+| `OPENSUPERBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
+| `OPENSUPERBOT_DAILY_TOKENS` | `0` (off) | Per-teammate daily token budget |
+| `OPENSUPERBOT_VISION` | *(off)* | Show the model its own screenshots |
 
 Every other setting — listen address, idle stop, per-computer limits, timeouts — is in
 [docs/always-on.md](docs/always-on.md#configuration).
 
-In a slow-network region: for Docker, build with a mirror — `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …` (or `mirrors.huaweicloud.com`, `mirrors.tuna.tsinghua.edu.cn`); for a local computer that has to download its browser, set `OPENGROKBOT_BROWSER_MIRROR=https://cdn.npmmirror.com/binaries/playwright`.
+In a slow-network region: for Docker, build with a mirror — `docker build --build-arg APT_MIRROR=mirrors.aliyun.com …` (or `mirrors.huaweicloud.com`, `mirrors.tuna.tsinghua.edu.cn`); for a local computer that has to download its browser, set `OPENSUPERBOT_BROWSER_MIRROR=https://cdn.npmmirror.com/binaries/playwright`.
 
 ## Security is the point, not a footnote
 
@@ -192,7 +195,7 @@ on you.
 
 ## Cost
 
-| | Grok Bot | OpenGrokBot |
+| | Grok Bot | OpenSuperBot |
 |---|---|---|
 | Software | with a paid SuperGrok or Cursor plan, plus metered usage | $0 (MIT all the way down) |
 | Compute | included (xAI's cloud) | your Mac / mini PC / ~$5 VPS |
@@ -205,7 +208,7 @@ answered *"are you comfortable with that?"* with **no**.
 
 ## Sister project: Grok Desktop
 
-OpenGrokBot is for the work that happens while you are away. For the hours you spend in Grok yourself there is
+OpenSuperBot is for the work that happens while you are away. For the hours you spend in Grok yourself there is
 **[Grok Desktop](https://github.com/wolfqing/GrokDesktop)**: a native SwiftUI window for macOS 14+ that embeds
 grok.com for Chat and drives your local `grok` CLI for Build — sessions grouped by project, Markdown, plans,
 diffs and live terminals in an inspector, Imagine without leaving the window. Free, community-built, not an

@@ -30,7 +30,7 @@ export type WorkflowStep = WorkflowStepContext & (
 )
 
 export type WorkflowTrace = {
-  format: 'opengrokbot.workflow'
+  format: 'opensuperbot.workflow'
   version: 1
   title: string
   intent?: string
@@ -244,13 +244,17 @@ export function parseWorkflowStep(value: unknown): WorkflowStep {
   }
 }
 
+/** 改名前录下、导出的流程写的是这个：读进来照认，存出去一律新名字 */
+const LEGACY_WORKFLOW_FORMAT = 'opengrokbot.workflow'
+
 export function parseWorkflowTrace(value: unknown): WorkflowTrace {
-  if (!isRecord(value) || value.format !== 'opengrokbot.workflow' || value.version !== 1) {
+  const knownFormat = isRecord(value) && (value.format === 'opensuperbot.workflow' || value.format === LEGACY_WORKFLOW_FORMAT)
+  if (!isRecord(value) || !knownFormat || value.version !== 1) {
     throw new TypeError('unsupported workflow trace format')
   }
   if (!Array.isArray(value.steps) || value.steps.length > MAX_WORKFLOW_STEPS) throw new TypeError('invalid workflow steps')
   const trace: WorkflowTrace = {
-    format: 'opengrokbot.workflow',
+    format: 'opensuperbot.workflow',
     version: 1,
     title: readString(value.title, 'title', MAX_TITLE_LENGTH).trim(),
     steps: value.steps.map(parseWorkflowStep),

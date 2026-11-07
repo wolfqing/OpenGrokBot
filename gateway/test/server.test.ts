@@ -80,7 +80,7 @@ describe('REST', () => {
 
 describe('screenshot serving', () => {
   function setupWithData() {
-    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-srv-'))
+    const dataDir = mkdtempSync(join(tmpdir(), 'osb-srv-'))
     const dir = join(dataDir, 'workspaces', 'researcher', 'screenshots')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, '42.png'), 'PNGDATA')
@@ -102,6 +102,6 @@ describe('screenshot serving', () => {
     const { app } = setupWithData()
     expect((await app.request('/api/screenshots/researcher/99.png')).status).toBe(404)
     expect((await app.request('/api/screenshots/researcher/notes.md')).status).toBe(404)
-    expect((await app.request('/api/screenshots/researcher/..%2F..%2Fopengrokbot.db')).status).toBe(404)
+    expect((await app.request('/api/screenshots/researcher/..%2F..%2Fopensuperbot.db')).status).toBe(404)
   })
 })

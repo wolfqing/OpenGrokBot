@@ -8,8 +8,8 @@ a service: one process, one port, started at boot, reachable from your other mac
 ```bash
 pnpm install
 pnpm build                                   # web UI → web/dist, gateway → gateway/dist
-docker build -t opengrokbot/bot:dev docker/bot   # only if the teammates use Docker computers
-OPENGROKBOT_API_KEY=sk-… pnpm start
+docker build -t opensuperbot/bot:dev docker/bot   # only if the teammates use Docker computers
+OPENSUPERBOT_API_KEY=sk-… pnpm start
 ```
 
 `pnpm start` serves the built UI, the API, the live stream and every bot's screen on
@@ -18,24 +18,24 @@ OPENGROKBOT_API_KEY=sk-… pnpm start
 ## Start at boot
 
 **macOS (a Mac mini is the sweet spot).** Edit the paths and key in
-[`deploy/launchd/ai.opengrokbot.gateway.plist`](../deploy/launchd/ai.opengrokbot.gateway.plist), then:
+[`deploy/launchd/ai.opensuperbot.gateway.plist`](../deploy/launchd/ai.opensuperbot.gateway.plist), then:
 
 ```bash
-cp deploy/launchd/ai.opengrokbot.gateway.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/ai.opengrokbot.gateway.plist
+cp deploy/launchd/ai.opensuperbot.gateway.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/ai.opensuperbot.gateway.plist
 ```
 
 If the teammates use Docker computers, Docker Desktop has to come up with you: *Settings → General → Start Docker
 Desktop when you sign in*. Local computers need no service — but a sign-in window can only appear in a desktop
 session, so keep the gateway a LaunchAgent of the user you sign in as, not a LaunchDaemon.
 
-**Linux.** Use [`deploy/systemd/opengrokbot.service`](../deploy/systemd/opengrokbot.service): run it as a user
+**Linux.** Use [`deploy/systemd/opensuperbot.service`](../deploy/systemd/opensuperbot.service): run it as a user
 in the `docker` group (for Docker computers; for local computers that user needs `bubblewrap` installed if commands
-are to be allowed) and keep the key in `/etc/opengrokbot.env` (mode `600`).
+are to be allowed) and keep the key in `/etc/opensuperbot.env` (mode `600`).
 
 ```bash
-sudo cp deploy/systemd/opengrokbot.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now opengrokbot
+sudo cp deploy/systemd/opensuperbot.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now opensuperbot
 ```
 
 On Ubuntu 23.10 and later, bubblewrap also needs the AppArmor profile in
@@ -55,17 +55,17 @@ computers, or run the gateway in a desktop session (a VNC or remote-desktop logi
 Task Scheduler task that starts the gateway when you sign in:
 
 ```powershell
-setx OPENGROKBOT_API_KEY "sk-…"
+setx OPENSUPERBOT_API_KEY "sk-…"
 powershell -ExecutionPolicy Bypass -File deploy\windows\install-task.ps1
-Start-ScheduledTask -TaskName 'OpenGrokBot gateway'
+Start-ScheduledTask -TaskName 'OpenSuperBot gateway'
 ```
 
 The task runs [`deploy/windows/start-gateway.ps1`](../deploy/windows/start-gateway.ps1) as you, in your session —
 which is what lets a local teammate's sign-in window appear on your desktop — and restarts it if it stops. The log
-is `%LOCALAPPDATA%\OpenGrokBot\gateway.log`. Remove it with `install-task.ps1 -Uninstall`. For Docker computers,
+is `%LOCALAPPDATA%\OpenSuperBot\gateway.log`. Remove it with `install-task.ps1 -Uninstall`. For Docker computers,
 let Docker Desktop start when you sign in.
 
-All the templates set `OPENGROKBOT_QUIET_TOKEN=1`, so the token never lands in a log file. Sign in with the token
+All the templates set `OPENSUPERBOT_QUIET_TOKEN=1`, so the token never lands in a log file. Sign in with the token
 in `gateway/data/auth-token`: `http://localhost:4747/auth?token=<that token>`.
 
 ## Reaching it from another machine
@@ -79,7 +79,7 @@ ssh -N -L 4747:127.0.0.1:4747 you@your-mini
 
 Everything travels through that one port — including each bot's screen, so taking over a login works from the
 laptop too. With Tailscale, `tailscale serve --bg 4747` gives you HTTPS on your tailnet; if the gateway refuses
-the requests as cross-origin, add the tailnet address to `OPENGROKBOT_ALLOWED_ORIGINS`.
+the requests as cross-origin, add the tailnet address to `OPENSUPERBOT_ALLOWED_ORIGINS`.
 
 ## Webhooks from other systems
 
@@ -88,11 +88,11 @@ from the computer panel; it looks like `http://localhost:4747/hooks/routines/3?k
 teammate with the request body attached as outside data:
 
 ```bash
-curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
+curl -X POST -H 'Content-Type: application/json' -H 'X-OpenSuperBot-Key: <key>' \
   -d '{"issue": "Checkout returns 500 for EU cards"}' http://localhost:4747/hooks/routines/3
 ```
 
-- The key can travel in the `X-OpenGrokBot-Key` header or as `?key=`. Prefer the header where the sender allows
+- The key can travel in the `X-OpenSuperBot-Key` header or as `?key=`. Prefer the header where the sender allows
   it: query strings tend to end up in proxy logs.
 - **GitHub** cannot add headers, so it signs instead. In the repository's *Settings → Webhooks → Add webhook*,
   paste what *For GitHub* in the computer panel copies: the address **without** `?key=` as the payload URL,
@@ -107,8 +107,8 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
 ## How much machine
 
 - Each **awake** bot runs a real Chromium: budget 300–500 MB of RAM. Containers are capped at
-  `OPENGROKBOT_BOT_MEMORY_MB` (2048) and `OPENGROKBOT_BOT_CPUS` (2).
-- A computer nobody used for `OPENGROKBOT_IDLE_STOP_MINUTES` (60) is stopped and started again on demand, logins
+  `OPENSUPERBOT_BOT_MEMORY_MB` (2048) and `OPENSUPERBOT_BOT_CPUS` (2).
+- A computer nobody used for `OPENSUPERBOT_IDLE_STOP_MINUTES` (60) is stopped and started again on demand, logins
   intact. Set it to `0` to keep every computer up.
 - 8 GB comfortably runs four or five busy teammates.
 
@@ -116,33 +116,33 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenGrokBot-Key: <key>' \
 
 | Variable | Default | What it does |
 |---|---|---|
-| `OPENGROKBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
-| `OPENGROKBOT_API_KEY` | — | Your key; never written to disk |
-| `OPENGROKBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
-| `OPENGROKBOT_HOST` / `OPENGROKBOT_PORT` | `127.0.0.1` / `4747` | Where the gateway listens |
-| `OPENGROKBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the token |
-| `OPENGROKBOT_TOKEN` | *(generated)* | Pin the gateway token instead of generating one |
-| `OPENGROKBOT_QUIET_TOKEN` | *(off)* | Keep the token out of the startup log |
-| `OPENGROKBOT_ALLOWED_ORIGINS` | *(empty)* | Extra origins allowed to change state, comma-separated |
-| `OPENGROKBOT_WEB_URL` | *(the gateway)* | Where the UI lives, for the sign-in link (dev sets Vite's) |
-| `OPENGROKBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
-| `OPENGROKBOT_DAILY_TOKENS` | `0` (off) | Per-bot daily token budget |
-| `OPENGROKBOT_LLM_TIMEOUT_MS` / `OPENGROKBOT_LLM_RETRIES` | `120000` / `2` | Give up on a hung call; retry 429/5xx |
-| `OPENGROKBOT_MAX_STEPS` | `40` | Model steps one turn may take before the teammate pauses and says where it got to |
-| `OPENGROKBOT_TURN_MINUTES` | `20` | Pause a turn that has run this long (checked between steps); `0` never |
-| `OPENGROKBOT_VISION` | *(off)* | Show the model its own screenshots (vision models only) |
-| `OPENGROKBOT_IDLE_STOP_MINUTES` | `60` | Stop idle computers; `0` never |
-| `OPENGROKBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto`: Docker when the daemon answers, else a local computer (see [local-computers.md](local-computers.md)) |
-| `OPENGROKBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome, Edge, Chromium or Brave are looked for, then a Chrome for Testing is downloaded into `<data>/browsers` |
-| `OPENGROKBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser; `https://cdn.npmmirror.com/binaries/playwright` works from China |
-| `OPENGROKBOT_BOT_MEMORY_MB` / `OPENGROKBOT_BOT_CPUS` | `2048` / `2` | Per-computer limits (Docker computers only) |
+| `OPENSUPERBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
+| `OPENSUPERBOT_API_KEY` | — | Your key; never written to disk |
+| `OPENSUPERBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENSUPERBOT_HOST` / `OPENSUPERBOT_PORT` | `127.0.0.1` / `4747` | Where the gateway listens |
+| `OPENSUPERBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the token |
+| `OPENSUPERBOT_TOKEN` | *(generated)* | Pin the gateway token instead of generating one |
+| `OPENSUPERBOT_QUIET_TOKEN` | *(off)* | Keep the token out of the startup log |
+| `OPENSUPERBOT_ALLOWED_ORIGINS` | *(empty)* | Extra origins allowed to change state, comma-separated |
+| `OPENSUPERBOT_WEB_URL` | *(the gateway)* | Where the UI lives, for the sign-in link (dev sets Vite's) |
+| `OPENSUPERBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |
+| `OPENSUPERBOT_DAILY_TOKENS` | `0` (off) | Per-bot daily token budget |
+| `OPENSUPERBOT_LLM_TIMEOUT_MS` / `OPENSUPERBOT_LLM_RETRIES` | `120000` / `2` | Give up on a hung call; retry 429/5xx |
+| `OPENSUPERBOT_MAX_STEPS` | `40` | Model steps one turn may take before the teammate pauses and says where it got to |
+| `OPENSUPERBOT_TURN_MINUTES` | `20` | Pause a turn that has run this long (checked between steps); `0` never |
+| `OPENSUPERBOT_VISION` | *(off)* | Show the model its own screenshots (vision models only) |
+| `OPENSUPERBOT_IDLE_STOP_MINUTES` | `60` | Stop idle computers; `0` never |
+| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto`: Docker when the daemon answers, else a local computer (see [local-computers.md](local-computers.md)) |
+| `OPENSUPERBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome, Edge, Chromium or Brave are looked for, then a Chrome for Testing is downloaded into `<data>/browsers` |
+| `OPENSUPERBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser; `https://cdn.npmmirror.com/binaries/playwright` works from China |
+| `OPENSUPERBOT_BOT_MEMORY_MB` / `OPENSUPERBOT_BOT_CPUS` | `2048` / `2` | Per-computer limits (Docker computers only) |
 
 ## Upgrading
 
 ```bash
 git pull && pnpm install && pnpm build
-docker build -t opengrokbot/bot:dev docker/bot   # only if your teammates use Docker computers
-# restart the service (launchctl kickstart -k gui/$(id -u)/ai.opengrokbot.gateway, or systemctl restart opengrokbot)
+docker build -t opensuperbot/bot:dev docker/bot   # only if your teammates use Docker computers
+# restart the service (launchctl kickstart -k gui/$(id -u)/ai.opensuperbot.gateway, or systemctl restart opensuperbot)
 ```
 
 Computers built from an older image or container spec are rebuilt the next time they are used. Files and
@@ -150,9 +150,46 @@ browser logins live in the mounted workspace and survive; anything installed ins
 
 An upgrade that changes the database schema is one-way: an older gateway refuses the upgraded file. So before
 it upgrades, the gateway writes a full copy next to the database, for example
-`gateway/data/opengrokbot.db.v2-before-v3.20261022T083000Z.bak`, and logs where. To go back, stop the gateway,
-check out the older release, and copy the `.bak` over `opengrokbot.db` (delete `opengrokbot.db-wal` and
-`opengrokbot.db-shm` next to it first). The three most recent copies are kept.
+`gateway/data/opensuperbot.db.v2-before-v3.20261022T083000Z.bak`, and logs where. To go back, stop the gateway,
+check out the older release, and copy the `.bak` over `opensuperbot.db` (delete `opensuperbot.db-wal` and
+`opensuperbot.db-shm` next to it first). The three most recent copies are kept.
+
+### Coming from OpenGrokBot
+
+The project was called OpenGrokBot until November 2026. Upgrading in place keeps everything working, and nothing
+has to change on the day you upgrade:
+
+- **Environment variables.** The `OPENGROKBOT_*` names still work. The gateway uses one whenever the matching
+  `OPENSUPERBOT_*` name is not set (if both are, the new one wins), and at start-up it lists the old names it saw.
+  Rename them when convenient.
+- **Data.** The data directory does not move. An existing `opengrokbot.db` keeps its name and stays in use, so its
+  backups are named `opengrokbot.db.….bak`.
+- **Sign-in, webhooks, workflows.** Browsers stay signed in to the gateway. Webhooks that send `X-OpenGrokBot-Key`
+  keep working, and workflows saved in the `opengrokbot.workflow` format load as before.
+- **Docker computers.** The first time the gateway needs them, it removes the `opengrokbot-<id>` containers that
+  belong to its data directory and creates `opensuperbot-<id>` ones in their place. Sign-ins and files live in the
+  mounted workspace and carry over. An image you built as `opengrokbot/bot:dev` is tagged `opensuperbot/bot:dev`
+  instead of asking you to rebuild. Containers from very old versions carry no owner label and are left alone; if
+  `docker ps -a` still lists some, remove them with `docker rm -f $(docker ps -aq --filter label=ai.opengrokbot.bot)`.
+- **Your clone.** GitHub forwards the old repository address, so `git pull` keeps working. To point it at the new
+  one: `git remote set-url origin https://github.com/wolfqing/OpenSuperBot.git`.
+
+Start-up services keep their old names until you swap them. Run either the old one or the new one, never both: they
+would fight over port 4747.
+
+- **macOS.** The old LaunchAgent keeps working. To switch, unload and delete it, then install
+  `ai.opensuperbot.gateway.plist` as above:
+
+  ```bash
+  launchctl unload ~/Library/LaunchAgents/ai.opengrokbot.gateway.plist
+  rm ~/Library/LaunchAgents/ai.opengrokbot.gateway.plist
+  ```
+
+- **Linux.** The old unit keeps working. To switch, run `sudo systemctl disable --now opengrokbot`, then install
+  `opensuperbot.service` as above. Keep your own `User=` and `WorkingDirectory=`. The new unit reads
+  `/etc/opensuperbot.env`, so move the key there from `/etc/opengrokbot.env`.
+- **Windows.** Run `install-task.ps1` again. It stops and removes the old `OpenGrokBot gateway` task, then registers
+  `OpenSuperBot gateway`. The log moves to `%LOCALAPPDATA%\OpenSuperBot\gateway.log`.
 
 ## Backups
 
