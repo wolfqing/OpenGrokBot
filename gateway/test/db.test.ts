@@ -182,6 +182,21 @@ describe('schema migrations', () => {
     expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
   })
 
+  it('gives a pre-merge m7-desktop database (v5 = settings) the workflows table it skipped', () => {
+    const path = tempDb()
+    const old = openDb(path)
+    old.exec('DROP TABLE workflows; DROP TABLE settings;')
+    old.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)`)
+    old.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run('model', '"grok-4.7"', 1)
+    old.pragma('user_version = 5')
+    old.close()
+    const db = openDb(path)
+    expect(schemaVersion(db)).toBe(SCHEMA_VERSION)
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workflows'`).get()).toBeTruthy()
+    expect(db.prepare('SELECT value FROM settings WHERE key = ?').get('model')).toEqual({ value: '"grok-4.7"' })
+    db.close()
+  })
+
   it('refuses a database written by a newer gateway', () => {
     const path = tempDb()
     const future = new Database(path)

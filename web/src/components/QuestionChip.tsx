@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import type { QuestionPayload } from '../types'
+import { useT } from '../i18n'
 
 /** 同事问你一个有几个选项的问题：点一下就答了；多选的勾好再提交；也可以直接在下面打字回。 */
 export function QuestionChip({ payload, onAnswer }: {
   payload: QuestionPayload
   onAnswer: (choices: string[]) => void | Promise<void>
 }) {
+  const t = useT()
   const [picked, setPicked] = useState<string[]>([])
   /** 点下去就先按「已答」显示，别让连点发两次；网关那头也会对第二次回 409 */
   const [sent, setSent] = useState<string[] | null>(null)
@@ -22,7 +24,7 @@ export function QuestionChip({ payload, onAnswer }: {
     const chosen = payload.answer ?? sent ?? []
     return (
       <div className="question-chip resolved">
-        <div className="question-label">{payload.status === 'skipped' ? 'Answered in chat' : 'Answered'}</div>
+        <div className="question-label">{t(payload.status === 'skipped' ? 'question.answeredInChat' : 'question.answered')}</div>
         <div className="question-text">{payload.question}</div>
         <div className="question-options">
           {payload.options.map((o) => (
@@ -37,7 +39,7 @@ export function QuestionChip({ payload, onAnswer }: {
 
   return (
     <div className="question-chip">
-      <div className="question-label">{payload.multi ? 'Pick any that apply' : 'Pick one'}</div>
+      <div className="question-label">{t(payload.multi ? 'question.pickAny' : 'question.pickOne')}</div>
       <div className="question-text">{payload.question}</div>
       <div className="question-options">
         {payload.options.map((o) => payload.multi ? (
@@ -49,9 +51,9 @@ export function QuestionChip({ payload, onAnswer }: {
         ))}
       </div>
       {payload.multi ? (
-        <button className="question-submit" disabled={picked.length === 0} onClick={() => answer(picked)}>Submit</button>
+        <button className="question-submit" disabled={picked.length === 0} onClick={() => answer(picked)}>{t('question.submit')}</button>
       ) : null}
-      <div className="question-hint">Or type your own answer below.</div>
+      <div className="question-hint">{t('question.hint')}</div>
     </div>
   )
 }

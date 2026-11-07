@@ -3,6 +3,8 @@ import type {
   ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, LoginPayload, MemoryPayload,
   Message, QuestionPayload, ReportPayload, RoutinePayload, RuleDuration, ScreenshotPayload, WebhookPayload,
 } from '../types'
+import { useT, type T } from '../i18n'
+import { isNotice, noticeText } from '../i18n/describe'
 import { ActivityChip } from './ActivityChip'
 import { ApprovalChip } from './ApprovalChip'
 import { BotRefChip } from './BotRefChip'
@@ -19,20 +21,21 @@ import { WebhookChip } from './WebhookChip'
 const TIME_GAP_MS = 5 * 60_000
 const dayKey = (ts: number) => new Date(ts).toDateString()
 
-function dayLabel(ts: number, now: Date): string {
+function dayLabel(ts: number, now: Date, t: T): string {
   const key = dayKey(ts)
-  if (key === now.toDateString()) return 'Today'
+  if (key === now.toDateString()) return t('thread.today')
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)
-  if (key === yesterday.toDateString()) return 'Yesterday'
+  if (key === yesterday.toDateString()) return t('thread.yesterday')
   const day = new Date(ts)
-  return day.toLocaleDateString(undefined, {
+  return day.toLocaleDateString(t.locale, {
     weekday: 'short', month: 'short', day: 'numeric',
     ...(day.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
   })
 }
 
-const timeLabel = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+const timeLabel = (ts: number, locale: string | undefined) =>
+  new Date(ts).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
 export function Thread({ conversation, messages, thinking, onSend, onDecide, onAnswer, roster, onOpenScreen, onStop }: {
   conversation: Conversation
@@ -46,6 +49,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
   onOpenScreen?: () => void
   onStop?: () => void
 }) {
+  const t = useT()
   const [draft, setDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLTextAreaElement>(null)
@@ -86,6 +90,16 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
   }
 
   const renderBody = (m: Message) => {
+    // 网关替同事说的固定话：按界面语言重说；收尾时同事自己交代的几行照原样（markdown）放在前面
+    if (m.kind === 'text' && isNotice(m.payload)) {
+      const n = m.payload
+      return (
+        <div className="bubble markdown">
+          {n.notice === 'paused' && n.lead ? <Markdown text={n.lead} /> : null}
+          <p>{noticeText(t, n)}</p>
+        </div>
+      )
+    }
     // 同事的话按 markdown 显示（模型天然写 markdown）；你自己打的字照原样显示，星号就是星号
     if (!m.payload) {
       return m.sender === 'user'
@@ -109,9 +123,9 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
         const p = m.payload as ApprovalResolvedPayload
         return (
           <div className="decision">
-            {p.decision === 'approve' ? '✓ Approved' : '✕ Discarded'} · {p.action}
-            {p.count ? ` · ${p.count.approved} of ${p.count.of} items` : ''}
-            {p.remembered ? ` · rule saved: ${p.remembered.kind} → ${p.remembered.target}` : ''}
+            {p.decision === 'approve' ? `✓ ${t('thread.approved')}` : `✕ ${t('thread.discarded')}`} · {p.action}
+            {p.count ? ` · ${t('thread.itemsOf', { approved: p.count.approved, of: p.count.of })}` : ''}
+            {p.remembered ? ` · ${t('thread.ruleSaved', { scope: `${p.remembered.kind} → ${p.remembered.target}` })}` : ''}
           </div>
         )
       }
@@ -137,7 +151,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
         <span className="thread-name">{conversation.title}</span>
         {conversation.subtitle ? <span className="thread-role">{conversation.subtitle}</span> : null}
         {conversation.kind === 'dm' && onOpenScreen ? (
-          <button className="screen-button" onClick={onOpenScreen} aria-label="Open its computer" title="Open its computer">
+          <button className="screen-button" onClick={onOpenScreen} aria-label={t('thread.openComputer')} title={t('thread.openComputer')}>
             🖥️
           </button>
         ) : null}
@@ -158,7 +172,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
           const at = new Date(m.created_at)
           return (
             <Fragment key={m.id}>
-              {newDay ? <div className="day-divider" role="separator">{dayLabel(m.created_at, now)}</div> : null}
+              {newDay ? <div className="day-divider" role="separator">{dayLabel(m.created_at, now, t)}</div> : null}
               <div className={`row ${rowClass(m)}`}>
                 <div className="row-inner">
                   {speaker || showTime ? (
@@ -170,8 +184,8 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
                         </span>
                       ) : null}
                       {showTime ? (
-                        <time className="row-time" dateTime={at.toISOString()} title={at.toLocaleString()}>
-                          {timeLabel(m.created_at)}
+                        <time className="row-time" dateTime={at.toISOString()} title={at.toLocaleString(t.locale)}>
+                          {timeLabel(m.created_at, t.locale)}
                         </time>
                       ) : null}
                     </div>
@@ -191,12 +205,12 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={`Message ${conversation.title}`}
+          placeholder={t('thread.placeholder', { name: conversation.title })}
         />
         {thinking && onStop ? (
-          <button className="composer-stop" onClick={onStop} aria-label="Stop" title="Stop what it is doing">■</button>
+          <button className="composer-stop" onClick={onStop} aria-label={t('thread.stop')} title={t('thread.stopTitle')}>■</button>
         ) : null}
-        <button className="composer-send" onClick={submit} disabled={!draft.trim()} aria-label="Send">↑</button>
+        <button className="composer-send" onClick={submit} disabled={!draft.trim()} aria-label={t('thread.send')}>↑</button>
       </footer>
     </main>
   )

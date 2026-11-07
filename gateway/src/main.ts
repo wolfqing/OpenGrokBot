@@ -6,18 +6,21 @@ import { WebSocketServer } from 'ws'
 import { parseA2AAllow } from './a2a.js'
 import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
+import { createBrowserProvisioner } from './browsers.js'
 import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { adoptLegacyEnv, loadConfig } from './config.js'
 import { botShellEnabled, openDb } from './db.js'
-import { createLLM } from './llm.js'
+import { createLiveLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
+import { botImageReady } from './containers.js'
 import { createPool, reapIdleComputers } from './pool.js'
 import { listRoutines } from './routines.js'
 import { createScreenViewers, mountScreenProxy, screenRelay, screencastRelay } from './screen.js'
-import { detectSandbox, sandboxHint, sandboxSelfCheck } from './sandbox.js'
+import { detectSandbox, sandboxHint, sandboxMissing, sandboxSelfCheck } from './sandbox.js'
 import { createScheduler, type Scheduler } from './scheduler.js'
 import { seedGroup, seedTeammates } from './seed.js'
 import { createApp } from './server.js'
+import { currentConfig, readSavedSettings, resolveSettings } from './settings.js'
 import { serveWeb } from './web.js'
 
 // 改名前的 OPENGROKBOT_* 照样认：先换成新名字，后面读配置、读环境变量的地方就都只认新名字
@@ -28,13 +31,17 @@ if (legacyEnv.adopted.length) {
 if (legacyEnv.shadowed.length) {
   console.warn(`[gateway] ignoring ${legacyEnv.shadowed.join(', ')}: the OPENSUPERBOT_… names are set too, and they win.`)
 }
-const config = loadConfig()
-mkdirSync(config.dataDir, { recursive: true })
-if (config.dbPath !== ':memory:') mkdirSync(dirname(config.dbPath), { recursive: true })
-const db = openDb(config.dbPath, {
+const startup = loadConfig()
+mkdirSync(startup.dataDir, { recursive: true })
+if (startup.dbPath !== ':memory:') mkdirSync(dirname(startup.dbPath), { recursive: true })
+const db = openDb(startup.dbPath, {
   onBackup: (file) => console.log(`[gateway] backed up the database before upgrading it → ${file}`),
   onMigrate: (from, to) => console.log(`[gateway] database schema v${from} → v${to}`),
 })
+// 界面上存的设置（库里）和 key 文件（<data>/llm-key）叠到启动配置上；设了环境变量的项仍以环境变量为准。
+// 模型和看图每次现读（改了下一次调用就生效），浏览器镜像下载前现读；电脑种类只在这里读一次，改了要重启
+const live = () => currentConfig(startup, process.env, db)
+const config = live()
 // 预置样板来自版本库，用户新雇的同事住在数据目录
 const bots = [
   ...seedTeammates(db, config.teammatesDir),
@@ -43,11 +50,19 @@ const bots = [
 seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
 if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
-const llm = createLLM(config)
+const llm = createLiveLLM(live)
 // 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
 const sandbox = detectSandbox()
-const { backend, reason: backendReason } = await chooseBackend(config.computers, {
+// 本机模式的浏览器：第一次要电脑时和向导里「先下载」共用这一个，不会两头同时下
+const browser = createBrowserProvisioner({
+  dataDir: config.dataDir,
+  browser: config.browser,
+  mirror: () => live().browserMirror,
+  log: (line) => console.log(`[gateway] ${line}`),
+})
+const computersFrom = resolveSettings(process.env, readSavedSettings(db)).sources.computers
+const { backend, why: backendWhy, reason: backendReason } = await chooseBackend(config.computers, {
   docker: () => createDockerBackend(docker, {
     dataDir: config.dataDir,
     containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
@@ -55,13 +70,14 @@ const { backend, reason: backendReason } = await chooseBackend(config.computers,
   }),
   local: () => createLocalBackend({
     dataDir: config.dataDir,
-    browser: config.browser,
-    browserMirror: config.browserMirror,
+    resolveBrowser: () => browser.ensure(),
     log: (line) => console.log(`[gateway] ${line}`),
     // 命令行按同事开关（存数据库）；开了也只在系统沙箱里跑，没沙箱就没有命令行
     shell: { enabled: (botId) => botShellEnabled(db, botId), sandbox },
   }),
   dockerReachable: () => dockerReachable(docker),
+  dockerImageReady: () => botImageReady(docker),
+  ...(computersFrom === 'default' ? {} : { from: computersFrom }),
 })
 console.log(`[gateway] bot computers: ${backend.kind} (${backendReason})`)
 const pool = createPool({ dataDir: config.dataDir, backend })
@@ -82,7 +98,9 @@ const gateway = createApp({
   db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
   computers: {
     kind: backend.kind,
-    sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint() },
+    why: backendWhy,
+    reason: backendReason,
+    sandbox: sandbox ? { available: true } : { available: false, why: sandboxHint(), whyCode: sandboxMissing() },
     checkSandbox: (botId) => sandbox
       ? sandboxSelfCheck(sandbox, { workspace: join(config.dataDir, 'workspaces', botId), tmp: join(config.dataDir, 'bots', botId, 'tmp'), dataDir: config.dataDir })
       : Promise.resolve({ ok: false as const, why: sandboxHint() }),
@@ -92,10 +110,12 @@ const gateway = createApp({
   token,
   allowedOrigins: trustedOrigins(config),
   dailyTokens: config.dailyTokens,
-  vision: config.vision,
+  vision: () => live().vision,
   timeZone: config.timeZone,
   maxSteps: config.maxSteps,
   turnMinutes: config.turnMinutes,
+  settings: { env: process.env, startedWith: config },
+  setup: { browser, dockerReachable: () => dockerReachable(docker, 1_500), dockerImageReady: () => botImageReady(docker) },
 })
 const { app, hub } = gateway
 

@@ -139,14 +139,14 @@ reaches the gateway without that token.
 Point it at a real model (anything OpenAI-compatible — xAI, Kimi, DeepSeek, a local Ollama):
 
 ```bash
-OPENSUPERBOT_API_KEY=sk-… OPENSUPERBOT_MODEL=grok-4 pnpm dev
+OPENSUPERBOT_API_KEY=sk-… OPENSUPERBOT_MODEL=grok-4.7 pnpm dev
 ```
 
-(PowerShell: `$env:OPENSUPERBOT_API_KEY = 'sk-…'; $env:OPENSUPERBOT_MODEL = 'grok-4'; pnpm dev`.)
+(PowerShell: `$env:OPENSUPERBOT_API_KEY = 'sk-…'; $env:OPENSUPERBOT_MODEL = 'grok-4.7'; pnpm dev`.)
 
-The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers,
-local otherwise (`OPENSUPERBOT_COMPUTERS=docker|local` forces one). For Docker, build the image first:
-`docker build -t opensuperbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
+The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers and
+the bot image is built, local otherwise (`OPENSUPERBOT_COMPUTERS=docker|local` forces one). For Docker, build the
+image first: `docker build -t opensuperbot/bot:dev docker/bot`. On a local computer, commands are **off** until you turn them on
 for that teammate in its computer panel; then they run in an OS sandbox (Seatbelt on macOS, bubblewrap on Linux)
 that can write only that teammate's folder. Windows has no sandbox that strong, so there the switch stays off.
 Details in [docs/local-computers.md](docs/local-computers.md).
@@ -158,9 +158,9 @@ pnpm start` and the launchd / systemd / Windows Task Scheduler templates in [doc
 |---|---|---|
 | `OPENSUPERBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
 | `OPENSUPERBOT_API_KEY` | — | Your key. Never written to disk by this repo |
-| `OPENSUPERBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENSUPERBOT_MODEL` | `grok-4.7` | `stub` runs offline with no key |
 | `OPENSUPERBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the gateway token |
-| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running, else local) |
+| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto` (Docker if it is running and the image is built, else local) |
 | `OPENSUPERBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome/Edge/Chromium are looked for, then one is downloaded |
 | `OPENSUPERBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser, for slow-network regions |
 | `OPENSUPERBOT_A2A_ALLOW` | *(empty)* | Peer handoffs, e.g. `researcher>market-watch` |

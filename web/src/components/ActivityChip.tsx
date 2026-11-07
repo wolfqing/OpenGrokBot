@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ActivityPayload } from '../types'
+import { useT } from '../i18n'
 
 function formatMs(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
@@ -7,6 +8,7 @@ function formatMs(ms: number): string {
 
 /** 一个回合在电脑上做了什么：干活时显示当前这一步，干完收成一行，点开看每一步。 */
 export function ActivityChip({ payload }: { payload: ActivityPayload }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const steps = payload.steps
   const failed = steps.filter((s) => s.ok === false).length
@@ -15,10 +17,10 @@ export function ActivityChip({ payload }: { payload: ActivityPayload }) {
   return (
     <div className={`activity-chip${payload.done ? '' : ' running'}`}>
       <button className="activity-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span className="activity-label">{payload.done ? 'Worked' : 'Working'}</span>
+        <span className="activity-label">{t(payload.done ? 'activity.worked' : 'activity.working')}</span>
         <span className="activity-meta">
-          {steps.length} {steps.length === 1 ? 'step' : 'steps'}
-          {failed ? ` · ${failed} failed` : ''}
+          {t(steps.length === 1 ? 'activity.stepOne' : 'activity.stepMany', { count: steps.length })}
+          {failed ? ` · ${t('activity.failed', { count: failed })}` : ''}
           {payload.done && totalMs ? ` · ${formatMs(totalMs)}` : ''}
         </span>
         <span className="activity-caret">{open ? '▾' : '▸'}</span>

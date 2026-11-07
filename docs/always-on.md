@@ -118,7 +118,7 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenSuperBot-Key: <key>' 
 |---|---|---|
 | `OPENSUPERBOT_API_BASE` | `https://api.x.ai/v1` | Any OpenAI-compatible endpoint |
 | `OPENSUPERBOT_API_KEY` | — | Your key; never written to disk |
-| `OPENSUPERBOT_MODEL` | `grok-4` | `stub` runs offline with no key |
+| `OPENSUPERBOT_MODEL` | `grok-4.7` | `stub` runs offline with no key |
 | `OPENSUPERBOT_HOST` / `OPENSUPERBOT_PORT` | `127.0.0.1` / `4747` | Where the gateway listens |
 | `OPENSUPERBOT_DATA` | `gateway/data` | SQLite, bot data, workspaces, the token |
 | `OPENSUPERBOT_TOKEN` | *(generated)* | Pin the gateway token instead of generating one |
@@ -132,7 +132,7 @@ curl -X POST -H 'Content-Type: application/json' -H 'X-OpenSuperBot-Key: <key>' 
 | `OPENSUPERBOT_TURN_MINUTES` | `20` | Pause a turn that has run this long (checked between steps); `0` never |
 | `OPENSUPERBOT_VISION` | *(off)* | Show the model its own screenshots (vision models only) |
 | `OPENSUPERBOT_IDLE_STOP_MINUTES` | `60` | Stop idle computers; `0` never |
-| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto`: Docker when the daemon answers, else a local computer (see [local-computers.md](local-computers.md)) |
+| `OPENSUPERBOT_COMPUTERS` | `auto` | `docker`, `local`, or `auto`: Docker when the daemon answers and the bot image is built, else a local computer (see [local-computers.md](local-computers.md)) |
 | `OPENSUPERBOT_BROWSER` | *(auto-detected)* | Browser executable for local computers; else Chrome, Edge, Chromium or Brave are looked for, then a Chrome for Testing is downloaded into `<data>/browsers` |
 | `OPENSUPERBOT_BROWSER_MIRROR` | *(official)* | Download host for that browser; `https://cdn.npmmirror.com/binaries/playwright` works from China |
 | `OPENSUPERBOT_BOT_MEMORY_MB` / `OPENSUPERBOT_BOT_CPUS` | `2048` / `2` | Per-computer limits (Docker computers only) |

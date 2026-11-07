@@ -1,8 +1,8 @@
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  BOT_IMAGE, BOT_NETWORK, SPEC_VERSION, containerConfigKey, containerName, createContainerSpec, ensureContainer, readEndpoints,
-  retireLegacyContainers, runningBotIds,
+  BOT_IMAGE, BOT_NETWORK, SPEC_VERSION, botImageReady, containerConfigKey, containerName, createContainerSpec, ensureContainer,
+  readEndpoints, retireLegacyContainers, runningBotIds,
   stopBotContainer, waitForCdp, waitForShim,
 } from '../src/containers.js'
 
@@ -211,6 +211,10 @@ describe('ensureContainer', () => {
     const { docker } = fakeDocker({ networks: [BOT_NETWORK], images: {} })
     await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok }))
       .rejects.toThrow(/docker build -t opensuperbot\/bot:dev docker\/bot/)
+    // 界面按这个码翻译，命令原样塞进译文
+    await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toMatchObject({
+      code: 'image_missing', params: { image: BOT_IMAGE, command: `docker build -t ${BOT_IMAGE} docker/bot` },
+    })
   })
 
   it('takes over the image built before the rename instead of asking for a rebuild', async () => {
@@ -230,6 +234,22 @@ describe('docker not running', () => {
     const refused = Object.assign(new Error('connect ECONNREFUSED /Users/me/.docker/run/docker.sock'), { code: 'ECONNREFUSED' })
     const docker = { listNetworks: async () => { throw refused } } as never
     await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toThrow(/Docker is not running/)
+  })
+})
+
+describe('botImageReady', () => {
+  it('is true once the bot image exists, false when Docker says no such image', async () => {
+    const has = { getImage: () => ({ inspect: async () => ({ Id: 'sha256:x' }) }) } as never
+    const missing = { getImage: () => ({ inspect: async () => { throw Object.assign(new Error('no such image'), { statusCode: 404 }) } }) } as never
+    expect(await botImageReady(has)).toBe(true)
+    expect(await botImageReady(missing)).toBe(false)
+  })
+
+  it('counts the image built before the rename, taking it over, so auto keeps an old install on Docker', async () => {
+    const { docker, log } = fakeDocker({ images: { 'opengrokbot/bot:dev': 'sha256:legacy' } })
+    expect(await botImageReady(docker)).toBe(true)
+    expect(log).toEqual(['tag:opengrokbot/bot:dev->opensuperbot/bot:dev'])
+    expect(await botImageReady(fakeDocker({ images: {} }).docker)).toBe(false)
   })
 })
 

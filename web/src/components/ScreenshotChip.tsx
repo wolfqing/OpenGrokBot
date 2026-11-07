@@ -1,6 +1,8 @@
 import type { ScreenshotPayload } from '../types'
+import { useT } from '../i18n'
 
 export function ScreenshotChip({ payload }: { payload: ScreenshotPayload }) {
+  const t = useT()
   return (
     <figure className="shot-chip">
       <img
@@ -8,7 +10,7 @@ export function ScreenshotChip({ payload }: { payload: ScreenshotPayload }) {
         src={payload.url}
         width={payload.width}
         height={payload.height}
-        alt={payload.caption ?? "Bot's screen"}
+        alt={payload.caption ?? t('screenshot.alt')}
         loading="lazy"
       />
       {payload.caption ? <figcaption className="shot-caption">{payload.caption}</figcaption> : null}

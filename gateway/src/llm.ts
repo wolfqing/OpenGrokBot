@@ -59,6 +59,7 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep
   return {
     async chat(messages, tools, opts = {}) {
       const body = JSON.stringify({
+        ...config.extraBody,
         model: config.model,
         messages: messages.map(toWire),
         ...(tools.length ? { tools } : {}),
@@ -124,6 +125,25 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep
           },
         } : {}),
       }
+    },
+  }
+}
+
+/** 换了这几项才要换一个模型客户端；端口、看图之类的不相干 */
+const clientKey = (c: Config) => JSON.stringify([c.model, c.baseURL, c.apiKey, c.llmTimeoutMs, c.llmRetries, c.extraBody])
+
+/**
+ * 设置改了不用重启：每次调用先读当前配置，模型、地址、key 有变就换一个客户端，下一次调用就用上。
+ * 已经发出去的那次调用拿着自己的客户端，不受影响。
+ */
+export function createLiveLLM(current: () => Config, make: (c: Config) => LLM = (c) => createLLM(c)): LLM {
+  let cached: { key: string; llm: LLM } | undefined
+  return {
+    async chat(messages, tools, opts) {
+      const config = current()
+      const key = clientKey(config)
+      if (cached?.key !== key) cached = { key, llm: make(config) }
+      return cached.llm.chat(messages, tools, opts)
     },
   }
 }

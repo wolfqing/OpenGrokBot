@@ -103,6 +103,18 @@ ${lines.join('\n')}
 To stop one for good, call stop_routine with its id. Your operator can also pause, resume or run them from your computer panel.`
 }
 
+const LANGUAGE_NAME = { en: 'English', 'zh-CN': 'Simplified Chinese' } as const
+
+/** 默认用操作者界面的语言说话；他们换了语言写过来就跟着换。网关不知道界面语言时只说「跟着他们」 */
+export function languageNote(language: '' | 'en' | 'zh-CN' | undefined): string {
+  if (language === 'en' || language === 'zh-CN') {
+    const name = LANGUAGE_NAME[language]
+    return `Your operator's interface is in ${name}. Write to them in ${name} — replies, reports, questions and `
+      + 'approval requests — unless they write to you in another language. Keep names, URLs, code and quoted text as they are.'
+  }
+  return 'Write to your operator in the language they write to you in.'
+}
+
 export function buildSystemPrompt(
   bot: BotRow,
   soul: string,
@@ -117,6 +129,8 @@ export function buildSystemPrompt(
     skills?: { name: string; description: string }[]
     /** 电脑是什么做的、有没有命令行 */
     computer?: ComputerBriefingOptions
+    /** 操作者的界面语言；空 = 不知道（界面跟着浏览器） */
+    language?: '' | 'en' | 'zh-CN' | undefined
   } = {},
 ): string {
   const memory = opts.memory?.trim()
@@ -125,6 +139,7 @@ export function buildSystemPrompt(
   return [
     `You are ${bot.name}, an always-on AI teammate in your operator's OpenSuperBot workspace. You speak in first person, stay terse, and never pad.`,
     bot.role ? `Your job: ${bot.role}` : '',
+    languageNote(opts.language),
     REPORT_GRAMMAR,
     APPROVAL_DISCIPLINE,
     opts.canRelay ? RELAY_NOTE : '',

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { loadConfig } from '../src/config.js'
-import { createLLM, type ChatMsg, type ToolDef } from '../src/llm.js'
+import { describe, expect, it, vi } from 'vitest'
+import { loadConfig, type Config } from '../src/config.js'
+import { createLLM, createLiveLLM, type ChatMsg, type ToolDef } from '../src/llm.js'
 
 const toolDefs: ToolDef[] = [{ type: 'function', function: { name: 'message_user', parameters: {} } }]
 
@@ -313,5 +313,94 @@ describe('stub model', () => {
     const llm = createLLM(loadConfig({ OPENSUPERBOT_MODEL: 'stub' }))
     const turn = await llm.chat([{ role: 'user', content: 'check https://news.ycombinator.com/news please' }], toolDefs)
     expect(turn.toolCalls[0]!.args).toEqual({ url: 'https://news.ycombinator.com/news' })
+  })
+})
+
+describe('createLiveLLM', () => {
+  type Seen = { url: string; auth: string | undefined; model: string }
+  function recordingFetch(gate?: Promise<void>) {
+    const seen: Seen[] = []
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({
+        url: String(url),
+        auth: (init!.headers as Record<string, string>).Authorization,
+        model: JSON.parse(String(init!.body)).model,
+      })
+      if (gate) await gate
+      return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }))
+    }) as typeof fetch
+    return { seen, fetchImpl }
+  }
+
+  it('uses whatever the settings say at the moment of each call', async () => {
+    let config = loadConfig({ OPENSUPERBOT_API_KEY: 'sk-old', OPENSUPERBOT_MODEL: 'grok-4' })
+    const { seen, fetchImpl } = recordingFetch()
+    const llm = createLiveLLM(() => config, (c) => createLLM(c, fetchImpl))
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    config = { ...config, baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKey: 'sk-new' }
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    expect(seen).toEqual([
+      { url: 'https://api.x.ai/v1/chat/completions', auth: 'Bearer sk-old', model: 'grok-4' },
+      { url: 'https://api.deepseek.com/v1/chat/completions', auth: 'Bearer sk-new', model: 'deepseek-chat' },
+    ])
+  })
+
+  it('lets a call already in flight finish on the settings it started with', async () => {
+    let config = loadConfig({ OPENSUPERBOT_API_KEY: 'sk-old' })
+    let open!: () => void
+    const { seen, fetchImpl } = recordingFetch(new Promise((r) => { open = r }))
+    const llm = createLiveLLM(() => config, (c) => createLLM(c, fetchImpl))
+    const first = llm.chat([{ role: 'user', content: 'hi' }], [])
+    await vi.waitFor(() => expect(seen).toHaveLength(1))
+    config = { ...config, apiKey: 'sk-new' }
+    open()
+    expect((await first).content).toBe('ok')
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    expect(seen.map((s) => s.auth)).toEqual(['Bearer sk-old', 'Bearer sk-new'])
+  })
+
+  it('builds a client only when something that matters changed, and can switch to the stub', async () => {
+    let config = loadConfig({ OPENSUPERBOT_API_KEY: 'sk-1' })
+    const { fetchImpl } = recordingFetch()
+    const make = vi.fn((c: Config) => createLLM(c, fetchImpl))
+    const llm = createLiveLLM(() => config, make)
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    config = { ...config, vision: true, port: 5000 } // 跟模型客户端无关
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    expect(make).toHaveBeenCalledTimes(1)
+    config = { ...config, model: 'stub' }
+    const stubbed = await llm.chat([{ role: 'user', content: 'say hi' }], toolDefs)
+    expect(make).toHaveBeenCalledTimes(2)
+    expect(stubbed.content ?? stubbed.toolCalls[0]?.name).toBeTruthy()
+  })
+
+  it('reports a settings read that fails as an error on that call', async () => {
+    const llm = createLiveLLM(() => { throw new Error('EACCES: llm-key') })
+    await expect(llm.chat([{ role: 'user', content: 'hi' }], [])).rejects.toThrow(/llm-key/)
+  })
+})
+
+describe('provider-specific request fields', () => {
+  it('adds them to every call, but never lets them replace the model, messages or tools', async () => {
+    let body: Record<string, unknown> = {}
+    const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      body = JSON.parse(String(init!.body))
+      return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }))
+    }) as typeof fetch
+    const config = { ...loadConfig({ OPENSUPERBOT_MODEL: 'gpt-6-luna' }), extraBody: { reasoning_effort: 'none', model: 'hijacked', messages: [] } }
+    await createLLM(config, fakeFetch).chat([{ role: 'user', content: 'hi' }], toolDefs)
+    expect(body).toMatchObject({ reasoning_effort: 'none', model: 'gpt-6-luna' })
+    expect(body.messages).toHaveLength(1)
+    expect(body.tools).toHaveLength(1)
+  })
+
+  it('count as a change of client when they change', async () => {
+    let config = { ...loadConfig({}), extraBody: {} as Record<string, unknown> }
+    const make = vi.fn((c: Config) => createLLM(c, (async () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }] }))) as typeof fetch))
+    const llm = createLiveLLM(() => config, make)
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    config = { ...config, extraBody: { enable_thinking: false } }
+    await llm.chat([{ role: 'user', content: 'hi' }], [])
+    expect(make).toHaveBeenCalledTimes(2)
   })
 })

@@ -12,7 +12,7 @@ Wants=network-online.target docker.service
 Type=simple
 User=opensuperbot
 WorkingDirectory=/opt/OpenSuperBot
-Environment=OPENSUPERBOT_MODEL=grok-4
+Environment=OPENSUPERBOT_MODEL=grok-4.7
 Environment=OPENSUPERBOT_QUIET_TOKEN=1
 EnvironmentFile=-/etc/opensuperbot.env
 ExecStart=/usr/bin/node gateway/dist/main.js

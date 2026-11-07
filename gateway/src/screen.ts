@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { dirname, extname, resolve, sep } from 'node:path'
 import type { Hono } from 'hono'
 import type { WSEvents } from 'hono/ws'
+import { errorBody } from './coded-error.js'
 import type { BotComputer } from './computer.js'
 
 /**
@@ -78,7 +79,7 @@ export function screencastRelay(
     onOpen: (_evt, ws) => {
       hooks.onOpen?.()
       if (!computer.screencast) {
-        ws.send(JSON.stringify({ type: 'error', error: 'this computer has no screen to stream' }))
+        ws.send(JSON.stringify({ type: 'error', error: 'this computer has no screen to stream', code: 'no_screen' }))
         ws.close()
         return
       }
@@ -90,7 +91,7 @@ export function screencastRelay(
           else stop = s
         })
         .catch((err: unknown) => {
-          ws.send(JSON.stringify({ type: 'error', error: err instanceof Error ? err.message : String(err) }))
+          ws.send(JSON.stringify({ type: 'error', ...errorBody(err) }))
           ws.close()
         })
     },

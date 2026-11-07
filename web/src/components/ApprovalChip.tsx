@@ -1,31 +1,33 @@
 import { useState } from 'react'
+import { useT, type MessageKey, type T } from '../i18n'
 import type { ApprovalPayload, RuleDuration } from '../types'
+import { blockReasonText } from '../i18n/describe'
 
-const OUTCOME: Record<string, string> = { approved: 'Approved', discarded: 'Discarded' }
+const OUTCOME: Record<string, MessageKey> = { approved: 'approval.approved', discarded: 'approval.discarded' }
 
 /** 规则为什么这次没放行：只认你自己开头的活 */
-const HELD_BECAUSE: Record<string, string> = {
-  webhook: 'this came in through a webhook',
-  routine: 'a routine started this, not you',
-  relay: 'a teammate handed this over',
-  'outside-data': 'webhook data is still in view',
-  unknown: 'you did not start this',
+const HELD_BECAUSE: Record<string, MessageKey> = {
+  webhook: 'approval.held.webhook',
+  routine: 'approval.held.routine',
+  relay: 'approval.held.relay',
+  'outside-data': 'approval.held.outsideData',
+  unknown: 'approval.held.unknown',
 }
 
-const DURATIONS: { value: RuleDuration; label: string }[] = [
-  { value: '1h', label: '1 hour' },
-  { value: '24h', label: '24 hours' },
-  { value: 'always', label: 'Until I revoke it' },
+const DURATIONS: { value: RuleDuration; label: MessageKey }[] = [
+  { value: '1h', label: 'approval.for1h' },
+  { value: '24h', label: 'approval.for24h' },
+  { value: 'always', label: 'approval.forAlways' },
 ]
 
 /** 规则管到什么时候：今天之内只写钟点，跨天带上日期 */
-export function untilLabel(expiresAt: number | null, now = new Date()): string {
-  if (expiresAt === null) return 'until you revoke it'
+export function untilLabel(expiresAt: number | null, t: T, now = new Date()): string {
+  if (expiresAt === null) return t('approval.untilRevoked')
   const at = new Date(expiresAt)
-  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const time = at.toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit' })
   return at.toDateString() === now.toDateString()
-    ? `until ${time}`
-    : `until ${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
+    ? t('approval.until', { when: time })
+    : t('approval.until', { when: `${at.toLocaleDateString(t.locale, { month: 'short', day: 'numeric' })} ${time}` })
 }
 
 /** 一批里先摊开这么多项，再多的折起来 */
@@ -38,6 +40,7 @@ function BatchItems({ items, kept, onToggle, approved }: {
   onToggle?: (index: number) => void
   approved?: number[]
 }) {
+  const t = useT()
   const [all, setAll] = useState(items.length <= SHOWN_ITEMS)
   const shown = all ? items : items.slice(0, SHOWN_ITEMS)
   const done = approved ? new Set(approved) : null
@@ -58,7 +61,7 @@ function BatchItems({ items, kept, onToggle, approved }: {
         ))}
       </ul>
       {all ? null : (
-        <button className="approval-items-more" onClick={() => setAll(true)}>Show all {items.length}</button>
+        <button className="approval-items-more" onClick={() => setAll(true)}>{t('approval.showAll', { count: items.length })}</button>
       )}
     </div>
   )
@@ -68,6 +71,7 @@ export function ApprovalChip({ payload, onDecide }: {
   payload: ApprovalPayload
   onDecide: (approvalId: number, decision: 'approve' | 'discard', remember?: RuleDuration, items?: number[]) => void
 }) {
+  const t = useT()
   const [choosing, setChoosing] = useState(false)
   const items = payload.items ?? []
   const [kept, setKept] = useState(() => new Set(items.map((_, i) => i)))
@@ -91,33 +95,37 @@ export function ApprovalChip({ payload, onDecide }: {
   if (payload.rule) {
     return (
       <div className="approval-chip resolved by-rule">
-        <div className="approval-label">Allowed by your rule</div>
+        <div className="approval-label">{t('approval.byRuleLabel')}</div>
         <div className="approval-action">{payload.action}</div>
         {payload.detail ? <div className="approval-detail">{payload.detail}</div> : null}
         <div className="approval-outcome">
-          Went ahead without asking: {payload.rule.kind} → {payload.rule.target}, {untilLabel(payload.rule.expiresAt)}.
-          Revoke it from the computer panel.
+          {t('approval.byRuleOutcome', {
+            scope: `${payload.rule.kind} → ${payload.rule.target}`, until: untilLabel(payload.rule.expiresAt, t),
+          })}
         </div>
       </div>
     )
   }
 
-  const outcome = OUTCOME[payload.status]
+  const outcomeKey = OUTCOME[payload.status]
+  const outcome = outcomeKey ? t(outcomeKey) : undefined
   const approvedCount = payload.approvedItems?.length
   return (
     <div className={`approval-chip${outcome ? ' resolved' : ''}`}>
-      <div className="approval-label">{items.length ? `Needs you · ${items.length} items` : 'Needs you'}</div>
+      <div className="approval-label">{items.length ? t('approval.needsYouItems', { count: items.length }) : t('approval.needsYou')}</div>
       <div className="approval-action">{payload.action}</div>
       {payload.detail ? <div className="approval-detail">{payload.detail}</div> : null}
       {scope ? <div className="approval-scope">{scope}</div> : null}
       {payload.ruleHeld && !outcome ? (
         <div className="approval-note">
-          Your standing rule covers {scope ?? 'this'}, but rules only apply to work you start yourself:{' '}
-          {HELD_BECAUSE[payload.ruleHeld] ?? HELD_BECAUSE.unknown}.
+          {t('approval.ruleHeld', {
+            scope: scope ?? t('approval.ruleHeldThis'),
+            why: t(HELD_BECAUSE[payload.ruleHeld] ?? 'approval.held.unknown'),
+          })}
         </div>
       ) : null}
       {payload.rememberBlocked && !outcome ? (
-        <div className="approval-note">No &quot;Always allow&quot;: {payload.rememberBlocked}.</div>
+        <div className="approval-note">{t('approval.noAlways', { why: blockReasonText(t, payload.rememberReason, payload.rememberBlocked) })}</div>
       ) : null}
       {items.length ? (
         <BatchItems
@@ -128,30 +136,37 @@ export function ApprovalChip({ payload, onDecide }: {
       ) : null}
       {outcome ? (
         <div className="approval-outcome">
-          {outcome}
-          {items.length && approvedCount !== undefined ? ` ${approvedCount} of ${items.length}` : ''}
-          {payload.remembered && scope ? ` · ${scope} allowed ${untilLabel(payload.remembered.expiresAt)}` : ''}
+          {items.length && approvedCount !== undefined
+            ? t('approval.outcomeCount', { outcome, approved: approvedCount, of: items.length })
+            : outcome}
+          {payload.remembered && scope
+            ? ` · ${t('approval.outcomeAllowed', { scope, until: untilLabel(payload.remembered.expiresAt, t) })}`
+            : ''}
         </div>
       ) : choosing ? (
         <div className="approval-remember">
-          <div className="approval-remember-why">Approve this, and stop asking about {scope} for:</div>
+          <div className="approval-remember-why">{t('approval.rememberWhy', { scope: scope ?? '' })}</div>
           <div className="approval-buttons">
             {DURATIONS.map((d) => (
               <button key={d.value} className="remember" onClick={() => onDecide(payload.approvalId, 'approve', d.value)}>
-                {d.label}
+                {t(d.label)}
               </button>
             ))}
-            <button className="discard" onClick={() => setChoosing(false)}>Cancel</button>
+            <button className="discard" onClick={() => setChoosing(false)}>{t('approval.cancel')}</button>
           </div>
         </div>
       ) : (
         <div className="approval-buttons">
           <button className="approve" disabled={items.length > 0 && kept.size === 0} onClick={approve}>
-            {!items.length ? 'Approve' : kept.size === items.length ? `Approve all ${items.length}` : `Approve ${kept.size} of ${items.length}`}
+            {!items.length
+              ? t('approval.approve')
+              : kept.size === items.length
+                ? t('approval.approveAll', { count: items.length })
+                : t('approval.approveSome', { kept: kept.size, count: items.length })}
           </button>
-          <button className="discard" onClick={() => onDecide(payload.approvalId, 'discard')}>Discard</button>
+          <button className="discard" onClick={() => onDecide(payload.approvalId, 'discard')}>{t('approval.discard')}</button>
           {payload.canRemember ? (
-            <button className="remember-toggle" onClick={() => setChoosing(true)}>Always allow…</button>
+            <button className="remember-toggle" onClick={() => setChoosing(true)}>{t('approval.alwaysAllow')}</button>
           ) : null}
         </div>
       )}

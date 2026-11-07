@@ -24,6 +24,8 @@ function mockGateway(opts: {
   computer?: unknown
   /** 不为空时，/computer 的响应等它兑现了才回（模拟电脑在醒） */
   computerGate?: Promise<void>
+  /** 设置里存的界面语言；不给 = 网关没有设置路由（老网关） */
+  language?: string
 } = {}) {
   const calls: string[] = []
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -33,6 +35,9 @@ function mockGateway(opts: {
     if (url === '/api/session') return json({ ok: opts.session === undefined }, opts.session ?? 200)
     if (url === '/api/conversations') return json(opts.conversations ?? [conversation({})])
     if (url === '/api/bots') return json([])
+    if (url === '/api/settings' && opts.language !== undefined) {
+      return opts.session === 401 ? json({ error: 'sign in' }, 401) : json({ values: { language: opts.language } })
+    }
     if (url.startsWith('/api/threads/')) return json(opts.messages ? await opts.messages(url) : [])
     if (url.includes('/computer')) {
       await opts.computerGate
@@ -63,6 +68,30 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
+describe('App language', () => {
+  it('speaks the language saved in settings', async () => {
+    mockGateway({ conversations: [], language: 'zh-CN' })
+    render(<App />)
+    expect(await screen.findByText('还没有同事。')).toBeInTheDocument()
+    // 页面语言是渲染之后的 effect 设的：文字先出来，冷启动时 lang 可能还差一拍
+    await waitFor(() => expect(document.documentElement.lang).toBe('zh-CN'))
+  })
+
+  it('follows the browser when nothing is saved, even on the locked sign-in page', async () => {
+    vi.stubGlobal('navigator', { ...navigator, languages: ['zh-CN', 'en'], language: 'zh-CN' })
+    mockGateway({ session: 401, language: '' })
+    render(<App />)
+    expect(await screen.findByText('网关已上锁')).toBeInTheDocument()
+    expect(screen.getByText('gateway/data/auth-token')).toBeInTheDocument()
+  })
+
+  it('stays in English for an English browser and an old gateway without settings', async () => {
+    mockGateway({ conversations: [] })
+    render(<App />)
+    expect(await screen.findByText('No teammates yet.')).toBeInTheDocument()
+  })
+})
+
 describe('App', () => {
   it('asks the operator to sign in when the gateway is locked', async () => {
     mockGateway({ session: 401 })
@@ -89,6 +118,20 @@ describe('App', () => {
     await act(async () => { socket.emit({ type: 'hello', statuses: { researcher: 'thinking' } }) })
     await waitFor(() => expect(calls.filter((u) => u === '/api/conversations').length).toBe(before + 1))
     expect(screen.getByText(/Scout …/)).toBeInTheDocument()
+  })
+
+  it('ignores live events it does not know (a newer gateway), and keeps showing messages', async () => {
+    mockGateway()
+    render(<App />)
+    const socket = await ready()
+    await act(async () => {
+      socket.emit({ type: 'setup.browser', browser: { state: 'downloading', item: 'chromium', percent: 10, totalMiB: 185.8 } })
+      socket.emit({
+        type: 'message', threadId: 'dm:researcher',
+        message: { id: 7, thread_id: 'dm:researcher', sender: 'researcher', kind: 'text', content: 'still here', payload: null, created_at: 7 },
+      })
+    })
+    await waitFor(() => expect(document.querySelector('.thread-scroll')!.textContent).toContain('still here'))
   })
 
   it('keeps the newest line as the sidebar preview when an older card updates in place', async () => {

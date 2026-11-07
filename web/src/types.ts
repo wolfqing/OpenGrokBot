@@ -3,6 +3,22 @@ export type ReportPayload = { lines: ReportLine[]; closing?: string }
 export type ScreenshotPayload = { url: string; width: number; height: number; caption?: string }
 /** 「以后这类都放」能管多久：一小时、一天、直到你撤销 */
 export type RuleDuration = '1h' | '24h' | 'always'
+/** 为什么这次放行不能记成规则（和网关 approvals.ts 的 BlockReason 对应） */
+export type BlockReason =
+  | { code: 'no_destination' | 'always_asks' | 'batch' }
+  | { code: 'too_long'; max: number }
+  | { code: 'wildcard' | 'several' | 'everyone' | 'whole_service' | 'not_one_email' | 'whole_site' | 'vague_post'; target: string }
+
+/** 这台机器为什么没有沙箱 */
+export type SandboxMissing = 'install_bwrap' | 'no_sandbox_exec' | 'unsupported_os'
+
+/** 网关替同事说的固定话（kind 还是 text，content 是英文；有这个 payload 就按语言重说） */
+export type NoticePayload =
+  | { notice: 'stopped' }
+  | { notice: 'error'; params: { name: string; detail: string } }
+  | { notice: 'budget'; params: { name: string; used: number; budget: number } }
+  | { notice: 'paused'; params: { limit: 'steps' | 'minutes' | 'seconds'; count: number }; lead?: string }
+
 export type ApprovalPayload = {
   approvalId: number
   action: string
@@ -19,6 +35,8 @@ export type ApprovalPayload = {
   remembered?: { id: number; expiresAt: number | null }
   /** 类别可以记规则、但去向不是一个确定的地方：为什么不给「Always allow」 */
   rememberBlocked?: string
+  /** 同一个原因的代码和插值，界面按语言说；老 chip 只有上面那句英文 */
+  rememberReason?: BlockReason
   /** 有规则本来能放行它，但这一回合不是你开的头（或眼前有外部数据），所以还是问了你 */
   ruleHeld?: 'routine' | 'webhook' | 'relay' | 'outside-data' | 'unknown'
   /** 一批对象，一项一行 */
@@ -96,6 +114,7 @@ export type ApprovalRule = {
   /** false：去向校验收紧之前留下的模糊规则，还列着但不再放行任何东西 */
   applies?: boolean
   whyNot?: string
+  whyNotReason?: BlockReason
 }
 
 export type UsageTotals = { prompt: number; completion: number; cached: number; total: number }
@@ -112,8 +131,11 @@ export type ComputerInfo = {
   /** 本机模式：浏览器此刻以窗口开在桌面上（接管登录中） */
   window?: boolean
   /** 命令行：开没开、这台机器有没有沙箱可用（没有就说明为什么） */
-  shell?: { enabled: boolean; available: boolean; why?: string }
+  shell?: { enabled: boolean; available: boolean; why?: string; whyCode?: SandboxMissing }
   error?: string
+  /** 认得出的故障（Docker 没开、镜像没建……）带代码，界面按语言说；认不出的只有 error 原文 */
+  errorCode?: string
+  errorParams?: Record<string, string | number>
   routines: ComputerRoutine[]
   usage?: { today: UsageTotals; budget: number }
   /** 还在生效的「以后都放行」 */
@@ -160,6 +182,7 @@ export type Message = {
     | ActivityPayload
     | QuestionPayload
     | WebhookPayload
+    | NoticePayload
     | null
   created_at: number
 }
@@ -195,3 +218,12 @@ export type GatewayEvent =
   | { type: 'message'; threadId: string; message: Message }
   | { type: 'status'; botId: string; state: BotStatus }
   | { type: 'hello'; statuses: Record<string, BotStatus> }
+  /** 本机模式的浏览器：找到了、缺着、下载中（进度）、下载失败。向导里用 */
+  | { type: 'setup.browser'; browser: BrowserStatus }
+
+export type BrowserStatus =
+  | { state: 'found'; executablePath: string; source: 'env' | 'system' | 'downloaded' }
+  | { state: 'missing' }
+  /** item：在下哪一样（chromium、ffmpeg……），每样都从 0% 走起 */
+  | { state: 'downloading'; item: string | null; percent: number | null; totalMiB: number | null }
+  | { state: 'failed'; error: string }

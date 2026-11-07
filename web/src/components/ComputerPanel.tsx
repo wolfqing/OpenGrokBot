@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
+import { useT, type MessageKey, type T } from '../i18n'
+import { blockReasonText, describeSchedule, errorText, sandboxMissingText } from '../i18n/describe'
+import { ApiError } from '../api'
 import type { ActionEntry, ComputerInfo, ComputerRoutine, RoutineAction } from '../types'
 import { untilLabel } from './ApprovalChip'
 import { CdpScreen } from './CdpScreen'
 
-const formatCount = (n: number) => n.toLocaleString('en-US')
+const formatCount = (n: number, t: T) => n.toLocaleString(t.locale ?? 'en-US')
 
 /** 睡着的电脑要十几秒才醒：面板先打开，告诉人在等什么、等了多久，而不是按钮按下去毫无反应。 */
 function Waking({ botName }: { botName: string }) {
+  const t = useT()
   const [seconds, setSeconds] = useState(0)
   useEffect(() => {
     const timer = setInterval(() => setSeconds((s) => s + 1), 1000)
@@ -15,11 +19,9 @@ function Waking({ botName }: { botName: string }) {
   return (
     <div className="panel-loading" role="status">
       <span className="panel-spinner" aria-hidden="true" />
-      <div className="panel-loading-title">Starting {botName}&apos;s computer…</div>
-      <div className="panel-loading-why">
-        A sealed one that was asleep takes 10–20 seconds to wake; a local one a few seconds. Its logins and files come back with it.
-      </div>
-      {seconds >= 3 ? <div className="panel-loading-elapsed">{seconds}s</div> : null}
+      <div className="panel-loading-title">{t('panel.waking', { name: botName })}</div>
+      <div className="panel-loading-why">{t('panel.wakingWhy')}</div>
+      {seconds >= 3 ? <div className="panel-loading-elapsed">{t('panel.seconds', { count: seconds })}</div> : null}
     </div>
   )
 }
@@ -39,6 +41,7 @@ type PanelActions = {
 /** webhook 地址带着密钥：给一个「复制」，不把它整串摊在面板上 */
 /** 复制到剪贴板；不让写剪贴板（非 https、权限）就弹框让人手动复制 */
 function CopyButton({ label, value, what, aria }: { label: string; value: string; what: string; aria: string }) {
+  const t = useT()
   const [copied, setCopied] = useState(false)
   const copy = async () => {
     try {
@@ -46,12 +49,12 @@ function CopyButton({ label, value, what, aria }: { label: string; value: string
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      window.prompt(`Copy the ${what}:`, value)
+      window.prompt(t('panel.copyPrompt', { what }), value)
     }
   }
   return (
     <button className="panel-copy" onClick={() => void copy()} aria-label={aria}>
-      {copied ? 'Copied' : label}
+      {copied ? t('panel.copied') : label}
     </button>
   )
 }
@@ -61,17 +64,21 @@ function CopyButton({ label, value, what, aria }: { label: string; value: string
  * 再把密钥填进它的 Secret，由它给每次请求签名。
  */
 function CopyWebhook({ routine }: { routine: ComputerRoutine }) {
+  const t = useT()
   if (!routine.webhook_path) return null
   const withKey = `${location.origin}${routine.webhook_path}`
   return (
     <span className="panel-copy-row">
-      <CopyButton label="Copy webhook" value={withKey} what="webhook address" aria={`Copy the webhook address of ${routine.name}`} />
+      <CopyButton
+        label={t('panel.copyWebhook')} value={withKey} what={t('panel.webhookAddress')}
+        aria={t('panel.copyWebhookAria', { name: routine.name })}
+      />
       {routine.webhook_secret ? (
         <CopyButton
-          label="For GitHub"
+          label={t('panel.forGithub')}
           value={`Payload URL: ${withKey.replace(/\?key=.*$/, '')}\nContent type: application/json\nSecret: ${routine.webhook_secret}`}
-          what="GitHub webhook settings"
-          aria={`Copy the GitHub webhook settings of ${routine.name}`}
+          what={t('panel.githubSettings')}
+          aria={t('panel.copyGithubAria', { name: routine.name })}
         />
       ) : null}
     </span>
@@ -79,25 +86,28 @@ function CopyWebhook({ routine }: { routine: ComputerRoutine }) {
 }
 
 /** 谁叫它开始的，用人话 */
-const TRIGGER: Record<string, string> = {
-  you: 'you', group: 'group', handoff: 'handoff', approval: 'after approval', question: 'your answer',
-  routine: 'routine', watch: 'watch', webhook: 'webhook',
+const TRIGGER: Record<string, MessageKey> = {
+  you: 'panel.trigger.you', group: 'panel.trigger.group', handoff: 'panel.trigger.handoff',
+  approval: 'panel.trigger.approval', question: 'panel.trigger.question', routine: 'panel.trigger.routine',
+  watch: 'panel.trigger.watch', webhook: 'panel.trigger.webhook',
 }
 
-function actionTime(ts: number, now = new Date()): string {
+function actionTime(ts: number, t: T, now = new Date()): string {
   const at = new Date(ts)
-  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const time = at.toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit' })
   return at.toDateString() === now.toDateString()
     ? time
-    : `${at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
+    : `${at.toLocaleDateString(t.locale, { month: 'short', day: 'numeric' })} ${time}`
 }
 
 function RecentActions({ actions }: { actions: ActionEntry[] }) {
+  const t = useT()
+  const trigger = (name: string) => { const key = TRIGGER[name]; return key ? t(key) : name }
   return (
     <div className="panel-section">
-      <div className="panel-section-title">Recent actions</div>
+      <div className="panel-section-title">{t('panel.recent')}</div>
       {actions.length === 0 ? (
-        <div className="panel-empty">Nothing yet. Every step it takes is logged here.</div>
+        <div className="panel-empty">{t('panel.recentEmpty')}</div>
       ) : (
         <ol className="panel-actions">
           {actions.map((a) => (
@@ -106,7 +116,7 @@ function RecentActions({ actions }: { actions: ActionEntry[] }) {
               <span className="panel-action-text">
                 <span className="panel-action-tool">{a.tool}</span> {a.summary}
               </span>
-              <span className="panel-action-meta">{actionTime(a.created_at)} · {TRIGGER[a.trigger] ?? a.trigger}</span>
+              <span className="panel-action-meta">{actionTime(a.created_at, t)} · {trigger(a.trigger)}</span>
             </li>
           ))}
         </ol>
@@ -121,19 +131,17 @@ export function ComputerPanel({ info, botName, onClose, ...actions }: {
   botName: string
   onClose: () => void
 } & PanelActions) {
+  const t = useT()
   return (
     <aside className="computer-panel">
       <header className="panel-header">
-        <span className="panel-title">{botName}&apos;s computer</span>
-        <button className="panel-close" onClick={onClose} aria-label="Close">✕</button>
+        <span className="panel-title">{t('panel.title', { name: botName })}</span>
+        <button className="panel-close" onClick={onClose} aria-label={t('panel.close')}>✕</button>
       </header>
 
       {!info ? <Waking botName={botName} /> : <PanelBody info={info} botName={botName} {...actions} />}
 
-      <div className="panel-foot">
-        Signing in here happens in this teammate&apos;s own browser. The session stays on its computer — you
-        never hand it a password in chat.
-      </div>
+      <div className="panel-foot">{t('panel.foot')}</div>
     </aside>
   )
 }
@@ -142,6 +150,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
   info: ComputerInfo
   botName: string
 } & PanelActions) {
+  const t = useT()
   const rules = info.rules ?? []
   const memory = info.memory ?? []
   const skills = info.skills ?? []
@@ -154,7 +163,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
     try {
       await run()
     } catch (err) {
-      setProblem(err instanceof Error ? err.message : String(err))
+      setProblem(err instanceof ApiError ? errorText(t, err) : err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(null)
     }
@@ -162,49 +171,49 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
   return (
     <>
       {info.screen?.kind === 'cdp' ? (
-        <CdpScreen url={info.screen.url} title={`${botName}'s screen`} />
+        <CdpScreen url={info.screen.url} title={t('panel.screen', { name: botName })} />
       ) : info.vncUrl ? (
-        <iframe className="panel-screen" title={`${botName}'s screen`} src={info.vncUrl} />
+        <iframe className="panel-screen" title={t('panel.screen', { name: botName })} src={info.vncUrl} />
       ) : (
         <div className="panel-offline">
-          <div className="panel-offline-title">No screen right now</div>
-          <div className="panel-offline-why">{info.error ?? 'This teammate has no computer attached.'}</div>
+          <div className="panel-offline-title">{t('panel.noScreen')}</div>
+          <div className="panel-offline-why">
+            {info.error ? errorText(t, { message: info.error, code: info.errorCode, params: info.errorParams }) : t('panel.noComputer')}
+          </div>
         </div>
       )}
       {info.window ? (
         <div className="panel-window" role="status">
-          <span>Its browser is open as a window on your desktop — sign in there.</span>
+          <span>{t('panel.window')}</span>
           {onWindowDone ? (
             <button className="panel-copy" disabled={busy !== null} onClick={() => void act('window', onWindowDone)}>
-              {busy === 'window' ? 'Closing…' : 'I\u2019m done signing in'}
+              {busy === 'window' ? t('panel.windowClosing') : t('panel.windowDone')}
             </button>
           ) : null}
         </div>
       ) : null}
       {info.kind ? (
         <div className="panel-kind">
-          {info.kind === 'local'
-            ? 'Local computer: its own browser profile and folder on this machine. Commands stay off unless you allow them below.'
-            : 'Sealed computer: a container of its own.'}
+          {t(info.kind === 'local' ? 'panel.kindLocal' : 'panel.kindDocker')}
         </div>
       ) : null}
       {info.kind === 'local' && info.shell ? (
         <div className="panel-section">
-          <div className="panel-section-title">Commands</div>
+          <div className="panel-section-title">{t('panel.commands')}</div>
           <label className="panel-switch">
             <input
               type="checkbox"
               checked={info.shell.enabled}
               disabled={!info.shell.available || !onShell || busy !== null}
               onChange={(e) => { const next = e.target.checked; void act('shell', () => onShell?.(next)) }}
-              aria-label="Allow commands"
+              aria-label={t('panel.allowCommands')}
             />
             <span>
-              Allow commands, in a sandbox that can only write this teammate&apos;s folder.
+              {t('panel.shellText')}
               {info.shell.available
-                ? ' It cannot install software, or read your home directory and keys.'
-                : ` Not available here: ${info.shell.why ?? 'no sandbox on this machine'}`}
-              {busy === 'shell' ? ' Checking the sandbox…' : ''}
+                ? t('panel.shellSafe')
+                : t('panel.shellUnavailable', { why: sandboxMissingText(t, info.shell.whyCode, info.shell.why ?? t('panel.noSandbox')) })}
+              {busy === 'shell' ? t('panel.checkingSandbox') : ''}
             </span>
           </label>
         </div>
@@ -212,9 +221,9 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
       {problem ? <div className="panel-problem" role="alert">{problem}</div> : null}
 
       <div className="panel-section">
-        <div className="panel-section-title">Routines</div>
+        <div className="panel-section-title">{t('panel.routines')}</div>
         {info.routines.length === 0 ? (
-          <div className="panel-empty">No routines yet.</div>
+          <div className="panel-empty">{t('panel.noRoutines')}</div>
         ) : (
           info.routines.map((r) => {
             const paused = r.enabled === 0
@@ -223,23 +232,23 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
                 <div className="panel-routine-text">
                   <span className="panel-routine-name">{r.name}</span>
                   <span className="panel-routine-when">
-                    {r.human}
-                    {r.mode === 'watch' ? <span className="panel-routine-tag">watch</span> : null}
-                    {paused ? <span className="panel-routine-paused">paused</span> : null}
+                    {t.lang === 'en' ? r.human : describeSchedule(t, r.cron, Boolean(r.webhook_path))}
+                    {r.mode === 'watch' ? <span className="panel-routine-tag">{t('panel.watchTag')}</span> : null}
+                    {paused ? <span className="panel-routine-paused">{t('panel.paused')}</span> : null}
                   </span>
                   <CopyWebhook routine={r} />
                 </div>
                 {onRoutine ? (
                   <div className="panel-routine-actions">
-                    <button onClick={() => onRoutine(r.id, 'run')} aria-label={`Run ${r.name} now`} title="Run now">▶</button>
+                    <button onClick={() => onRoutine(r.id, 'run')} aria-label={t('panel.runNowAria', { name: r.name })} title={t('panel.runNow')}>▶</button>
                     <button
                       onClick={() => onRoutine(r.id, paused ? 'resume' : 'pause')}
-                      aria-label={`${paused ? 'Resume' : 'Pause'} ${r.name}`}
-                      title={paused ? 'Resume' : 'Pause'}
+                      aria-label={t(paused ? 'panel.resumeAria' : 'panel.pauseAria', { name: r.name })}
+                      title={t(paused ? 'panel.resume' : 'panel.pause')}
                     >
                       {paused ? '↻' : '❚❚'}
                     </button>
-                    <button onClick={() => onRoutine(r.id, 'delete')} aria-label={`Delete ${r.name}`} title="Delete">✕</button>
+                    <button onClick={() => onRoutine(r.id, 'delete')} aria-label={t('panel.deleteAria', { name: r.name })} title={t('panel.delete')}>✕</button>
                   </div>
                 ) : null}
               </div>
@@ -249,24 +258,26 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
       </div>
 
       <div className="panel-section">
-        <div className="panel-section-title">Allowed without asking</div>
+        <div className="panel-section-title">{t('panel.allowed')}</div>
         {rules.length === 0 ? (
-          <div className="panel-empty">Nothing goes out without your approval.</div>
+          <div className="panel-empty">{t('panel.allowedEmpty')}</div>
         ) : (
           rules.map((rule) => (
             <div className={`panel-rule${rule.applies === false ? ' inert' : ''}`} key={rule.id}>
               <div className="panel-routine-text">
                 <span className="panel-rule-scope">{rule.kind} → {rule.target}</span>
                 <span className="panel-routine-when">
-                  {rule.applies === false ? `No longer applies: ${rule.whyNot ?? 'not one destination'}` : untilLabel(rule.expiresAt)}
+                  {rule.applies === false
+                    ? t('panel.noLongerApplies', { why: blockReasonText(t, rule.whyNotReason, rule.whyNot ?? t('panel.notOneDestination')) })
+                    : untilLabel(rule.expiresAt, t)}
                 </span>
               </div>
               {onRevokeRule ? (
                 <div className="panel-routine-actions">
                   <button
                     onClick={() => onRevokeRule(rule.id)}
-                    aria-label={`Stop allowing ${rule.kind} to ${rule.target}`}
-                    title="Revoke: ask me again next time"
+                    aria-label={t('panel.revokeAria', { kind: rule.kind, target: rule.target })}
+                    title={t('panel.revokeTitle')}
                   >
                     ✕
                   </button>
@@ -278,16 +289,16 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
       </div>
 
       <div className="panel-section">
-        <div className="panel-section-title">Standing rules</div>
+        <div className="panel-section-title">{t('panel.standing')}</div>
         {memory.length === 0 ? (
-          <div className="panel-empty">No standing rules yet. Tell it &quot;from now on…&quot; in the thread.</div>
+          <div className="panel-empty">{t('panel.standingEmpty')}</div>
         ) : (
           memory.map((rule) => (
             <div className="panel-rule" key={rule}>
               <span className="panel-memory-rule">{rule}</span>
               {onForgetRule ? (
                 <div className="panel-routine-actions">
-                  <button onClick={() => onForgetRule(rule)} aria-label={`Forget: ${rule}`} title="Forget this rule">✕</button>
+                  <button onClick={() => onForgetRule(rule)} aria-label={t('panel.forgetAria', { rule })} title={t('panel.forgetTitle')}>✕</button>
                 </div>
               ) : null}
             </div>
@@ -297,7 +308,7 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
 
       {skills.length ? (
         <div className="panel-section">
-          <div className="panel-section-title">Shared skills</div>
+          <div className="panel-section-title">{t('panel.skills')}</div>
           {skills.map((s) => (
             <div className="panel-rule" key={s.name}>
               <div className="panel-routine-text">
@@ -313,10 +324,10 @@ function PanelBody({ info, botName, onRoutine, onRevokeRule, onForgetRule, onWin
 
       {info.usage ? (
         <div className="panel-section">
-          <div className="panel-section-title">Model use today</div>
+          <div className="panel-section-title">{t('panel.usage')}</div>
           <div className="panel-usage">
-            {formatCount(info.usage.today.total)} tokens
-            {info.usage.budget ? ` of ${formatCount(info.usage.budget)} budget` : ''}
+            {t('panel.tokens', { count: formatCount(info.usage.today.total, t) })}
+            {info.usage.budget ? t('panel.ofBudget', { budget: formatCount(info.usage.budget, t) }) : ''}
           </div>
         </div>
       ) : null}

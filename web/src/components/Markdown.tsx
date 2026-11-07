@@ -1,6 +1,7 @@
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { useT } from '../i18n'
 
 /**
  * 同事的话按 markdown 显示，但有三条规矩：
@@ -9,11 +10,19 @@ import remarkGfm from 'remark-gfm'
  * - 模型夹带的原始 HTML 直接丢掉；javascript: 之类的链接协议 react-markdown 默认就会去掉。
  * 另外单个换行就是换行（remark-breaks）：Chief 的分派表一行一条，模型也常用单换行分行，不能被折成空格。
  */
+const link: Components['a'] = ({ node: _node, children, ...props }) => (
+  <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>
+)
+
+/** 图片占位按界面语言写 */
+function ImagePlaceholder({ alt }: { alt?: string | undefined }) {
+  const t = useT()
+  return <span className="md-image">{alt ? t('markdown.imageAlt', { alt }) : t('markdown.image')}</span>
+}
+
 const components: Components = {
-  a: ({ node: _node, children, ...props }) => (
-    <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>
-  ),
-  img: ({ node: _node, alt }) => <span className="md-image">[image{alt ? `: ${alt}` : ''}]</span>,
+  a: link,
+  img: ({ node: _node, alt }) => <ImagePlaceholder alt={alt} />,
 }
 
 export function Markdown({ text }: { text: string }) {

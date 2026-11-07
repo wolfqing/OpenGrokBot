@@ -10,7 +10,7 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Set-Location $repo
 
 # OPENGROKBOT_MODEL is the name from before the rename; the gateway still reads it, so don't cover it with a default
-if (-not $env:OPENSUPERBOT_MODEL -and -not $env:OPENGROKBOT_MODEL) { $env:OPENSUPERBOT_MODEL = 'grok-4' }
+if (-not $env:OPENSUPERBOT_MODEL -and -not $env:OPENGROKBOT_MODEL) { $env:OPENSUPERBOT_MODEL = 'grok-4.7' }
 # The log is a file: keep the gateway token out of it. Sign in with the token in gateway\data\auth-token.
 $env:OPENSUPERBOT_QUIET_TOKEN = '1'
 

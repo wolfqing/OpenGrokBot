@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import { MAX_HOPS } from './a2a.js'
 import {
-  MAX_BATCH_ITEMS, RULEABLE_KINDS, canRemember, destinationProblem, normalizeItems, normalizeKind, normalizeTarget,
+  MAX_BATCH_ITEMS, RULEABLE_KINDS, blockText, canRemember, destinationReason, type BlockReason, normalizeItems, normalizeKind, normalizeTarget,
   type ApprovalKind,
 } from './approvals.js'
 import type { BotComputer, Shot } from './computer.js'
+import { limitText, noticeText, type BudgetHit, type Notice } from './notices.js'
 import { insertMessage, listMessages, updateMessagePayload, type BotRow, type Db, type MessageRow } from './db.js'
 import type { ChatMsg, LLM, ToolCall, Usage } from './llm.js'
 import { buildSystemPrompt, timeNote, withTimeNote, type PromptRoutine } from './prompts.js'
@@ -74,7 +75,10 @@ export type AgentDeps = {
   signal?: AbortSignal
   onUsage?: (usage: Usage) => void
   /** 每次调模型前问一句；返回一句话 = 今天的额度用完了，回合就此打住 */
-  checkBudget?: () => string | null
+  /** 今天的 token 用完了就回一句话（或带上数字，界面才能翻）；没用完回 null */
+  checkBudget?: () => string | BudgetHit | null
+  /** 操作者的界面语言（设置里的；空 = 跟浏览器，网关不知道是哪种）：同事默认用它回话 */
+  language?: '' | 'en' | 'zh-CN'
   /** 把截图喂回模型（需要支持图片输入的模型） */
   vision?: boolean
   now?: () => Date
@@ -129,6 +133,8 @@ export async function runTurn(
   const alreadyStored = opts.alreadyStored === true
   const persistUserMessage = opts.persistUserMessage !== false && !alreadyStored
   const say = (content: string) => events.onMessage(insertMessage(db, { threadId, sender: bot.id, kind: 'text', content }))
+  /** 网关替同事说的固定话：content 是英文（模型和老界面看这个），payload 让界面换成操作者的语言 */
+  const notify = (n: Notice) => events.onMessage(insertMessage(db, { threadId, sender: bot.id, kind: 'text', content: noticeText(n), payload: n }))
   if (persistUserMessage) {
     events.onMessage(insertMessage(db, { threadId, sender: 'user', kind: 'text', content: userText }))
   }
@@ -146,7 +152,7 @@ export async function runTurn(
         role: 'system',
         content: buildSystemPrompt(bot, soul, {
           hasComputer, computer: deps.computer, memory: deps.memory, group: deps.group, canRelay, manual: deps.manual, routines: deps.routines,
-          skills: deps.onReadSkill ? deps.skills : undefined,
+          skills: deps.onReadSkill ? deps.skills : undefined, language: deps.language,
         }),
       },
       ...rows.map((m) => toChatMsg(m, bot.id)),
@@ -162,13 +168,13 @@ export async function runTurn(
     const turnMs = deps.turnTimeoutMs ?? DEFAULT_TURN_MS
     const startedAt = Date.now()
     for (let step = 0; ; step++) {
-      if (signal?.aborted) return stopped(say)
+      if (signal?.aborted) return stopped(notify)
       const limit = step >= maxSteps ? stepLimit(maxSteps)
         : turnMs > 0 && Date.now() - startedAt >= turnMs ? timeLimit(turnMs) : null
-      if (limit) return await closeOut(deps, messages, tools, limit, say)
+      if (limit) return await closeOut(deps, messages, tools, limit, say, notify)
       const overBudget = deps.checkBudget?.()
       if (overBudget) {
-        say(overBudget)
+        sayBudget(overBudget, say, notify)
         return 'budget'
       }
       const turn = await llm.chat(messages, tools, { signal })
@@ -177,7 +183,7 @@ export async function runTurn(
         messages.push(turn.raw)
         let latestImage: string | undefined
         for (const call of turn.toolCalls) {
-          if (signal?.aborted) return stopped(say)
+          if (signal?.aborted) return stopped(notify)
           const outcome = await execToolCall(ctx, call, events, activity)
           messages.push({ role: 'tool', tool_call_id: call.id, content: outcome.text })
           latestImage = outcome.image ?? latestImage
@@ -191,8 +197,8 @@ export async function runTurn(
       return 'replied'
     }
   } catch (err) {
-    if (signal?.aborted) return stopped(say)
-    say(`⚠️ ${bot.name} hit an error: ${err instanceof Error ? err.message : String(err)}`)
+    if (signal?.aborted) return stopped(notify)
+    notify({ notice: 'error', params: { name: bot.name, detail: err instanceof Error ? err.message : String(err) } })
     return 'error'
   } finally {
     activity.close()
@@ -207,14 +213,21 @@ function orderHistory(rows: MessageRow[], pendingIds: number[] = [], hiddenIds: 
   return [...rest, ...rows.filter((m) => pending.has(m.id))]
 }
 
-function stopped(say: (content: string) => void): 'stopped' {
-  say('⏹ Stopped. Tell me when to pick it back up.')
+function stopped(notify: (n: Notice) => void): 'stopped' {
+  notify({ notice: 'stopped' })
   return 'stopped'
 }
 
-const stepLimit = (n: number) => `the ${n}-step limit for one turn`
-const timeLimit = (ms: number) =>
-  `the ${ms >= 60_000 ? `${Math.round(ms / 60_000)}-minute` : `${Math.max(1, Math.round(ms / 1000))}-second`} limit for one turn`
+function sayBudget(hit: string | BudgetHit, say: (content: string) => void, notify: (n: Notice) => void): void {
+  if (typeof hit === 'string') say(hit)
+  else notify({ notice: 'budget', params: { name: hit.name, used: hit.used, budget: hit.budget } })
+}
+
+type Limit = { limit: 'steps' | 'minutes' | 'seconds'; count: number }
+const stepLimit = (n: number): Limit => ({ limit: 'steps', count: n })
+const timeLimit = (ms: number): Limit => ms >= 60_000
+  ? { limit: 'minutes', count: Math.round(ms / 60_000) }
+  : { limit: 'seconds', count: Math.max(1, Math.round(ms / 1000)) }
 
 /**
  * 撞到步数或时长上限：不是甩一句「停了」，而是再问模型一次（只许回文字），让它交代做完了什么、还剩什么。
@@ -224,28 +237,28 @@ async function closeOut(
   deps: AgentDeps,
   messages: ChatMsg[],
   tools: ReturnType<typeof buildTools>,
-  limit: string,
+  limit: Limit,
   say: (content: string) => void,
+  notify: (n: Notice) => void,
 ): Promise<TurnOutcome> {
-  const notice = `⏸ Paused at ${limit}. Say "continue" to pick it up.`
   const overBudget = deps.checkBudget?.()
   if (overBudget) {
-    say(overBudget)
+    sayBudget(overBudget, say, notify)
     return 'budget'
   }
   try {
     messages.push({
       role: 'user',
-      content: `[gateway] You have reached ${limit}. Do not call any tools. In a few plain lines: what you finished, `
+      content: `[gateway] You have reached ${limitText(limit.limit, limit.count)}. Do not call any tools. In a few plain lines: what you finished, `
         + 'what is left, and anything you need from your operator.',
     })
     const turn = await deps.llm.chat(messages, tools, { signal: deps.signal, toolChoice: 'none' })
     if (turn.usage) deps.onUsage?.(turn.usage)
     const text = turn.content?.trim()
-    say(text ? `${text}\n\n${notice}` : notice)
+    notify({ notice: 'paused', params: limit, ...(text ? { lead: text } : {}) })
   } catch {
-    if (deps.signal?.aborted) return stopped(say)
-    say(notice)
+    if (deps.signal?.aborted) return stopped(notify)
+    notify({ notice: 'paused', params: limit })
   }
   return 'limit'
 }
@@ -472,8 +485,9 @@ async function execWorkflowTool(
       const answer = await deps.onApproval({ action, detail, kind, target, rulesAllowed, ...(items ? { items } : {}) })
       // 网关不该在不认规则的回合里放行；万一给了，这里也不认
       const rule = rulesAllowed ? answer.rule : undefined
-      const blocked = items ? 'a batch always asks, item by item'
-        : RULEABLE_KINDS.has(kind) ? destinationProblem(kind, target) : null
+      const reason: BlockReason | null = items ? { code: 'batch' }
+        : RULEABLE_KINDS.has(kind) ? destinationReason(kind, target) : null
+      const blocked = reason ? blockText(reason) : null
       events.onMessage(insertMessage(deps.db, {
         threadId: deps.threadId, sender: deps.bot.id, kind: 'approval_request',
         payload: {
@@ -481,7 +495,7 @@ async function execWorkflowTool(
           ...(items ? { items } : {}),
           status: rule ? 'approved' : 'pending',
           ...(rule ? { rule } : { canRemember: !items && canRemember({ kind, target }) }),
-          ...(!rule && blocked ? { rememberBlocked: blocked } : {}),
+          ...(!rule && blocked ? { rememberBlocked: blocked, rememberReason: reason } : {}),
           ...(!rule && answer.ruleHeld && deps.ruleBlock ? { ruleHeld: deps.ruleBlock } : {}),
         },
       }))

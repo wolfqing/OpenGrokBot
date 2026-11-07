@@ -13,7 +13,7 @@ Because the distribution could not give you a private computer per teammate, app
 Yes — anything OpenAI-compatible: Anthropic-compatible gateways, OpenAI, Kimi, DeepSeek, OpenRouter, or a local model via Ollama (`$0/mo`, fully offline). Set `OPENSUPERBOT_API_BASE` and `OPENSUPERBOT_MODEL`. Using the Grok API is just the poetic default. `OPENSUPERBOT_MODEL=stub` runs the whole product offline with no key at all.
 
 **Which Grok model?**
-`OPENSUPERBOT_MODEL` defaults to `grok-4`. Switching models is one environment variable — no config file to edit.
+`OPENSUPERBOT_MODEL` defaults to `grok-4.7`. Switching models is one environment variable — no config file to edit.
 
 **Does it really match Grok Bot?**
 Read [comparison.md](comparison.md) — including the "what Grok Bot genuinely does better" section. Short version: custody, model freedom and a separate computer per teammate, yes; teach-by-demonstration, form sign-in, connectors and app polish, no.

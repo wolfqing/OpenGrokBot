@@ -6,7 +6,7 @@ describe('loadConfig', () => {
   it('applies xAI defaults', () => {
     const c = loadConfig({})
     expect(c.baseURL).toBe('https://api.x.ai/v1')
-    expect(c.model).toBe('grok-4')
+    expect(c.model).toBe('grok-4.7')
     expect(c.port).toBe(4747)
     expect(c.apiKey).toBe('')
     expect(c.chiefId).toBe('chief')

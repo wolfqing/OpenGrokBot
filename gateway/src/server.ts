@@ -7,7 +7,7 @@ import { listActions, recordAction, type ActionTrigger } from './actions.js'
 import { runTurn, type TurnOrigin, type TurnOutcome } from './agent.js'
 import {
   attachApprovalMessage, canRemember, createApproval, createRule, findMatchingRule, getApproval, getRule, isRuleDuration,
-  isThumbsUp, itemsOf, latestPendingApproval, listActiveRules, pickItems, rememberBlock, resolveApproval, revokeRule,
+  blockText, isThumbsUp, itemsOf, latestPendingApproval, listActiveRules, pickItems, rememberBlock, rememberReason, resolveApproval, revokeRule,
   setApprovedItems, type ApprovalRuleRow, type RuleDuration,
 } from './approvals.js'
 import { canMessage, denyReason, type A2ARules } from './a2a.js'
@@ -20,6 +20,11 @@ import { createHub, type GatewayEvent, type Hub, type Presence } from './hub.js'
 import type { LLM } from './llm.js'
 import { appendMemoryRule, listMemoryRules, readMemory, removeMemoryRule } from './memory.js'
 import type { BotComputer, ComputerKind } from './computer.js'
+import type { BackendWhy } from './backend.js'
+import { errorBody } from './coded-error.js'
+import { noticeText, type BudgetHit } from './notices.js'
+import type { SandboxMissing } from './sandbox.js'
+import { readSavedSettings, resolveSettings } from './settings.js'
 import type { Pool } from './pool.js'
 import {
   createRoutine, deleteRoutine, describeRoutine, getRoutine, isValidCron, listRoutines, markRoutineRun,
@@ -29,6 +34,8 @@ import { screenPagePath, screencastPath } from './screen.js'
 import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
+import { mountSettings, type SettingsDeps } from './settings-api.js'
+import { mountSetup, type SetupDeps } from './setup-api.js'
 import { createTurnQueue } from './turns.js'
 import type { WorkflowRecording } from './workflow-recorder.js'
 import { listWorkflowTraces, parseWorkflowTrace, readWorkflowTrace, saveWorkflowTrace, type WorkflowTrace } from './workflows.js'
@@ -36,7 +43,10 @@ import { listWorkflowTraces, parseWorkflowTrace, readWorkflowTrace, saveWorkflow
 /** 这个网关的电脑是什么做的，以及本机模式有没有能用的沙箱（命令行开关要看它） */
 export type ComputersInfo = {
   kind: ComputerKind
-  sandbox?: { available: boolean; why?: string }
+  /** 启动时为什么选了这种电脑（界面按 why 翻译；reason 是日志里那句英文） */
+  why?: BackendWhy
+  reason?: string
+  sandbox?: { available: boolean; why?: string; whyCode?: SandboxMissing }
   /** 打开命令行前实测一次沙箱；不传就只看 available */
   checkSandbox?: (botId: string) => Promise<{ ok: true } | { ok: false; why: string }>
 }
@@ -55,13 +65,18 @@ export type AppDeps = {
   allowedOrigins?: string[]
   /** 每个 bot 每天的 token 上限；0 或不传 = 不限 */
   dailyTokens?: number
-  vision?: boolean
+  /** 传函数就每个回合开始时现问一次（设置页改了不用重启） */
+  vision?: boolean | (() => boolean)
   timeZone?: string
   now?: () => Date
   /** 一个回合最多调几次模型；不传用 agent 的默认值 */
   maxSteps?: number
   /** 一个回合最长几分钟；0 = 不限，不传用 agent 的默认值 */
   turnMinutes?: number
+  /** 设置页的路由（读写设置、测试连接）；不传就不挂 */
+  settings?: SettingsDeps
+  /** 首次启动向导要的（浏览器、Docker 情况）；和 settings 一起传才挂 /api/setup */
+  setup?: SetupDeps
 }
 
 export type GatewayApp = {
@@ -137,10 +152,10 @@ function describeWebhookBody(raw: string, contentType: string | undefined): stri
 
 /** applies=false：去向校验收紧之前留下的模糊规则，还列着但不再放行任何东西 */
 const ruleView = (r: ApprovalRuleRow) => {
-  const whyNot = rememberBlock(r)
+  const reason = rememberReason(r)
   return {
     id: r.id, kind: r.kind, target: r.target, expiresAt: r.expires_at, createdAt: r.created_at,
-    applies: whyNot === null, ...(whyNot ? { whyNot } : {}),
+    applies: reason === null, ...(reason ? { whyNot: blockText(reason), whyNotReason: reason } : {}),
   }
 }
 
@@ -168,8 +183,6 @@ function startOfLocalDay(now: Date): number {
   day.setHours(0, 0, 0, 0)
   return day.getTime()
 }
-
-const formatCount = (n: number) => n.toLocaleString('en-US')
 
 export function createApp(deps: AppDeps): GatewayApp {
   const { db, llm, pool, scheduler } = deps
@@ -217,6 +230,10 @@ export function createApp(deps: AppDeps): GatewayApp {
     app.get('/auth', loginHandler(deps.token))
   }
   app.get('/api/session', (c) => c.json({ ok: true }))
+  if (deps.settings) mountSettings(app, { ...deps.settings, db, ...(deps.computers ? { runningKind: deps.computers.kind } : {}) })
+  if (deps.settings && deps.setup) {
+    mountSetup(app, { ...deps.settings, ...deps.setup, db, hub, ...(deps.computers ? { computers: deps.computers } : {}) })
+  }
 
   const botById = (id: string) => db.prepare('SELECT * FROM bots WHERE id = ?').get(id) as BotRow | undefined
   const computerKind: ComputerKind = deps.computers?.kind ?? 'docker'
@@ -225,7 +242,10 @@ export function createApp(deps: AppDeps): GatewayApp {
   const shellView = (bot: BotRow) => {
     const sandbox = deps.computers?.sandbox
     return computerKind === 'local'
-      ? { enabled: bot.shell_enabled === 1, available: sandbox?.available ?? false, ...(sandbox?.why ? { why: sandbox.why } : {}) }
+      ? {
+        enabled: bot.shell_enabled === 1, available: sandbox?.available ?? false,
+        ...(sandbox?.why ? { why: sandbox.why } : {}), ...(sandbox?.whyCode ? { whyCode: sandbox.whyCode } : {}),
+      }
       : { enabled: true, available: true }
   }
 
@@ -286,14 +306,16 @@ export function createApp(deps: AppDeps): GatewayApp {
     return { soul: read(bot.soul_path), manual: read(join(dirname(bot.soul_path), 'AGENTS.md')) }
   }
 
-  const budgetNote = (bot: BotRow): string | null => {
+  const budgetNote = (bot: BotRow): BudgetHit | null => {
     const budget = deps.dailyTokens ?? 0
     if (!budget) return null
     const used = usageSince(db, bot.id, startOfLocalDay(now())).total
     if (used < budget) return null
-    return `⚠️ ${bot.name} hit today's token budget (${formatCount(used)} of ${formatCount(budget)} tokens). `
-      + 'It picks up again tomorrow — or raise OPENSUPERBOT_DAILY_TOKENS.'
+    const text = noticeText({ notice: 'budget', params: { name: bot.name, used, budget } })
+    return { text, name: bot.name, used, budget }
   }
+  /** 设置页存的界面语言，每个回合现读（改了下一回合就换） */
+  const uiLanguage = () => deps.settings ? resolveSettings(deps.settings.env, readSavedSettings(db)).values.language : ''
 
   const events = (threadId: string) => ({
     onMessage: (m: MessageRow) => {
@@ -332,7 +354,7 @@ export function createApp(deps: AppDeps): GatewayApp {
         db, llm, bot, soul, manual, memory, routines, threadId, signal, now,
         origin: opts.origin,
         hop: opts.hop ?? 0,
-        vision: deps.vision === true,
+        vision: (typeof deps.vision === 'function' ? deps.vision() : deps.vision) === true,
         ...(deps.timeZone ? { timeZone: deps.timeZone } : {}),
         ...(deps.maxSteps ? { maxSteps: deps.maxSteps } : {}),
         ...(deps.turnMinutes !== undefined ? { turnTimeoutMs: deps.turnMinutes * 60_000 } : {}),
@@ -342,6 +364,7 @@ export function createApp(deps: AppDeps): GatewayApp {
         ...(opts.watch ? { watch: true } : {}),
         ...(skills.length ? { skills, onReadSkill: (name: string) => readSkill(skillsDir(dataDir), name) } : {}),
         checkBudget: () => budgetNote(bot),
+        language: uiLanguage(),
         onMessageBot: ({ to, content }) => relay(bot, to, content, opts.hop ?? 0),
         // 提前把容器拉起来，用户点开面板时屏幕已经在了
         // 容器：提前拉起来，用户点开面板时屏幕已经在了；本机：把浏览器以窗口开到桌面上让人登录
@@ -623,7 +646,8 @@ export function createApp(deps: AppDeps): GatewayApp {
       })
     } catch (err) {
       // 面板要显示"为什么没屏幕"——白屏是最难查的故障
-      return c.json({ ...base, running: false, vncUrl: null, error: err instanceof Error ? err.message : String(err) })
+      const { error, code, params } = errorBody(err)
+      return c.json({ ...base, running: false, vncUrl: null, error, ...(code ? { errorCode: code } : {}), ...(params ? { errorParams: params } : {}) })
     }
   })
 
@@ -795,14 +819,25 @@ export function createApp(deps: AppDeps): GatewayApp {
     if (!bot) return c.json({ error: 'unknown bot' }, 404)
     const body = (await c.req.json().catch(() => null)) as { shell?: unknown } | null
     if (typeof body?.shell !== 'boolean') return c.json({ error: 'shell (true/false) required' }, 400)
-    if (computerKind !== 'local') return c.json({ error: 'a sealed computer always has a shell; this switch is for local computers' }, 409)
+    if (computerKind !== 'local') {
+      return c.json({ error: 'a sealed computer always has a shell; this switch is for local computers', code: 'shell_sealed' }, 409)
+    }
     if (body.shell) {
       const sandbox = deps.computers?.sandbox
-      if (!sandbox?.available) return c.json({ error: `no sandbox for commands on this machine. ${sandbox?.why ?? ''}`.trim() }, 409)
+      if (!sandbox?.available) {
+        return c.json({
+          error: `no sandbox for commands on this machine. ${sandbox?.why ?? ''}`.trim(), code: 'no_sandbox',
+          ...(sandbox?.whyCode ? { params: { why: sandbox.whyCode } } : {}),
+        }, 409)
+      }
       // 没法自检就不开：说「有沙箱」却没验过，比没有沙箱更糟
-      if (!deps.computers?.checkSandbox) return c.json({ error: 'this gateway cannot self-check its sandbox, so commands stay off' }, 409)
+      if (!deps.computers?.checkSandbox) {
+        return c.json({ error: 'this gateway cannot self-check its sandbox, so commands stay off', code: 'no_self_check' }, 409)
+      }
       const checked = await deps.computers.checkSandbox(bot.id)
-      if (!checked.ok) return c.json({ error: `the sandbox failed its self-check: ${checked.why}` }, 409)
+      if (!checked.ok) {
+        return c.json({ error: `the sandbox failed its self-check: ${checked.why}`, code: 'sandbox_check_failed', params: { detail: checked.why } }, 409)
+      }
     }
     setBotShell(db, bot.id, body.shell)
     return c.json({ ok: true, shell: shellView(botById(bot.id)!) })
@@ -816,7 +851,7 @@ export function createApp(deps: AppDeps): GatewayApp {
     const body = (await c.req.json().catch(() => null)) as { shown?: unknown } | null
     if (typeof body?.shown !== 'boolean') return c.json({ error: 'shown (true/false) required' }, 400)
     const computer = await pool.get(botId)
-    if (!computer.showWindow || !computer.hideWindow) return c.json({ error: 'this computer has no window to show' }, 409)
+    if (!computer.showWindow || !computer.hideWindow) return c.json({ error: 'this computer has no window to show', code: 'no_window' }, 409)
     await (body.shown ? computer.showWindow() : computer.hideWindow())
     return c.json({ ok: true, window: computer.windowShown?.() ?? body.shown })
   })
@@ -940,7 +975,7 @@ export function createApp(deps: AppDeps): GatewayApp {
       })
       return c.json(bot, 201)
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+      return c.json(errorBody(err), 400)
     }
   })
 

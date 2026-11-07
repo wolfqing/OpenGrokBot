@@ -124,39 +124,76 @@ const EMAIL_ADDRESS = /^[^\s@,;<>()"'*]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/
 const WHOLE_SITE = /^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+\/?$/
 
 /**
- * 去向是不是「一个确定的地方」，按类别看形状。不是的话返回一句给人看的原因。
+ * 为什么这次放行不能记成规则：界面按 code 翻译，target / max 是插值。
+ * 文字版（rememberBlock / destinationProblem）给模型、日志和 API 报错用。
+ */
+export type BlockReason =
+  | { code: 'no_destination' }
+  | { code: 'too_long'; max: number }
+  | { code: 'wildcard' | 'several' | 'everyone' | 'whole_service' | 'not_one_email' | 'whole_site' | 'vague_post'; target: string }
+  | { code: 'always_asks' }
+  | { code: 'batch' }
+
+export function blockText(r: BlockReason): string {
+  switch (r.code) {
+    case 'no_destination': return 'there is no destination'
+    case 'too_long': return `the destination is longer than ${r.max} characters`
+    case 'wildcard': return `"${r.target}" is a wildcard, not one destination`
+    case 'several': return `"${r.target}" names more than one destination`
+    case 'everyone': return `"${r.target}" means everyone, not one destination`
+    case 'whole_service': return `"${r.target}" is a whole service, not one destination`
+    case 'not_one_email': return `"${r.target}" is not a single email address`
+    case 'whole_site': return `"${r.target}" is a whole site, not one destination`
+    case 'vague_post': return `"${r.target}" does not name one account, page, channel or thread`
+    case 'always_asks': return 'purchases, bookings and "other" actions always ask'
+    case 'batch': return 'a batch always asks, item by item'
+  }
+}
+
+/**
+ * 去向是不是「一个确定的地方」，按类别看形状。不是的话返回原因。
  * 只有一个确定去向的放行才能记成规则：通配、名单、泛称和整个平台记下来，就等于这一类全放。
  * 传进来的应当是 normalizeTarget 之后的值。
  */
-export function destinationProblem(kind: ApprovalKind, target: string): string | null {
-  if (!target) return 'there is no destination'
-  if (target.length > MAX_RULE_TARGET_CHARS) return `the destination is longer than ${MAX_RULE_TARGET_CHARS} characters`
-  if (target.includes('*')) return `"${target}" is a wildcard, not one destination`
-  if (/[,;|\n]/.test(target) || /\s(and|or|&|\+)\s/.test(target)) return `"${target}" names more than one destination`
+export function destinationReason(kind: ApprovalKind, target: string): BlockReason | null {
+  if (!target) return { code: 'no_destination' }
+  if (target.length > MAX_RULE_TARGET_CHARS) return { code: 'too_long', max: MAX_RULE_TARGET_CHARS }
+  if (target.includes('*')) return { code: 'wildcard', target }
+  if (/[,;|\n]/.test(target) || /\s(and|or|&|\+)\s/.test(target)) return { code: 'several', target }
   // 用空格隔开的几个频道、几个账号、几个邮箱，同样是一张名单
   const handles = target.split(' ').filter((w) => /^[#@]\S+$/.test(w) || EMAIL_ADDRESS.test(w))
-  if (handles.length > 1) return `"${target}" names more than one destination`
+  if (handles.length > 1) return { code: 'several', target }
   if (EVERYONE.has(target) || /^(all|every|any)\b/.test(target) || /(^|\s)@(everyone|here|channel|all)\b/.test(target)) {
-    return `"${target}" means everyone, not one destination`
+    return { code: 'everyone', target }
   }
-  if (SERVICES.has(target)) return `"${target}" is a whole service, not one destination`
-  if (kind === 'email') return EMAIL_ADDRESS.test(target) ? null : `"${target}" is not a single email address`
-  if (WHOLE_SITE.test(target) && !target.includes('@')) return `"${target}" is a whole site, not one destination`
-  if (kind === 'post' && !/[/@#]/.test(target)) {
-    return `"${target}" does not name one account, page, channel or thread`
-  }
+  if (SERVICES.has(target)) return { code: 'whole_service', target }
+  if (kind === 'email') return EMAIL_ADDRESS.test(target) ? null : { code: 'not_one_email', target }
+  if (WHOLE_SITE.test(target) && !target.includes('@')) return { code: 'whole_site', target }
+  if (kind === 'post' && !/[/@#]/.test(target)) return { code: 'vague_post', target }
   return null
+}
+
+/** 文字版 destinationReason */
+export function destinationProblem(kind: ApprovalKind, target: string): string | null {
+  const r = destinationReason(kind, target)
+  return r ? blockText(r) : null
 }
 
 /** 能不能把这次放行记成规则：类别允许，而且去向是一个确定的地方 */
 export function canRemember(approval: { kind: ApprovalKind; target: string }): boolean {
-  return RULEABLE_KINDS.has(approval.kind) && destinationProblem(approval.kind, approval.target) === null
+  return RULEABLE_KINDS.has(approval.kind) && destinationReason(approval.kind, approval.target) === null
 }
 
-/** 为什么不能记成规则（给人看）；能记的话返回 null */
+/** 为什么不能记成规则；能记的话返回 null */
+export function rememberReason(approval: { kind: ApprovalKind; target: string }): BlockReason | null {
+  if (!RULEABLE_KINDS.has(approval.kind)) return { code: 'always_asks' }
+  return destinationReason(approval.kind, approval.target)
+}
+
+/** 文字版 rememberReason（给人看的英文） */
 export function rememberBlock(approval: { kind: ApprovalKind; target: string }): string | null {
-  if (!RULEABLE_KINDS.has(approval.kind)) return 'purchases, bookings and "other" actions always ask'
-  return destinationProblem(approval.kind, approval.target)
+  const r = rememberReason(approval)
+  return r ? blockText(r) : null
 }
 
 export function createApproval(

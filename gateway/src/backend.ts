@@ -5,7 +5,7 @@ import { browsersDir, findBrowser, installBrowser } from './browsers.js'
 import type { BotComputer, ComputerKind } from './computer.js'
 import { createDockerComputer } from './computer-docker.js'
 import { createLocalComputer, type LocalLaunch } from './computer-local.js'
-import { ensureContainer, retireLegacyContainers, runningBotIds, stopBotContainer, type ContainerOptions } from './containers.js'
+import { BOT_IMAGE, ensureContainer, retireLegacyContainers, runningBotIds, stopBotContainer, type ContainerOptions } from './containers.js'
 import { runSandboxed, type Sandbox } from './sandbox.js'
 import { botDataDir, workspaceDir } from './screenshots.js'
 
@@ -23,7 +23,7 @@ export type ComputerBackend = {
   stop(botId: string): Promise<void>
 }
 
-/** OPENSUPERBOT_COMPUTERS：auto = 有 Docker 用 Docker，没有就用本机模式 */
+/** OPENSUPERBOT_COMPUTERS 或设置页：auto = Docker 在跑、镜像也建了就用 Docker，否则本机模式 */
 export type ComputerChoice = 'auto' | 'docker' | 'local'
 
 export function parseComputerChoice(value: string | undefined): ComputerChoice {
@@ -152,28 +152,46 @@ export async function dockerReachable(docker: Pick<Docker, 'ping'>, timeoutMs = 
   }
 }
 
-export type BackendChoice = { backend: ComputerBackend; reason: string }
+/** 为什么是这种电脑：界面按 code 翻译，reason 是给日志看的英文 */
+export type BackendWhy = 'chosen' | 'docker_running' | 'docker_not_running' | 'docker_image_missing' | 'no_local_mode'
+export type BackendChoice = { backend: ComputerBackend; why: BackendWhy; reason: string }
+
+const BUILD_HINT = `docker build -t ${BOT_IMAGE} docker/bot`
 
 /**
- * 选后端。显式指定就听指定的；auto 先看 Docker 在不在。
- * `local` 回 null 表示这个构建里还没有本机模式（M6 做到 B 片之前）。
+ * 选后端。显式指定（环境变量或设置页）就听指定的；auto 先看 Docker 在不在，在的话再看同事电脑的镜像建没建——
+ * 没建就退到本机模式，而不是等到第一次要电脑时才失败。
+ * `local` 回 null 表示这个构建里没有本机模式。
  */
 export async function chooseBackend(choice: ComputerChoice, opts: {
   docker: () => ComputerBackend
   local: () => ComputerBackend | null
   dockerReachable: () => Promise<boolean>
+  /** 不传 = 当作建好了 */
+  dockerImageReady?: () => Promise<boolean>
+  /** 显式选择从哪来，只影响日志措辞 */
+  from?: 'env' | 'saved'
 }): Promise<BackendChoice> {
-  if (choice === 'docker') return { backend: opts.docker(), reason: 'OPENSUPERBOT_COMPUTERS=docker' }
+  const chosen = opts.from === 'saved' ? `computers=${choice} in settings` : `OPENSUPERBOT_COMPUTERS=${choice}`
+  if (choice === 'docker') return { backend: opts.docker(), why: 'chosen', reason: chosen }
   if (choice === 'local') {
     const local = opts.local()
-    if (!local) throw new Error('OPENSUPERBOT_COMPUTERS=local, but this gateway has no local computer backend yet')
-    return { backend: local, reason: 'OPENSUPERBOT_COMPUTERS=local' }
+    if (!local) throw new Error(`${chosen}, but this gateway has no local computer backend yet`)
+    return { backend: local, why: 'chosen', reason: chosen }
   }
-  if (await opts.dockerReachable()) return { backend: opts.docker(), reason: 'Docker is running' }
-  const local = opts.local()
-  if (local) return { backend: local, reason: 'Docker is not running' }
-  return {
-    backend: opts.docker(),
-    reason: 'Docker is not running and this gateway has no local mode yet — computers will fail until Docker starts',
+  if (!(await opts.dockerReachable())) {
+    const local = opts.local()
+    if (local) return { backend: local, why: 'docker_not_running', reason: 'Docker is not running' }
+    return {
+      backend: opts.docker(), why: 'no_local_mode',
+      reason: 'Docker is not running and this gateway has no local mode yet — computers will fail until Docker starts',
+    }
   }
+  if (opts.dockerImageReady && !(await opts.dockerImageReady())) {
+    const local = opts.local()
+    const missing = `Docker is running but the bot image ${BOT_IMAGE} is not built`
+    if (local) return { backend: local, why: 'docker_image_missing', reason: `${missing} — using local computers (to use Docker: ${BUILD_HINT}, then restart)` }
+    return { backend: opts.docker(), why: 'docker_image_missing', reason: `${missing} — computers will fail until you run: ${BUILD_HINT}` }
+  }
+  return { backend: opts.docker(), why: 'docker_running', reason: 'Docker is running' }
 }
