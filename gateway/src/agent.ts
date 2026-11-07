@@ -263,14 +263,11 @@ async function closeOut(
   return 'limit'
 }
 
-/** 模型只看最新一张截图：旧图换成一句占位，免得每一步都重复付图片的 token。 */
+/**
+ * 把刚拍的截图放到模型眼前。只追加、不改前面的消息：旧图换占位由各家适配器在发请求时做
+ * （latestImageOnly）；Claude 那边旧图原样留着，改了历史它就不认前面的思考块。
+ */
 function showLatestImage(messages: ChatMsg[], dataUrl: string): void {
-  for (const m of messages) {
-    if (m.images?.length) {
-      delete m.images
-      m.content = '[an earlier screenshot, no longer shown]'
-    }
-  }
   messages.push({
     role: 'user',
     content: 'This is the screenshot you just took. Your operator sees it in the thread; describe only what is really on it.',

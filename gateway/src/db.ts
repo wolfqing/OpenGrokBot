@@ -25,6 +25,10 @@ export type BotRow = {
   soul_path: string
   /** 本机电脑上允许跑命令（1）；容器电脑不看这个字段 */
   shell_enabled?: number
+  /** 这位同事用哪个模型连接；NULL = 默认连接 */
+  llm_connection?: string | null
+  /** 在那个连接上换用的模型；NULL = 连接自己的默认模型 */
+  llm_model?: string | null
 }
 
 export type MessageRow = {
@@ -184,6 +188,27 @@ const MIGRATIONS: Migration[] = [
     );
     CREATE INDEX IF NOT EXISTS idx_workflows_bot ON workflows(bot_id, created_at DESC, id DESC);
   `),
+  // v7：同时接好几家模型，每个同事各用各的。「默认」那个连接还是 settings 里的那套，这里只放另加的；
+  // key 不进库，放 <data>/llm-keys/<连接 id>。同事没选（NULL）就用默认连接
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS connections (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        api TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        vision INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+    // 列已经在就不再加：被手动退回老版本号的库（升级测试、回滚过的库）重跑这一步不该炸
+    const have = new Set((db.pragma('table_info(bots)') as { name: string }[]).map((c) => c.name))
+    if (!have.has('llm_connection')) db.exec('ALTER TABLE bots ADD COLUMN llm_connection TEXT')
+    if (!have.has('llm_model')) db.exec('ALTER TABLE bots ADD COLUMN llm_model TEXT')
+  },
 ]
 
 export const SCHEMA_VERSION = MIGRATIONS.length

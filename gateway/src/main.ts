@@ -10,7 +10,8 @@ import { createBrowserProvisioner } from './browsers.js'
 import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
 import { loadConfig } from './config.js'
 import { botShellEnabled, openDb } from './db.js'
-import { createLiveLLM } from './llm.js'
+import { botConfig } from './connections.js'
+import { createLLM, createLiveLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
 import { botImageReady } from './containers.js'
 import { createPool, reapIdleComputers } from './pool.js'
@@ -43,6 +44,11 @@ seedGroup(db, { id: config.groupId, title: config.groupTitle, memberIds: bots })
 const movedMemories = await migrateLegacyMemories(config.dataDir, bots)
 if (movedMemories.length) console.log(`[gateway] moved MEMORY.md out of the workspaces of: ${movedMemories.join(', ')}`)
 const llm = createLiveLLM(live)
+// 每位同事各用各的模型连接：回合开始时按它此刻的选择现造一个客户端（改了设置下一回合就用上）
+const llmFor = (botId: string) => {
+  const own = botConfig(startup, process.env, db, botId)
+  return { llm: createLLM(own), vision: own.vision }
+}
 // 同事的电脑是什么做的：有 Docker 用容器，没有就用本机模式（宿主上的浏览器 + 一个文件夹）
 const docker = new Docker()
 const sandbox = detectSandbox()
@@ -86,7 +92,7 @@ const schedulerProxy: Scheduler = {
 }
 
 const gateway = createApp({
-  db, llm, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
+  db, llm, llmFor, pool, dataDir: config.dataDir, scheduler: schedulerProxy,
   computers: {
     kind: backend.kind,
     why: backendWhy,

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ApiError, SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConversations,
-  fetchLanguage, fetchMessages, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerShell, setComputerWindow, stopThread,
-  updateRoutine,
+  ApiError, SignedOut, answerQuestion, checkSession, connectEvents, createBot, fetchBots, fetchComputer, fetchConnections, fetchConversations,
+  fetchLanguage, fetchMessages, fetchProviders, forgetMemoryRule, resolveApproval, revokeRule, sendMessage, setComputerShell, setComputerWindow,
+  stopThread, updateRoutine,
 } from './api'
+import { BotModelChip, BotModelPicker } from './components/BotModelPicker'
 import { ComputerPanel } from './components/ComputerPanel'
+import { ModelsDialog } from './components/ModelsDialog'
 import { NewBotForm } from './components/NewBotForm'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
 import { I18nProvider, browserLanguages, pickLang, useT, type Lang } from './i18n'
 import { errorText } from './i18n/describe'
 import { applyHello, applyStatus, clearDone } from './presence'
-import type { BotStatus, ComputerInfo, Conversation, Message, RoutineAction } from './types'
+import type { BotStatus, ComputerInfo, ConnectionsState, Conversation, Message, ProviderPreset, RoutineAction } from './types'
 
 /** 网关锁着：告诉人去哪拿登录链接，而不是一片空白。 */
 function SignIn() {
@@ -60,6 +62,12 @@ function Workspace() {
   const [panel, setPanel] = useState<{ botId: string; info: ComputerInfo | null } | null>(null)
   const [hiring, setHiring] = useState(false)
   const [hireError, setHireError] = useState<string | undefined>()
+  /** 模型连接和每位同事的选择；老网关没有这块就一直是 null */
+  const [llms, setLlms] = useState<ConnectionsState | null>(null)
+  const [providers, setProviders] = useState<ProviderPreset[]>([])
+  /** 开着的是哪个窗口：「AI 模型」总表，或给某位同事选模型 */
+  const [modelsOpen, setModelsOpen] = useState(false)
+  const [pickerFor, setPickerFor] = useState<string | null>(null)
 
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
@@ -123,16 +131,27 @@ function Workspace() {
     setRoster(Object.fromEntries(bs.map((b) => [b.id, { name: b.name, emoji: b.emoji }])))
   }, [])
 
+  /** 模型连接是锦上添花：拿不到（老网关、网络抖）不影响别的，界面上那一块不显示就是了 */
+  const loadLlms = useCallback(async () => {
+    try {
+      const [state, presets] = await Promise.all([fetchConnections(), fetchProviders()])
+      setLlms(state)
+      setProviders(presets)
+    } catch (err) {
+      if (err instanceof SignedOut) throw err
+    }
+  }, [])
+
   /** 首次加载和每次重连都走这里：断线期间错过的消息、审批数、名册一次补齐。 */
   const resync = useCallback(async () => {
     try {
-      await Promise.all([refreshConversations(), loadRoster()])
+      await Promise.all([refreshConversations(), loadRoster(), loadLlms()])
       const current = threadIdRef.current
       if (current) await loadMessages(current)
     } catch (err) {
       guard(err)
     }
-  }, [guard, loadMessages, loadRoster, refreshConversations])
+  }, [guard, loadLlms, loadMessages, loadRoster, refreshConversations])
 
   useEffect(() => {
     checkSession()
@@ -265,7 +284,7 @@ function Workspace() {
       setHireError(undefined)
       await refreshConversations()
       setSelectedId(`dm:${bot.id}`)
-      await loadRoster()
+      await Promise.all([loadRoster(), loadLlms()])
     } catch (err) {
       if (err instanceof SignedOut) setSignedOut(true)
       else setHireError(err instanceof ApiError ? errorText(t, err) : err instanceof Error ? err.message : String(err))
@@ -284,6 +303,7 @@ function Workspace() {
         statuses={statuses}
         onSelect={setSelectedId}
         onNewBot={() => { setHireError(undefined); setHiring(true) }}
+        {...(llms ? { onModels: () => setModelsOpen(true) } : {})}
       />
       {selected ? (
         <Thread
@@ -298,6 +318,9 @@ function Workspace() {
           onAnswer={(messageId, choices) => answerQuestion(messageId, choices).catch((err) => { guard(err); throw err })}
           onOpenScreen={openScreen}
           onStop={() => { if (threadId) stopThread(threadId).catch(guard) }}
+          headerExtra={llms && selected.kind === 'dm' && selected.members[0] ? (
+            <BotModelChip botId={selected.members[0]} state={llms} providers={providers} onOpen={() => setPickerFor(selected.members[0]!)} />
+          ) : null}
         />
       ) : (
         <main className="thread thread-empty">{t('app.noTeammates')}</main>
@@ -312,6 +335,20 @@ function Workspace() {
           onForgetRule={(rule) => { void onForgetRule(rule) }}
           onWindowDone={onWindowDone}
           onShell={onShell}
+        />
+      ) : null}
+      {llms && modelsOpen ? (
+        <ModelsDialog state={llms} providers={providers} roster={roster} onChange={setLlms} onClose={() => setModelsOpen(false)} />
+      ) : null}
+      {llms && pickerFor && !modelsOpen ? (
+        <BotModelPicker
+          botId={pickerFor}
+          botName={roster[pickerFor]?.name ?? pickerFor}
+          state={llms}
+          providers={providers}
+          onSaved={(botId, llm) => setLlms((s) => (s ? { ...s, bots: { ...s.bots, [botId]: llm } } : s))}
+          onManage={() => { setPickerFor(null); setModelsOpen(true) }}
+          onClose={() => setPickerFor(null)}
         />
       ) : null}
       {hiring ? (

@@ -2,6 +2,9 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseComputerChoice, type ComputerChoice } from './backend.js'
 
+/** 模型接口的说法：chat = OpenAI 兼容的 Chat Completions；anthropic = Claude 的 Messages；responses = OpenAI 的 Responses */
+export type LlmApi = 'chat' | 'anthropic' | 'responses'
+
 export type Config = {
   /** 同事的电脑是什么做的：auto = 有 Docker 用 Docker，否则本机模式 */
   computers: ComputerChoice
@@ -14,6 +17,8 @@ export type Config = {
   model: string
   /** 所选服务商要额外带的请求字段（预设里来，见 providers.ts）；环境变量配的为空 */
   extraBody: Record<string, unknown>
+  /** 走哪种接口；环境变量配的一律是 OpenAI 兼容（老行为） */
+  api: LlmApi
   /** 默认只听本机回环：局域网里的设备碰不到网关 */
   host: string
   port: number
@@ -67,6 +72,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     apiKey: env.OPENGROKBOT_API_KEY || '',
     model: env.OPENGROKBOT_MODEL || 'grok-4.7',
     extraBody: {},
+    api: 'chat',
     computers: parseComputerChoice(env.OPENGROKBOT_COMPUTERS),
     browser: (env.OPENGROKBOT_BROWSER || '').trim(),
     browserMirror: (env.OPENGROKBOT_BROWSER_MIRROR || '').trim(),

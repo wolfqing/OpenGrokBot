@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
   ActivityPayload, ApprovalPayload, ApprovalResolvedPayload, BotRefPayload, Conversation, LoginPayload, MemoryPayload,
   Message, QuestionPayload, ReportPayload, RoutinePayload, RuleDuration, ScreenshotPayload, WebhookPayload,
@@ -37,7 +37,7 @@ function dayLabel(ts: number, now: Date, t: T): string {
 const timeLabel = (ts: number, locale: string | undefined) =>
   new Date(ts).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
 
-export function Thread({ conversation, messages, thinking, onSend, onDecide, onAnswer, roster, onOpenScreen, onStop }: {
+export function Thread({ conversation, messages, thinking, onSend, onDecide, onAnswer, roster, onOpenScreen, onStop, headerExtra }: {
   conversation: Conversation
   messages: Message[]
   thinking: boolean
@@ -48,6 +48,8 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
   roster: Record<string, { name: string; emoji: string }>
   onOpenScreen?: () => void
   onStop?: () => void
+  /** 标题栏右侧多放的东西（比如这位同事用哪个 AI） */
+  headerExtra?: ReactNode
 }) {
   const t = useT()
   const [draft, setDraft] = useState('')
@@ -150,6 +152,7 @@ export function Thread({ conversation, messages, thinking, onSend, onDecide, onA
         <span className="avatar">{conversation.emoji}</span>
         <span className="thread-name">{conversation.title}</span>
         {conversation.subtitle ? <span className="thread-role">{conversation.subtitle}</span> : null}
+        {headerExtra}
         {conversation.kind === 'dm' && onOpenScreen ? (
           <button className="screen-button" onClick={onOpenScreen} aria-label={t('thread.openComputer')} title={t('thread.openComputer')}>
             🖥️

@@ -162,7 +162,9 @@ describe('the chosen provider', () => {
     const startup = loadConfig({ OPENGROKBOT_DATA: '/tmp/ogb-none' })
     expect(currentConfig(startup, {}, db).extraBody).toEqual({})
     saveSettings(db, { provider: 'openai', baseURL: 'https://api.openai.com/v1', model: 'gpt-6-luna' })
-    expect(currentConfig(startup, {}, db).extraBody).toEqual({ reasoning_effort: 'none' })
+    expect(currentConfig(startup, {}, db)).toMatchObject({ api: 'responses', extraBody: { reasoning: { effort: 'low' } } })
+    // 地址是环境变量给的：按老规矩走 OpenAI 兼容口，不套界面上选过的服务商
+    expect(currentConfig(startup, { OPENGROKBOT_API_BASE: 'https://llm.internal/v1' }, db)).toMatchObject({ api: 'chat', extraBody: {} })
   })
 })
 

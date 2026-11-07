@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_MAX_STEPS, runTurn, type AgentEvents } from '../src/agent.js'
 import { createFakeComputer } from '../src/computer.js'
 import { ensureDmThread, insertMessage, listMessages, openDb, upsertBot, type MessageRow } from '../src/db.js'
-import type { AssistantTurn, ChatMsg, ChatOptions, LLM, Usage } from '../src/llm.js'
+import { EARLIER_SCREENSHOT, latestImageOnly, type AssistantTurn, type ChatMsg, type ChatOptions, type LLM, type Usage } from '../src/llm.js'
 
 const bot = { id: 'researcher', name: 'Scout', role: 'research', emoji: '🔎', soul_path: '' }
 
@@ -149,7 +149,11 @@ describe('vision', () => {
     const withImages = (n: number) => calls[n]!.messages.filter((m) => m.images?.length)
     expect(withImages(1)).toHaveLength(1)
     expect(withImages(1)[0]!.images![0]).toMatch(/^data:image\/png;base64,/)
-    expect(withImages(2)).toHaveLength(1) // 第一张已被替换成文字占位
+    // 只追加不改历史（Claude 的思考块要求这样）；旧图换占位是各家适配器发请求时做的
+    expect(withImages(2)).toHaveLength(2)
+    const sent = latestImageOnly(calls[2]!.messages)
+    expect(sent.filter((m) => m.images?.length)).toHaveLength(1)
+    expect(sent.some((m) => m.content === EARLIER_SCREENSHOT)).toBe(true)
   })
 
   it('keeps screenshots out of the model context when vision is off', async () => {

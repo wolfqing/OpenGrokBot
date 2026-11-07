@@ -4,7 +4,24 @@ import { parseSetting } from '../src/settings.js'
 
 describe('provider presets', () => {
   it('cover the providers the wizard offers, plus a custom entry', () => {
-    expect(PROVIDERS.map((p) => p.id)).toEqual(['deepseek', 'kimi', 'qwen', 'glm', 'xai', 'openai', 'openrouter', 'ollama', 'custom'])
+    expect(PROVIDERS.map((p) => p.id)).toEqual([
+      'deepseek', 'kimi', 'qwen', 'glm', 'minimax-cn', 'minimax-plan-cn',
+      'xai', 'openai', 'anthropic', 'gemini', 'minimax', 'minimax-plan', 'openrouter', 'ollama', 'custom',
+    ])
+  })
+
+  it('only offer subscription plans whose terms allow third-party tools, and mark them', () => {
+    expect(PROVIDERS.filter((p) => p.plan).map((p) => p.id)).toEqual(['minimax-plan-cn', 'minimax-plan'])
+    // 条款明令不许在机器人、自动化里用的编程套餐：不做预设
+    for (const host of ['coding/paas', 'api.z.ai', 'api.kimi.com/coding', 'coding.dashscope', 'coding-intl.dashscope']) {
+      expect(PROVIDERS.some((p) => p.baseURL.includes(host))).toBe(false)
+    }
+  })
+
+  it('speak each provider’s own API where it has one', () => {
+    expect(Object.fromEntries(PROVIDERS.map((p) => [p.id, p.api]))).toMatchObject({
+      anthropic: 'anthropic', openai: 'responses', xai: 'responses', gemini: 'chat', deepseek: 'chat', custom: 'chat',
+    })
   })
 
   it('are well-formed: valid ids, https addresses (Ollama is local), a key page unless no key is needed', () => {

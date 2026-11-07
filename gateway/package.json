@@ -15,6 +15,7 @@
     "smoke:local": "tsx scripts/smoke-local.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@hono/node-server": "^2.1.6",
     "@novnc/novnc": "1.7.0",
     "better-sqlite3": "^13.0.3",
