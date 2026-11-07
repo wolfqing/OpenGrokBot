@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { createBot, slugifyBotId, soulFromJob } from '../src/bots.js'
 import { ensureGroupThread, listConversations, openDb, threadMembers, upsertBot } from '../src/db.js'
 
-const newDir = () => mkdtempSync(join(tmpdir(), 'ogb-bots-'))
+const newDir = () => mkdtempSync(join(tmpdir(), 'osb-bots-'))
 
 describe('slugifyBotId', () => {
   it('makes a filesystem and url safe id', () => {

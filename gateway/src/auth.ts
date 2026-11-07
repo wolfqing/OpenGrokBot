@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import type { Context, Handler, MiddlewareHandler } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 
-export const SESSION_COOKIE = 'ogb_session'
+export const SESSION_COOKIE = 'osb_session'
+/** 改名前种下的会话 cookie，有效期一年：照认，升级后不用每个浏览器重新登录 */
+const LEGACY_SESSION_COOKIE = 'ogb_session'
 
 /**
  * 网关令牌放在数据目录里、只给本人读。它不在任何 bot 的 workspace 里，
@@ -79,7 +81,7 @@ export function isProtectedPath(path: string): boolean {
 function presentedToken(c: Context): string | undefined {
   const header = c.req.header('authorization')
   if (header?.startsWith('Bearer ')) return header.slice('Bearer '.length).trim()
-  return getCookie(c, SESSION_COOKIE)
+  return getCookie(c, SESSION_COOKIE) ?? getCookie(c, LEGACY_SESSION_COOKIE)
 }
 
 /** 同一端口上的 localhost / 127.0.0.1 / [::1] 是同一台机器的同一个服务 */

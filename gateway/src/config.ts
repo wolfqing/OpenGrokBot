@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseComputerChoice, type ComputerChoice } from './backend.js'
@@ -57,39 +58,70 @@ function flag(value: string | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes((value ?? '').trim().toLowerCase())
 }
 
+/** 改名为 OpenSuperBot 之前，变量都叫 OPENGROKBOT_*：老的 launchd / systemd / 计划任务配置里还写着它们 */
+const LEGACY_ENV_PREFIX = 'OPENGROKBOT_'
+const ENV_PREFIX = 'OPENSUPERBOT_'
+
+/**
+ * 老名字照样生效：新名字没设时，用老名字的值顶上（直接写回 env，读环境变量的地方就都不用管改名）。
+ * 两个都设了以新的为准。返回用上的和被盖住的老名字，好让启动日志提醒一句；值本身不往外报（里面有 key）。
+ */
+export function adoptLegacyEnv(env: Record<string, string | undefined>): { adopted: string[]; shadowed: string[] } {
+  const adopted: string[] = []
+  const shadowed: string[] = []
+  for (const [name, value] of Object.entries(env)) {
+    if (!name.startsWith(LEGACY_ENV_PREFIX) || value === undefined) continue
+    const current = ENV_PREFIX + name.slice(LEGACY_ENV_PREFIX.length)
+    if (env[current] === undefined) {
+      env[current] = value
+      adopted.push(name)
+    } else {
+      shadowed.push(name)
+    }
+  }
+  return { adopted, shadowed }
+}
+
+/** 改名前的库叫 opengrokbot.db：数据目录里只有它，就接着用它。不搬文件，老网关可能还开着它 */
+export function defaultDbPath(dataDir: string, exists: (path: string) => boolean = existsSync): string {
+  const current = join(dataDir, 'opensuperbot.db')
+  const legacy = join(dataDir, 'opengrokbot.db')
+  return !exists(current) && exists(legacy) ? legacy : current
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   // 一律转成绝对路径：相对路径传给 docker 的 bind 会被当成卷名直接报错
-  const dataDir = resolve(env.OPENGROKBOT_DATA || fileURLToPath(new URL('../data', import.meta.url)))
+  const dataDir = resolve(env.OPENSUPERBOT_DATA || fileURLToPath(new URL('../data', import.meta.url)))
   return {
-    baseURL: env.OPENGROKBOT_API_BASE || 'https://api.x.ai/v1',
-    apiKey: env.OPENGROKBOT_API_KEY || '',
-    model: env.OPENGROKBOT_MODEL || 'grok-4',
-    computers: parseComputerChoice(env.OPENGROKBOT_COMPUTERS),
-    browser: (env.OPENGROKBOT_BROWSER || '').trim(),
-    browserMirror: (env.OPENGROKBOT_BROWSER_MIRROR || '').trim(),
-    host: env.OPENGROKBOT_HOST || '127.0.0.1',
-    port: num(env.OPENGROKBOT_PORT, 4747),
+    baseURL: env.OPENSUPERBOT_API_BASE || 'https://api.x.ai/v1',
+    apiKey: env.OPENSUPERBOT_API_KEY || '',
+    model: env.OPENSUPERBOT_MODEL || 'grok-4',
+    computers: parseComputerChoice(env.OPENSUPERBOT_COMPUTERS),
+    browser: (env.OPENSUPERBOT_BROWSER || '').trim(),
+    browserMirror: (env.OPENSUPERBOT_BROWSER_MIRROR || '').trim(),
+    host: env.OPENSUPERBOT_HOST || '127.0.0.1',
+    port: num(env.OPENSUPERBOT_PORT, 4747),
     dataDir,
-    dbPath: env.OPENGROKBOT_DB === ':memory:' ? ':memory:' : resolve(env.OPENGROKBOT_DB || join(dataDir, 'opengrokbot.db')),
-    teammatesDir: env.OPENGROKBOT_TEAMMATES || fileURLToPath(new URL('../../teammates', import.meta.url)),
-    webDist: env.OPENGROKBOT_WEB_DIST || fileURLToPath(new URL('../../web/dist', import.meta.url)),
-    webUrl: (env.OPENGROKBOT_WEB_URL || '').replace(/\/$/, ''),
-    chiefId: env.OPENGROKBOT_CHIEF || 'chief',
+    dbPath: env.OPENSUPERBOT_DB === ':memory:' ? ':memory:' : resolve(env.OPENSUPERBOT_DB || defaultDbPath(dataDir)),
+    teammatesDir: env.OPENSUPERBOT_TEAMMATES || fileURLToPath(new URL('../../teammates', import.meta.url)),
+    webDist: env.OPENSUPERBOT_WEB_DIST || fileURLToPath(new URL('../../web/dist', import.meta.url)),
+    webUrl: (env.OPENSUPERBOT_WEB_URL || '').replace(/\/$/, ''),
+    chiefId: env.OPENSUPERBOT_CHIEF || 'chief',
     // 同级互发默认关闭：`researcher>market-watch,market-watch>researcher`
-    a2aAllow: env.OPENGROKBOT_A2A_ALLOW || '',
-    groupId: env.OPENGROKBOT_GROUP_ID || 'group:offsite-crew',
-    groupTitle: env.OPENGROKBOT_GROUP_TITLE || 'Offsite crew',
-    token: (env.OPENGROKBOT_TOKEN || '').trim(),
-    allowedOrigins: (env.OPENGROKBOT_ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
-    llmTimeoutMs: num(env.OPENGROKBOT_LLM_TIMEOUT_MS, 120_000),
-    llmRetries: num(env.OPENGROKBOT_LLM_RETRIES, 2),
-    dailyTokens: num(env.OPENGROKBOT_DAILY_TOKENS, 0),
-    vision: flag(env.OPENGROKBOT_VISION),
-    idleStopMinutes: num(env.OPENGROKBOT_IDLE_STOP_MINUTES, 60),
-    botMemoryMb: num(env.OPENGROKBOT_BOT_MEMORY_MB, 2048),
-    botCpus: num(env.OPENGROKBOT_BOT_CPUS, 2),
+    a2aAllow: env.OPENSUPERBOT_A2A_ALLOW || '',
+    groupId: env.OPENSUPERBOT_GROUP_ID || 'group:offsite-crew',
+    groupTitle: env.OPENSUPERBOT_GROUP_TITLE || 'Offsite crew',
+    token: (env.OPENSUPERBOT_TOKEN || '').trim(),
+    allowedOrigins: (env.OPENSUPERBOT_ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    llmTimeoutMs: num(env.OPENSUPERBOT_LLM_TIMEOUT_MS, 120_000),
+    llmRetries: num(env.OPENSUPERBOT_LLM_RETRIES, 2),
+    dailyTokens: num(env.OPENSUPERBOT_DAILY_TOKENS, 0),
+    vision: flag(env.OPENSUPERBOT_VISION),
+    idleStopMinutes: num(env.OPENSUPERBOT_IDLE_STOP_MINUTES, 60),
+    botMemoryMb: num(env.OPENSUPERBOT_BOT_MEMORY_MB, 2048),
+    botCpus: num(env.OPENSUPERBOT_BOT_CPUS, 2),
     timeZone: env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-    maxSteps: num(env.OPENGROKBOT_MAX_STEPS, 40) || 40,
-    turnMinutes: num(env.OPENGROKBOT_TURN_MINUTES, 20),
+    maxSteps: num(env.OPENSUPERBOT_MAX_STEPS, 40) || 40,
+    turnMinutes: num(env.OPENSUPERBOT_TURN_MINUTES, 20),
   }
 }

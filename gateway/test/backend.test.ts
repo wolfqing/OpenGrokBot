@@ -26,7 +26,7 @@ describe('chooseBackend', () => {
       dockerReachable: async () => { probed = true; return false },
     })
     expect(backend.kind).toBe('docker')
-    expect(reason).toMatch(/OPENGROKBOT_COMPUTERS=docker/)
+    expect(reason).toMatch(/OPENSUPERBOT_COMPUTERS=docker/)
     expect(probed).toBe(false)
   })
 
@@ -70,8 +70,8 @@ describe('createDockerBackend', () => {
     const stopped: string[] = []
     const docker = {
       listContainers: async () => [
-        { Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.workspace': '/data/workspaces/researcher' } },
-        { Labels: { 'ai.opengrokbot.bot': 'stranger', 'ai.opengrokbot.workspace': '/elsewhere/workspaces/stranger' } },
+        { Labels: { 'ai.opensuperbot.bot': 'researcher', 'ai.opensuperbot.workspace': '/data/workspaces/researcher' } },
+        { Labels: { 'ai.opensuperbot.bot': 'stranger', 'ai.opensuperbot.workspace': '/elsewhere/workspaces/stranger' } },
       ],
       getContainer: (name: string) => ({ stop: async () => { stopped.push(name) } }),
     } as unknown as Docker
@@ -79,7 +79,31 @@ describe('createDockerBackend', () => {
     expect(backend.kind).toBe('docker')
     expect(await backend.running()).toEqual(['researcher'])
     await backend.stop('researcher')
-    expect(stopped).toEqual(['opengrokbot-researcher'])
+    expect(stopped).toEqual(['opensuperbot-researcher'])
+  })
+
+  it('replaces the computers made before the rename once, and tries again if Docker was not up yet', async () => {
+    let down = true
+    const legacyLists: string[] = []
+    let containers = [{ Id: 'old-1', Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.workspace': '/data/workspaces/researcher' } }]
+    const docker = {
+      listContainers: async (o: { filters: { label: string[] } }) => {
+        if (o.filters.label[0] === 'ai.opengrokbot.bot') legacyLists.push('legacy')
+        if (down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+        return containers.filter((c) => o.filters.label[0]! in c.Labels)
+      },
+      getContainer: (id: string) => ({ remove: async () => { containers = containers.filter((c) => c.Id !== id) } }),
+      getNetwork: () => ({ remove: async () => {} }),
+    } as unknown as Docker
+    const lines: string[] = []
+    const backend = createDockerBackend(docker, { dataDir: '/data', log: (l) => lines.push(l) })
+    await expect(backend.running()).rejects.toThrow(/ECONNREFUSED/) // Docker 没开：这次清不了，下次再来
+    down = false
+    expect(await backend.running()).toEqual([])
+    expect(await backend.running()).toEqual([])
+    expect(legacyLists).toHaveLength(2) // 失败的一次 + 成功的一次，之后不再查
+    expect(containers).toEqual([])
+    expect(lines).toEqual(['replaced the computers made before the rename (OpenGrokBot): researcher'])
   })
 })
 
@@ -96,7 +120,7 @@ describe('createLocalBackend.running', () => {
       isConnected: () => open,
     }
     const backend = createLocalBackend({
-      dataDir: mkdtempSync(join(tmpdir(), 'ogb-backend-')),
+      dataDir: mkdtempSync(join(tmpdir(), 'osb-backend-')),
       resolveBrowser: async () => '/bin/chrome',
       launch: async () => browser,
     })

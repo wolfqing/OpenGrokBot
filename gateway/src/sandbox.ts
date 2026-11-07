@@ -246,7 +246,7 @@ export async function sandboxSelfCheck(sandbox: Sandbox, c: Confinement): Promis
   const outside = join(l.dataDir, `.sandbox-probe-${process.pid}`)
   const token = join(l.dataDir, 'auth-token')
   // 家目录里临时放一个探针：哪怕你的家目录里恰好只有沙箱会绑回来的那几个名字，配错的沙箱也会露出它
-  const canary = join(l.home, `.opengrokbot-sandbox-probe-${process.pid}`)
+  const canary = join(l.home, `.opensuperbot-sandbox-probe-${process.pid}`)
   const run = (cmd: string) => runSandboxed(cmd, { sandbox, confinement: c, timeoutMs: 20_000 })
   try {
     await writeFile(canary, 'probe\n').catch(() => {}) // 家目录不可写就只靠列表判断

@@ -10,7 +10,7 @@ import { createWorkflowRecorder } from '../src/workflow-recorder.js'
 
 describe('workflow recorder in Chromium', () => {
   it('captures real DOM actions without double clicks, iframe reloads, or secret values', async (context) => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-chromium-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-chromium-'))
     const html = `<!doctype html><html><body>
       <form action="/results" method="get">
         <label for="agree">Agree to terms</label><input id="agree" type="checkbox">
@@ -60,7 +60,7 @@ describe('workflow recorder in Chromium', () => {
       const recorder = await createWorkflowRecorder(page, 'Submit a secure search')
       const bindingVisible = await page.evaluate(`(() => {
         const name = Reflect.ownKeys(window).find((key) => typeof key === 'string'
-          && key.startsWith('__opengrokbot_workflow_') && !key.startsWith('__opengrokbot_workflow_state_'));
+          && key.startsWith('__opensuperbot_workflow_') && !key.startsWith('__opensuperbot_workflow_state_'));
         if (!name) return false;
         try { window[name]({ type: 'navigate', url: 'https://evil.example/landing', intent: 'INJECTED-INTENT' }); } catch {}
         return true;
@@ -86,7 +86,7 @@ describe('workflow recorder in Chromium', () => {
       // Type-ahead changes a closed <select> on every platform; on macOS, ArrowDown only opens the native menu.
       await page.getByLabel('Plan').focus()
       await page.keyboard.type('P')
-      await page.getByLabel('Search').fill('OpenGrok workflow')
+      await page.getByLabel('Search').fill('OpenSuperBot workflow')
       await page.getByLabel('Search').press('Enter')
       await page.waitForURL((url) => url.pathname === '/results')
       await page.goto(`${baseUrl}/stop-test`, { waitUntil: 'domcontentloaded' })
@@ -131,7 +131,7 @@ describe('workflow recorder in Chromium', () => {
   }, 180_000)
 
   it('keeps capture active after SPA history changes without duplicating actions', async (context) => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-spa-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-spa-'))
     const html = `<!doctype html><html><body>
       <label for="query">Search</label><input id="query">
       <button id="save">Save</button>
@@ -181,7 +181,7 @@ describe('workflow recorder in Chromium', () => {
   }, 180_000)
 
   it('keeps the binding and capability out of the page main world', async (context) => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-isolated-world-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-isolated-world-'))
     const html = '<!doctype html><html><body><button id="real">Real action</button></body></html>'
     const server = createServer((_request, response) => {
       response.setHeader('content-type', 'text/html; charset=utf-8')
@@ -207,7 +207,7 @@ describe('workflow recorder in Chromium', () => {
       const exposure = await page.evaluate(`(() => {
         const controller = globalThis['__playwright__binding__controller__'];
         const keys = Reflect.ownKeys(globalThis).filter((key) => typeof key === 'string'
-          && key.startsWith('__opengrokbot_workflow_'));
+          && key.startsWith('__opensuperbot_workflow_'));
         if (controller && typeof controller === 'object') {
           const globalName = controller._globalBindingName;
           const original = controller._global?.[globalName];
@@ -240,7 +240,7 @@ describe('workflow recorder in Chromium', () => {
           });
         }
         for (const key of Reflect.ownKeys(globalThis)) {
-          if (typeof key === 'string' && key.startsWith('__opengrokbot_workflow_')
+          if (typeof key === 'string' && key.startsWith('__opensuperbot_workflow_')
             && typeof globalThis[key] === 'function') {
             try { await globalThis[key]({ type: 'click', target: { candidates: [{ text: 'forged window binding' }] } }); } catch {}
           }

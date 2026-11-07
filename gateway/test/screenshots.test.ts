@@ -8,7 +8,7 @@ const shot = { buffer: Buffer.from('PNGDATA'), width: 1280, height: 800 }
 
 describe('saveScreenshot', () => {
   it('writes outside the bot workspace, where the bot cannot doctor its own evidence', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ogb-'))
+    const dir = mkdtempSync(join(tmpdir(), 'osb-'))
     const saved = await saveScreenshot(dir, 'researcher', shot, 1786530000000)
     expect(saved).toEqual({ url: '/api/screenshots/researcher/1786530000000.png', width: 1280, height: 800 })
     const onDisk = join(dir, 'bots', 'researcher', 'screenshots', '1786530000000.png')

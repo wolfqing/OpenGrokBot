@@ -6,7 +6,7 @@ import {
   appendMemoryRule, listMemoryRules, memoryPath, migrateLegacyMemories, readMemory, removeMemoryRule,
 } from '../src/memory.js'
 
-const newDir = () => mkdtempSync(join(tmpdir(), 'ogb-mem-'))
+const newDir = () => mkdtempSync(join(tmpdir(), 'osb-mem-'))
 
 describe('memoryPath', () => {
   it('lives outside the bot workspace, so a bot cannot quietly rewrite its own standing rules', () => {

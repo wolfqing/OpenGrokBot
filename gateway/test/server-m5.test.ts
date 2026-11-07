@@ -21,7 +21,7 @@ function setup(makeComputer?: (botId: string) => Promise<BotComputer>) {
   const db = openDb(':memory:')
   upsertBot(db, bot)
   ensureDmThread(db, bot.id)
-  const dataDir = mkdtempSync(join(tmpdir(), 'ogb-m5-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'osb-m5-'))
   const pool = makeComputer ? createPool({ dataDir, makeComputer }) : undefined
   return { db, dataDir, ...createApp({ db, llm: okLLM, dataDir, pool }) }
 }
@@ -131,7 +131,7 @@ describe('the shell switch of a local computer', () => {
     const db = openDb(':memory:')
     upsertBot(db, bot)
     ensureDmThread(db, bot.id)
-    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-m6-'))
+    const dataDir = mkdtempSync(join(tmpdir(), 'osb-m6-'))
     const pool = createPool({ dataDir, makeComputer: async () => createFakeComputer({ kind: 'local' }) })
     return { db, ...createApp({ db, llm: okLLM, dataDir, pool, computers }) }
   }

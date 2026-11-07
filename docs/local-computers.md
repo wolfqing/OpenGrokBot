@@ -22,8 +22,8 @@ and picks one per machine:
 ## Local mode
 
 The gateway chooses at startup — Docker when the daemon answers, local otherwise — and says so in its log.
-`OPENGROKBOT_COMPUTERS=docker|local` forces one; `OPENGROKBOT_BROWSER` names a browser executable, and
-`OPENGROKBOT_BROWSER_MIRROR` a download host for the Chrome for Testing fallback.
+`OPENSUPERBOT_COMPUTERS=docker|local` forces one; `OPENSUPERBOT_BROWSER` names a browser executable, and
+`OPENSUPERBOT_BROWSER_MIRROR` a download host for the Chrome for Testing fallback.
 
 - **Out of your way.** Teammates work in a headless browser in the background — no windows popping up.
 - **Signing in gets simpler.** At a login wall, the teammate's browser reopens as a normal window on your desktop,

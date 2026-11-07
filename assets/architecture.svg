@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="960" height="620" role="img"
-     aria-label="OpenGrokBot v0.2 architecture: your browser talks to one gateway process, which drives one Docker container per teammate; each container holds a headed Chromium, a noVNC screen you can take over, a shell and file shim, and a persistent workspace where logins live.">
+     aria-label="OpenSuperBot v0.2 architecture: your browser talks to one gateway process, which drives one Docker container per teammate; each container holds a headed Chromium, a noVNC screen you can take over, a shell and file shim, and a persistent workspace where logins live.">
   <defs>
     <style>
       .bg    { fill: #0d0d0d; }
@@ -78,7 +78,7 @@
   <rect class="ghost" x="72" y="334" width="520" height="214" rx="12"/>
   <rect class="card"  x="60" y="322" width="520" height="214" rx="12"/>
 
-  <text class="t b mono" x="80" y="351" font-size="13">opengrokbot-&lt;bot&gt;</text>
+  <text class="t b mono" x="80" y="351" font-size="13">opensuperbot-&lt;bot&gt;</text>
   <text class="faint" x="80" y="369" font-size="11">one container per teammate · starts lazily · survives restarts</text>
 
   <circle cx="86" cy="400" r="3" fill="#4ec26f"/>

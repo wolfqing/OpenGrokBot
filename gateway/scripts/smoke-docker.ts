@@ -1,6 +1,6 @@
 // 真 Docker 冒烟：拉起两台 bot 电脑，走通 shell / 文件 / 浏览器 / 截图，并验收隔离与自愈。
 // 不进 pnpm test（需要 Docker 且慢）。跑法：
-//   pnpm --filter @opengrokbot/gateway run smoke:docker
+//   pnpm --filter @opensuperbot/gateway run smoke:docker
 import { mkdir, mkdtemp, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +14,7 @@ const PEER = `${BOT}-peer`
 const docker = new Docker()
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
-const dataDir = await mkdtemp(join(tmpdir(), 'ogb-smoke-'))
+const dataDir = await mkdtemp(join(tmpdir(), 'osb-smoke-'))
 const workspace = async (id: string) => {
   const dir = join(dataDir, 'workspaces', id)
   await mkdir(dir, { recursive: true })

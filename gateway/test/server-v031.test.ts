@@ -36,7 +36,7 @@ function setup(reply: (messages: ChatMsg[]) => AssistantTurn, extra: Partial<Par
   const db = openDb(':memory:')
   for (const b of [scout, chief]) { upsertBot(db, b); ensureDmThread(db, b.id) }
   ensureGroupThread(db, 'group:offsite-crew', 'Offsite crew', ['researcher', 'chief'])
-  const dataDir = mkdtempSync(join(tmpdir(), 'ogb-v031-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'osb-v031-'))
   const seen: { messages: ChatMsg[]; tools: ToolDef[] | undefined }[] = []
   const llm: LLM = {
     async chat(messages, tools) {

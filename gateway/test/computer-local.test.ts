@@ -7,7 +7,7 @@ import type { BrowserLike, CdpSessionLike, PageLike } from '../src/browser-page.
 import { createLocalComputer, workspacePath, type LocalLaunch } from '../src/computer-local.js'
 
 let dir: string
-beforeEach(async () => { dir = await realpath(await mkdtemp(join(tmpdir(), 'ogb-local-'))) })
+beforeEach(async () => { dir = await realpath(await mkdtemp(join(tmpdir(), 'osb-local-'))) })
 afterEach(() => rm(dir, { recursive: true, force: true }))
 
 function fakeBrowser() {

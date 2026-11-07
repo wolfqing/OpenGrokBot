@@ -1,7 +1,7 @@
 // 本机模式冒烟：真浏览器（机器上的 Chrome/Edge，或自动下载的 Chrome for Testing）+ 真沙箱
 // （macOS Seatbelt / Linux bubblewrap）。走通文件 / 浏览器 / 截屏流 / 登录窗口 / 命令行开关与沙箱边界。
 // 不进 pnpm test（要真浏览器且慢）。跑法：
-//   pnpm --filter @opengrokbot/gateway run smoke:local
+//   pnpm --filter @opensuperbot/gateway run smoke:local
 import { existsSync } from 'node:fs'
 import { mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -11,7 +11,7 @@ import { detectSandbox, sandboxSelfCheck } from '../src/sandbox.js'
 import { saveScreenshot } from '../src/screenshots.js'
 
 const BOT = process.env.SMOKE_BOT || 'smoke'
-const dataDir = await mkdtemp(join(tmpdir(), 'ogb-smoke-local-'))
+const dataDir = await mkdtemp(join(tmpdir(), 'osb-smoke-local-'))
 await writeFile(join(dataDir, 'auth-token'), 'smoke-secret-token\n', { mode: 0o600 })
 
 const checks: { name: string; ok: boolean }[] = []
