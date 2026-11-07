@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { join, resolve } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { openDb } from '../src/db.js'
 import {
@@ -89,7 +89,7 @@ describe('settings', () => {
   it('lays the resolved settings over the startup config', () => {
     const config = loadConfig({ OPENSUPERBOT_DATA: '/tmp/ogb-x' })
     const merged = applySettings(config, resolveSettings({}, { model: 'deepseek-chat', computers: 'local' }).values, 'sk-file')
-    expect(merged).toMatchObject({ model: 'deepseek-chat', computers: 'local', apiKey: 'sk-file', dataDir: '/tmp/ogb-x', port: 4747 })
+    expect(merged).toMatchObject({ model: 'deepseek-chat', computers: 'local', apiKey: 'sk-file', dataDir: resolve('/tmp/ogb-x'), port: 4747 })
     expect(config.model).toBe('grok-4.7') // 原来的不动
   })
 })
@@ -103,8 +103,23 @@ describe('the API key file', () => {
     expect(readApiKey(dir)).toBe('')
     expect(saveApiKey(dir, '  sk-abc123  ')).toEqual({ ok: true })
     expect(readFileSync(join(dir, 'llm-key'), 'utf8')).toBe('sk-abc123\n')
-    expect(statSync(join(dir, 'llm-key')).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(join(dir, 'llm-key')).mode & 0o777).toBe(0o600)
     expect(readApiKey(dir)).toBe('sk-abc123')
+  })
+
+  it('limits the key to your account before it takes its place (the ACL, on Windows)', () => {
+    const restrict = vi.fn((path: string) => { expect(existsSync(join(dir, 'llm-key'))).toBe(false); expect(existsSync(path)).toBe(true) })
+    saveApiKey(dir, 'sk-acl', { restrict })
+    expect(restrict).toHaveBeenCalledTimes(1)
+    expect(restrict.mock.calls[0]![0]).toMatch(/llm-key\.\d+\.tmp$/)
+    expect(readApiKey(dir)).toBe('sk-acl')
+  })
+
+  it('still saves the key when it cannot be limited, and says so', () => {
+    const warn = vi.fn()
+    saveApiKey(dir, 'sk-warn', { restrict: () => { throw new Error('whoami did not report a SID') }, warn })
+    expect(readApiKey(dir)).toBe('sk-warn')
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/could not limit .*llm-key to your account: whoami did not report a SID/))
   })
 
   it('tightens a key file someone loosened, and creates the data dir if needed', () => {
@@ -112,7 +127,7 @@ describe('the API key file', () => {
     saveApiKey(nested, 'sk-1')
     chmodSync(join(nested, 'llm-key'), 0o644)
     saveApiKey(nested, 'sk-2')
-    expect(statSync(join(nested, 'llm-key')).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(join(nested, 'llm-key')).mode & 0o777).toBe(0o600)
     expect(readApiKey(nested)).toBe('sk-2')
   })
 

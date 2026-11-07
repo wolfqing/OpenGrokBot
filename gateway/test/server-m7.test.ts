@@ -99,7 +99,7 @@ describe('/api/settings', () => {
     expect(body.sources.model).toBe('saved')
     expect(body.apiKey).toEqual({ set: true, masked: 'sk-…3456', source: 'file' })
     expect(body.needsRestart).toEqual(['computers']) // 电脑种类要重启才换
-    expect(statSync(join(dataDir, 'llm-key')).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(join(dataDir, 'llm-key')).mode & 0o777).toBe(0o600)
     expect(JSON.stringify(await (await call('GET', '/api/settings')).json())).not.toContain(KEY)
     expect((await call('PUT', '/api/settings', { apiKey: null })).status).toBe(200)
     expect(existsSync(join(dataDir, 'llm-key'))).toBe(false)

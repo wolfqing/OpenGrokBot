@@ -150,7 +150,7 @@ describe('createBrowserProvisioner', () => {
     const a = p.ensure()
     const b = p.ensure()
     await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(1))
-    expect(install.mock.calls[0]![0]).toBe('/data/browsers')
+    expect(install.mock.calls[0]![0]).toBe(join('/data', 'browsers'))
     expect(install.mock.calls[0]![1]?.mirror).toBe('https://cdn.npmmirror.com/binaries/playwright')
     expect(p.status()).toEqual({ state: 'downloading', item: 'chromium', percent: 40, totalMiB: 185.8 })
     finish()
