@@ -17,7 +17,7 @@ describe('notices', () => {
     expect(noticeText(en, { notice: 'paused', params: { limit: 'steps', count: 2 } }))
       .toBe('⏸ Paused at the 2-step limit for one turn. Say "continue" to pick it up.')
     expect(noticeText(en, { notice: 'budget', params: { name: 'Scout', used: 200500, budget: 200000 } }))
-      .toBe("⚠️ Scout hit today's token budget (200,500 of 200,000 tokens). It picks up again tomorrow — or raise OPENGROKBOT_DAILY_TOKENS.")
+      .toBe("⚠️ Scout hit today's token budget (200,500 of 200,000 tokens). It picks up again tomorrow — or raise OPENSUPERBOT_DAILY_TOKENS.")
     expect(noticeText(zh, { notice: 'error', params: { name: 'Scout', detail: 'upstream 502' } })).toBe('⚠️ Scout 出错了：upstream 502')
     expect(noticeText(zh, { notice: 'paused', params: { limit: 'minutes', count: 15 } })).toMatch(/15 分钟的上限.*说「继续」/)
   })

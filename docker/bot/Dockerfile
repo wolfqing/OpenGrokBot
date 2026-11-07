@@ -1,9 +1,9 @@
-# OpenGrokBot — 每个 bot 一台自己的电脑。
+# OpenSuperBot — 每个 bot 一台自己的电脑。
 # 基底刻意选小：宿主磁盘/带宽有限，禁止用 mcr.microsoft.com/playwright（2GB+）。
 FROM node:26-bookworm-slim
 
 # 官方源在部分地区只有几十 KB/s。传镜像主机名即可换源，例如：
-#   docker build --build-arg APT_MIRROR=mirrors.aliyun.com -t opengrokbot/bot:dev docker/bot
+#   docker build --build-arg APT_MIRROR=mirrors.aliyun.com -t opensuperbot/bot:dev docker/bot
 ARG APT_MIRROR=""
 
 ENV DEBIAN_FRONTEND=noninteractive \

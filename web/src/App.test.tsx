@@ -64,7 +64,7 @@ async function ready(): Promise<FakeSocket> {
 beforeEach(() => {
   FakeSocket.last = null
   vi.stubGlobal('WebSocket', FakeSocket)
-  document.title = 'OpenGrokBot'
+  document.title = 'OpenSuperBot'
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -106,7 +106,7 @@ describe('App', () => {
       ],
     })
     render(<App />)
-    await waitFor(() => expect(document.title).toBe('(3) OpenGrokBot'))
+    await waitFor(() => expect(document.title).toBe('(3) OpenSuperBot'))
   })
 
   it('catches up after the live connection comes back', async () => {

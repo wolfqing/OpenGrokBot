@@ -79,7 +79,7 @@ describe('GET /api/bots/:botId/computer', () => {
     upsertBot(db, bot)
     ensureDmThread(db, bot.id)
     const pool = createPool({
-      dataDir: mkdtempSync(join(tmpdir(), 'ogb-screen-')),
+      dataDir: mkdtempSync(join(tmpdir(), 'osb-screen-')),
       makeComputer: async () => createFakeComputer({ screen: { base: 'http://127.0.0.1:53314', password: 'pw' } }),
     })
     const { app } = createApp({ db, llm: okLLM, pool, dataDir: '/tmp' })

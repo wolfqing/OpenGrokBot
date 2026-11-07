@@ -197,8 +197,8 @@ export function runMigrations(db: Db, steps: Migration[]): { from: number; to: n
   const from = schemaVersion(db)
   if (from > steps.length) {
     throw new Error(
-      `This database was written by a newer OpenGrokBot (schema v${from}; this build knows v${steps.length}). `
-      + 'Upgrade the gateway, or point OPENGROKBOT_DATA at a different directory.',
+      `This database was written by a newer OpenSuperBot (schema v${from}; this build knows v${steps.length}). `
+      + 'Upgrade the gateway, or point OPENSUPERBOT_DATA at a different directory.',
     )
   }
   for (let v = from; v < steps.length; v++) {

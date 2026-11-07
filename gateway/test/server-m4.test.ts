@@ -37,7 +37,7 @@ function setup(llm: LLM, a2a = '') {
   for (const b of [scout, ticker, chief]) upsertBot(db, b)
   for (const b of [scout, ticker, chief]) ensureDmThread(db, b.id)
   ensureGroupThread(db, GROUP, 'Offsite crew', ['researcher', 'market-watch', 'chief'])
-  const dataDir = mkdtempSync(join(tmpdir(), 'ogb-m4-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'osb-m4-'))
   return {
     db, dataDir,
     ...createApp({ db, llm, dataDir, chiefId: 'chief', a2aRules: parseA2AAllow(a2a, 'chief') }),

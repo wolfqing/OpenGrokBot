@@ -85,9 +85,9 @@ export function findBrowser(opts: {
 } & FsDeps): BrowserFound | null {
   const exists = opts.exists ?? existsSync
   const env = opts.env ?? process.env
-  const wanted = (env.OPENGROKBOT_BROWSER ?? '').trim()
+  const wanted = (env.OPENSUPERBOT_BROWSER ?? '').trim()
   if (wanted) {
-    if (!exists(wanted)) throw new CodedError('browser_missing', `OPENGROKBOT_BROWSER points to ${wanted}, which does not exist`, { path: wanted })
+    if (!exists(wanted)) throw new CodedError('browser_missing', `OPENSUPERBOT_BROWSER points to ${wanted}, which does not exist`, { path: wanted })
     return { executablePath: wanted, source: 'env' }
   }
   for (const candidate of systemBrowsers(opts.platform ?? process.platform, env)) {
@@ -105,7 +105,7 @@ export type SpawnLike = (
 
 /**
  * 下载 Chrome for Testing（约 150 MB）到 browsers 目录。只装完整版、不装 headless shell：
- * 接管登录时要以有窗口的方式打开同一个浏览器。镜像站用 OPENGROKBOT_BROWSER_MIRROR（给 playwright 的下载主机）。
+ * 接管登录时要以有窗口的方式打开同一个浏览器。镜像站用 OPENSUPERBOT_BROWSER_MIRROR（给 playwright 的下载主机）。
  */
 /** item：在下哪一样（先 chromium、再 ffmpeg，每样都从 0% 走起） */
 export type DownloadProgress = { item: string | null; percent: number; totalMiB: number }
@@ -151,7 +151,7 @@ export async function installBrowser(dir: string, opts: {
       else {
         const detail = tail.trim().split('\n').slice(-3).join(' ')
         reject(new CodedError('browser_download_failed', `browser download failed (exit ${String(code)}). ${detail}`.trim()
-          + '\nInstall Google Chrome instead, or point OPENGROKBOT_BROWSER at a Chromium-based browser.', { detail }))
+          + '\nInstall Google Chrome instead, or point OPENSUPERBOT_BROWSER at a Chromium-based browser.', { detail }))
       }
     })
   })
@@ -180,7 +180,7 @@ export type BrowserProvisioner = {
  */
 export function createBrowserProvisioner(opts: {
   dataDir: string
-  /** OPENGROKBOT_BROWSER；空 = 自己找 */
+  /** OPENSUPERBOT_BROWSER；空 = 自己找 */
   browser: string
   mirror: () => string
   log?: (line: string) => void
@@ -188,7 +188,7 @@ export function createBrowserProvisioner(opts: {
   install?: typeof installBrowser
 }): BrowserProvisioner {
   const log = opts.log ?? (() => {})
-  const find = opts.find ?? (() => findBrowser({ dataDir: opts.dataDir, env: { OPENGROKBOT_BROWSER: opts.browser } }))
+  const find = opts.find ?? (() => findBrowser({ dataDir: opts.dataDir, env: { OPENSUPERBOT_BROWSER: opts.browser } }))
   const install = opts.install ?? installBrowser
   const listeners = new Set<(s: BrowserStatus) => void>()
   let downloading: { item: string | null; percent: number | null; totalMiB: number | null } | null = null

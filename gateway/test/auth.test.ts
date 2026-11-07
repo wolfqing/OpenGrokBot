@@ -21,11 +21,11 @@ function setup() {
   return { db, ...createApp({ db, llm: okLLM, token: TOKEN }) }
 }
 
-const cookie = { Cookie: `ogb_session=${TOKEN}` }
+const cookie = { Cookie: `osb_session=${TOKEN}` }
 
 describe('loadOrCreateToken', () => {
   it('creates a private token file once and reuses it', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ogb-auth-'))
+    const dir = mkdtempSync(join(tmpdir(), 'osb-auth-'))
     const first = loadOrCreateToken(dir)
     expect(first).toMatch(/^[A-Za-z0-9_-]{32,}$/)
     expect(loadOrCreateToken(dir)).toBe(first)
@@ -34,7 +34,7 @@ describe('loadOrCreateToken', () => {
   })
 
   it('lets an explicit token win', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ogb-auth-'))
+    const dir = mkdtempSync(join(tmpdir(), 'osb-auth-'))
     expect(loadOrCreateToken(dir, 'from-env-token')).toBe('from-env-token')
   })
 })
@@ -59,7 +59,7 @@ describe('restrictToOwner', () => {
   })
 
   it('warns instead of failing start-up when the file cannot be restricted', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ogb-token-'))
+    const dir = mkdtempSync(join(tmpdir(), 'osb-token-'))
     const warnings: string[] = []
     const token = loadOrCreateToken(dir, undefined, { restrict: () => { throw new Error('icacls missing') }, warn: (l) => warnings.push(l) })
     expect(token).toMatch(/^[\w-]{20,}$/)
@@ -67,7 +67,7 @@ describe('restrictToOwner', () => {
   })
 
   it.skipIf(process.platform !== 'win32')('really leaves only the current user on the file (Windows)', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'ogb-acl-')), 'auth-token')
+    const file = join(mkdtempSync(join(tmpdir(), 'osb-acl-')), 'auth-token')
     writeFileSync(file, 'secret\n')
     // 先塞一条直接写在文件上的「Users 可读」：继承开关管不到它，得靠 /reset 清掉
     execFileSync('icacls', [file, '/grant', '*S-1-5-32-545:R'], { encoding: 'utf8' })
@@ -94,6 +94,12 @@ describe('gateway auth', () => {
     expect((await app.request('/api/bots', { headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(200)
     expect((await app.request('/api/bots', { headers: cookie })).status).toBe(200)
     expect((await app.request('/api/session', { headers: cookie })).status).toBe(200)
+  })
+
+  it('still takes the session cookie set before the rename, so nobody has to sign in again', async () => {
+    const { app } = setup()
+    expect((await app.request('/api/bots', { headers: { Cookie: `ogb_session=${TOKEN}` } })).status).toBe(200)
+    expect((await app.request('/api/bots', { headers: { Cookie: 'ogb_session=nope' } })).status).toBe(401)
   })
 
   it('blocks the cross-site text/plain approval that used to go through', async () => {
@@ -141,7 +147,7 @@ describe('gateway auth', () => {
     expect(res.status).toBe(302)
     expect(res.headers.get('location')).toBe('/')
     const setCookie = res.headers.get('set-cookie') ?? ''
-    expect(setCookie).toContain(`ogb_session=${TOKEN}`)
+    expect(setCookie).toContain(`osb_session=${TOKEN}`)
     expect(setCookie).toMatch(/HttpOnly/i)
     expect(setCookie).toMatch(/SameSite=Strict/i)
     expect((await app.request('/auth?token=wrong')).status).toBe(401)

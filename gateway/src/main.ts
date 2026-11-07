@@ -8,7 +8,7 @@ import { pruneActions } from './actions.js'
 import { loadOrCreateToken, trustedOrigins } from './auth.js'
 import { createBrowserProvisioner } from './browsers.js'
 import { chooseBackend, createDockerBackend, createLocalBackend, dockerReachable } from './backend.js'
-import { loadConfig } from './config.js'
+import { adoptLegacyEnv, loadConfig } from './config.js'
 import { botShellEnabled, openDb } from './db.js'
 import { createLiveLLM } from './llm.js'
 import { migrateLegacyMemories } from './memory.js'
@@ -23,6 +23,14 @@ import { createApp } from './server.js'
 import { currentConfig, readSavedSettings, resolveSettings } from './settings.js'
 import { serveWeb } from './web.js'
 
+// 改名前的 OPENGROKBOT_* 照样认：先换成新名字，后面读配置、读环境变量的地方就都只认新名字
+const legacyEnv = adoptLegacyEnv(process.env)
+if (legacyEnv.adopted.length) {
+  console.warn(`[gateway] OpenGrokBot is now OpenSuperBot. ${legacyEnv.adopted.join(', ')} still work; rename them to OPENSUPERBOT_… when convenient.`)
+}
+if (legacyEnv.shadowed.length) {
+  console.warn(`[gateway] ignoring ${legacyEnv.shadowed.join(', ')}: the OPENSUPERBOT_… names are set too, and they win.`)
+}
 const startup = loadConfig()
 mkdirSync(startup.dataDir, { recursive: true })
 if (startup.dbPath !== ':memory:') mkdirSync(dirname(startup.dbPath), { recursive: true })
@@ -58,6 +66,7 @@ const { backend, why: backendWhy, reason: backendReason } = await chooseBackend(
   docker: () => createDockerBackend(docker, {
     dataDir: config.dataDir,
     containerOptions: { memoryMb: config.botMemoryMb, cpus: config.botCpus, timeZone: config.timeZone },
+    log: (line) => console.log(`[gateway] ${line}`),
   }),
   local: () => createLocalBackend({
     dataDir: config.dataDir,
@@ -175,8 +184,8 @@ serve({
     ` · bots: ${bots.join(', ') || '(none)'} · routines: ${schedulerProxy.size()}` +
     (servingWeb ? ' · serving the built UI' : ''),
   )
-  // 常驻服务的日志可能落盘，设了 OPENGROKBOT_QUIET_TOKEN 就不把令牌写进日志
-  if (process.env.OPENGROKBOT_QUIET_TOKEN) {
+  // 常驻服务的日志可能落盘，设了 OPENSUPERBOT_QUIET_TOKEN 就不把令牌写进日志
+  if (process.env.OPENSUPERBOT_QUIET_TOKEN) {
     console.log(`[gateway] sign in → ${base}/auth?token=<the token in ${join(config.dataDir, 'auth-token')}>`)
   } else {
     console.log(`[gateway] sign in → ${base}/auth?token=${token}`)

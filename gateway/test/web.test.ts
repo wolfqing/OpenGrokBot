@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest'
 import { serveWeb } from '../src/web.js'
 
 function setup() {
-  const dist = mkdtempSync(join(tmpdir(), 'ogb-web-'))
+  const dist = mkdtempSync(join(tmpdir(), 'osb-web-'))
   mkdirSync(join(dist, 'assets'))
-  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>OpenGrokBot</title>')
+  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>OpenSuperBot</title>')
   writeFileSync(join(dist, 'assets', 'index-abc123.js'), 'console.log(1)')
   writeFileSync(join(dist, 'favicon.svg'), '<svg/>')
   const app = new Hono()
@@ -23,7 +23,7 @@ describe('serveWeb', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
     expect(res.headers.get('cache-control')).toBe('no-cache')
-    expect(await res.text()).toContain('OpenGrokBot')
+    expect(await res.text()).toContain('OpenSuperBot')
   })
 
   it('serves hashed assets with a long cache and the right type', async () => {
@@ -41,7 +41,7 @@ describe('serveWeb', () => {
   it('falls back to the app shell for client-side routes', async () => {
     const res = await setup().request('/threads/dm:researcher')
     expect(res.status).toBe(200)
-    expect(await res.text()).toContain('OpenGrokBot')
+    expect(await res.text()).toContain('OpenSuperBot')
   })
 
   it('never serves files outside the dist folder', async () => {

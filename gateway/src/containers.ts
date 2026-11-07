@@ -4,11 +4,16 @@ import { resolve } from 'node:path'
 import type Docker from 'dockerode'
 import { CodedError } from './coded-error.js'
 
-export const BOT_IMAGE = 'opengrokbot/bot:dev'
+export const BOT_IMAGE = 'opensuperbot/bot:dev'
 /** 所有 bot 电脑共用的网络：关掉容器之间的互访，谁也碰不到别人的 shim、CDP 和屏幕 */
-export const BOT_NETWORK = 'opengrokbot-bots'
+export const BOT_NETWORK = 'opensuperbot-bots'
 /** 容器规格变了（隔离、限额、密钥……）就升这个号：旧容器会在下次启动时按新规格重建，workspace 不动 */
 export const SPEC_VERSION = '3'
+
+/** 改名为 OpenSuperBot 之前的镜像、网络和标签：升级后接手镜像，清掉老容器 */
+const LEGACY_BOT_IMAGE = 'opengrokbot/bot:dev'
+const LEGACY_BOT_NETWORK = 'opengrokbot-bots'
+const LEGACY_LABEL = 'ai.opengrokbot'
 
 const SHIM_PORT = '7717/tcp'
 const CDP_PORT = '9222/tcp'
@@ -28,7 +33,7 @@ export function containerConfigKey(opts: ContainerOptions): string {
 }
 
 export function containerName(botId: string): string {
-  return `opengrokbot-${botId}`
+  return `opensuperbot-${botId}`
 }
 
 /** VNC 口令协议上只认前 8 个字符 */
@@ -53,10 +58,10 @@ export function createContainerSpec(
     Image: BOT_IMAGE,
     // 归属记在标签上：Docker Desktop 的列表接口把挂载路径报成虚拟机里的 /host_mnt/…，靠它比对会误判
     Labels: {
-      'ai.opengrokbot.bot': botId,
-      'ai.opengrokbot.spec': SPEC_VERSION,
-      'ai.opengrokbot.workspace': resolve(workspaceDir),
-      'ai.opengrokbot.config': containerConfigKey(opts),
+      'ai.opensuperbot.bot': botId,
+      'ai.opensuperbot.spec': SPEC_VERSION,
+      'ai.opensuperbot.workspace': resolve(workspaceDir),
+      'ai.opensuperbot.config': containerConfigKey(opts),
     },
     Env: [
       `SHIM_TOKEN=${secrets.shimToken}`,
@@ -151,7 +156,7 @@ async function ensureNetwork(docker: DockerLike): Promise<void> {
       Name: BOT_NETWORK,
       Driver: 'bridge',
       Options: { 'com.docker.network.bridge.enable_icc': 'false' },
-      Labels: { 'ai.opengrokbot': 'bots' },
+      Labels: { 'ai.opensuperbot': 'bots' },
     })
   } catch (err) {
     // 两个 bot 同时冷启动时，另一个可能刚建好
@@ -178,7 +183,9 @@ async function currentImageId(docker: DockerLike): Promise<string | null> {
 
 /** 同事电脑的镜像建了没有。只在 Docker 应答时问才有意义（连不上也回 false） */
 export async function botImageReady(docker: Pick<Docker, 'getImage'>): Promise<boolean> {
-  return (await currentImageId(docker as DockerLike)) !== null
+  if ((await currentImageId(docker as DockerLike)) !== null) return true
+  // 改名前 build 的镜像也算：建同事电脑时本来就会给它打上新名字，不然老用户一升级 auto 就悄悄换成本机电脑
+  return adoptLegacyImage(docker as DockerLike).catch(() => false)
 }
 
 /** 连不上 docker 的 socket：多半是 Docker Desktop 没开，直接说人话 */
@@ -189,6 +196,37 @@ function explainDockerDown(err: unknown): never {
     throw new CodedError('docker_down', 'Docker is not running. Start Docker Desktop (or the docker service), then open this again.')
   }
   throw err
+}
+
+function missingImage(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return (err as { statusCode?: number }).statusCode === 404 || /no such image/i.test(message)
+}
+
+/** 改名前 build 的镜像和现在的内容一样（Dockerfile 只改了注释）：打上新名字接着用，省一次重新 build */
+async function adoptLegacyImage(docker: DockerLike): Promise<boolean> {
+  const legacy = docker.getImage(LEGACY_BOT_IMAGE)
+  try {
+    await legacy.inspect()
+  } catch {
+    return false
+  }
+  const [repo, tag] = BOT_IMAGE.split(':') as [string, string]
+  await legacy.tag({ repo, tag })
+  console.log(`[gateway] tagged the bot image built before the rename (${LEGACY_BOT_IMAGE}) as ${BOT_IMAGE}`)
+  return true
+}
+
+async function createComputer(docker: DockerLike, spec: Docker.ContainerCreateOptions): Promise<Docker.Container> {
+  try {
+    return await docker.createContainer(spec)
+  } catch (err) {
+    if (!missingImage(err)) throw err
+    if (await adoptLegacyImage(docker)) return docker.createContainer(spec)
+    throw new CodedError('image_missing', `The bot computer image ${BOT_IMAGE} is not built yet. Run: docker build -t ${BOT_IMAGE} docker/bot`, {
+      image: BOT_IMAGE, command: `docker build -t ${BOT_IMAGE} docker/bot`,
+    })
+  }
 }
 
 export async function ensureContainer(
@@ -204,12 +242,12 @@ export async function ensureContainer(
   let container = existing ? docker.getContainer(existing.Id) : null
   if (container && existing) {
     const imageId = await currentImageId(docker)
-    const outdatedSpec = existing.Labels?.['ai.opengrokbot.spec'] !== SPEC_VERSION
+    const outdatedSpec = existing.Labels?.['ai.opensuperbot.spec'] !== SPEC_VERSION
     const outdatedImage = imageId !== null && existing.ImageID !== imageId
     // 同名容器可能是另一个数据目录的网关建的：挂错 workspace 就等于换了一台电脑
-    const owner = existing.Labels?.['ai.opengrokbot.workspace']
+    const owner = existing.Labels?.['ai.opensuperbot.workspace']
     const otherWorkspace = owner !== undefined && !samePath(owner, workspaceDir)
-    const otherSettings = existing.Labels?.['ai.opengrokbot.config'] !== containerConfigKey(opts)
+    const otherSettings = existing.Labels?.['ai.opensuperbot.config'] !== containerConfigKey(opts)
     if (outdatedSpec || outdatedImage || otherWorkspace || otherSettings) {
       // 登录态和文件都在挂载的 workspace 里，重建容器不丢东西
       const why = outdatedSpec ? 'new container spec'
@@ -223,17 +261,7 @@ export async function ensureContainer(
     }
   }
   if (!container) {
-    try {
-      container = await docker.createContainer(createContainerSpec(botId, workspaceDir, newSecrets(), opts))
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if ((err as { statusCode?: number }).statusCode === 404 || /no such image/i.test(message)) {
-        throw new CodedError('image_missing', `The bot computer image ${BOT_IMAGE} is not built yet. Run: docker build -t ${BOT_IMAGE} docker/bot`, {
-          image: BOT_IMAGE, command: `docker build -t ${BOT_IMAGE} docker/bot`,
-        })
-      }
-      throw err
-    }
+    container = await createComputer(docker, createContainerSpec(botId, workspaceDir, newSecrets(), opts))
     await container.start()
   }
   const endpoints = readEndpoints(await container.inspect())
@@ -253,12 +281,35 @@ export async function stopBotContainer(docker: Pick<Docker, 'getContainer'>, bot
   }
 }
 
+/**
+ * 改名前建的 bot 电脑（opengrokbot-<id>，带 ai.opengrokbot.* 标签）：登录态和文件都在挂载的 workspace 里，
+ * 删掉容器不丢东西，下次用时按新名字重建。只动这个数据目录名下的，别的网关建的、看不出归属的都不碰。
+ * 返回清掉的 bot id。
+ */
+export async function retireLegacyContainers(
+  docker: Pick<Docker, 'listContainers' | 'getContainer' | 'getNetwork'>,
+  dataDir: string,
+): Promise<string[]> {
+  const list = await docker.listContainers({ all: true, filters: { label: [`${LEGACY_LABEL}.bot`] } })
+  const retired: string[] = []
+  for (const c of list) {
+    const botId = c.Labels?.[`${LEGACY_LABEL}.bot`]
+    const owner = c.Labels?.[`${LEGACY_LABEL}.workspace`]
+    if (!botId || !owner || !samePath(owner, resolve(dataDir, 'workspaces', botId))) continue
+    await docker.getContainer(c.Id).remove({ force: true })
+    retired.push(botId)
+  }
+  // 旧网络上没人了就一起收掉；还有别的数据目录的老容器连着，Docker 会拒绝，那就留着
+  if (retired.length) await docker.getNetwork(LEGACY_BOT_NETWORK).remove().catch(() => {})
+  return retired
+}
+
 /** 这个网关名下正在跑的 bot 电脑（包括网关重启之前就开着的）；别的数据目录建的容器不归它管 */
 export async function runningBotIds(docker: Pick<Docker, 'listContainers'>, dataDir: string): Promise<string[]> {
-  const list = await docker.listContainers({ filters: { label: ['ai.opengrokbot.bot'], status: ['running'] } })
+  const list = await docker.listContainers({ filters: { label: ['ai.opensuperbot.bot'], status: ['running'] } })
   return list.flatMap((c) => {
-    const botId = c.Labels?.['ai.opengrokbot.bot']
-    const owner = c.Labels?.['ai.opengrokbot.workspace']
+    const botId = c.Labels?.['ai.opensuperbot.bot']
+    const owner = c.Labels?.['ai.opensuperbot.workspace']
     if (!botId || !owner) return []
     return samePath(owner, resolve(dataDir, 'workspaces', botId)) ? [botId] : []
   })

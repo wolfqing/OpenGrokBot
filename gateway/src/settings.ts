@@ -39,13 +39,13 @@ export const SETTING_DEFAULTS: Settings = {
 
 /** 能锁住某项设置的环境变量；没列的项只能在界面上改 */
 const ENV: Partial<Record<SettingKey, string>> = {
-  baseURL: 'OPENGROKBOT_API_BASE',
-  model: 'OPENGROKBOT_MODEL',
-  vision: 'OPENGROKBOT_VISION',
-  computers: 'OPENGROKBOT_COMPUTERS',
-  browserMirror: 'OPENGROKBOT_BROWSER_MIRROR',
+  baseURL: 'OPENSUPERBOT_API_BASE',
+  model: 'OPENSUPERBOT_MODEL',
+  vision: 'OPENSUPERBOT_VISION',
+  computers: 'OPENSUPERBOT_COMPUTERS',
+  browserMirror: 'OPENSUPERBOT_BROWSER_MIRROR',
 }
-const API_KEY_ENV = 'OPENGROKBOT_API_KEY'
+const API_KEY_ENV = 'OPENSUPERBOT_API_KEY'
 
 const httpUrl = (v: unknown): v is string => {
   if (typeof v !== 'string' || v.length > 2048) return false
@@ -223,7 +223,7 @@ export function resolveApiKey(env: Record<string, string | undefined>, dataDir: 
 }
 
 /** 配了这些环境变量的人是用环境变量管模型的（源码版老用户），向导不出来打扰 */
-const MODEL_ENV = ['OPENGROKBOT_API_KEY', 'OPENGROKBOT_API_BASE', 'OPENGROKBOT_MODEL']
+const MODEL_ENV = ['OPENSUPERBOT_API_KEY', 'OPENSUPERBOT_API_BASE', 'OPENSUPERBOT_MODEL']
 
 /** 要不要出首次启动向导：没 key、不是不要 key 的服务商、也没选演示模式 */
 export function needsSetup(env: Record<string, string | undefined>, db: Db, dataDir: string): boolean {

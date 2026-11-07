@@ -1,0 +1,23 @@
+# OpenSuperBot gateway as a systemd service.
+#   sudo cp deploy/systemd/opensuperbot.service /etc/systemd/system/
+#   sudo install -m 600 /dev/null /etc/opensuperbot.env   # then put OPENSUPERBOT_API_KEY=… in it
+#   sudo systemctl daemon-reload && sudo systemctl enable --now opensuperbot
+# The service user must be in the docker group. Edit User and WorkingDirectory to match your box.
+[Unit]
+Description=OpenSuperBot gateway
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=opensuperbot
+WorkingDirectory=/opt/OpenSuperBot
+Environment=OPENSUPERBOT_MODEL=grok-4.7
+Environment=OPENSUPERBOT_QUIET_TOKEN=1
+EnvironmentFile=-/etc/opensuperbot.env
+ExecStart=/usr/bin/node gateway/dist/main.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

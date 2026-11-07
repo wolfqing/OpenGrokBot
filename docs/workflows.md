@@ -38,7 +38,7 @@ replace literal values with `{ "kind": "placeholder", "key": "customerEmail" }`,
 POST /api/bots/{botId}/workflows
 Content-Type: application/json
 
-{"draftId":"<id returned by stop>","trace":{"format":"opengrokbot.workflow","version":1,"title":"...","steps":[]}}
+{"draftId":"<id returned by stop>","trace":{"format":"opensuperbot.workflow","version":1,"title":"...","steps":[]}}
 ```
 
 The submitted trace is validated and sensitive fields are redacted again before persistence. To discard a draft:
@@ -65,7 +65,7 @@ stable semantic locator to structural CSS fallback.
 
 ```ts
 type WorkflowTrace = {
-  format: 'opengrokbot.workflow'
+  format: 'opensuperbot.workflow'
   version: 1
   title: string
   intent?: string

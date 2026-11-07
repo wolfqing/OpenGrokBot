@@ -2,16 +2,20 @@
 
 What changed, release by release. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/) while the project is pre-1.0, so a minor version can
-still change behaviour.
+still change behaviour. The project was called OpenGrokBot until November 2026, so entries before that use the old
+names.
 
 ## [Unreleased]
+
+**OpenGrokBot is now OpenSuperBot**, a name that no longer borrows xAI's "Grok". Existing installs upgrade in
+place: see [Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot).
 
 ### Added
 
 - The gateway keeps settings of its own (schema v6 adds a `settings` table): provider, API base, model, vision,
   language, computers, browser mirror and update checks. An env var still wins over a saved value. The model API
   key can live in `<data>/llm-key` (mode `0600`, next to the gateway token, out of reach of sandboxed commands and
-  containers) instead of `OPENGROKBOT_API_KEY`. Nothing writes these from the UI yet.
+  containers) instead of `OPENSUPERBOT_API_KEY`. Nothing writes these from the UI yet.
 - Model settings apply without a restart: the API base, model, key and vision are read again before each model
   call, so a change takes effect on the next call while a call already in flight finishes as it started. The
   choice of computers and the browser mirror still apply at startup.
@@ -41,7 +45,7 @@ still change behaviour.
   computers, instead of handing out Docker computers that fail on first use. The log says why and gives the
   `docker build` command. `GET /api/setup` adds `docker.imageReady` and the reason the computers were picked
   (`why`: `chosen`, `docker_running`, `docker_not_running`, `docker_image_missing`), and a choice made on the
-  settings page is logged as such rather than as `OPENGROKBOT_COMPUTERS`. Settings ask for a restart only when
+  settings page is logged as such rather than as `OPENSUPERBOT_COMPUTERS`. Settings ask for a restart only when
   it would change the computers: switching `auto` to `local` on a gateway that already runs local computers does not.
 - The UI speaks Chinese. Every label, button and hint in the web UI comes from a dictionary
   (`web/src/i18n/en.ts`, with `zh-CN.ts` beside it); the language is the one saved in settings, otherwise the
@@ -58,6 +62,21 @@ still change behaviour.
 - First teach-mode slice: record semantic browser actions on the teammate's existing page, review the draft before
   saving it to SQLite, redact sensitive input, and reattach across local-computer window relaunches. API-only; replay
   and routines remain out of scope.
+
+### Changed
+
+- Renamed to OpenSuperBot. Environment variables are `OPENSUPERBOT_*`, the packages `@opensuperbot/*`, the bot image
+  `opensuperbot/bot:dev`, its containers `opensuperbot-<id>`, the webhook header `X-OpenSuperBot-Key` and the workflow
+  format `opensuperbot.workflow`. The start-up templates are `ai.opensuperbot.gateway` (launchd),
+  `opensuperbot.service` (systemd) and the `OpenSuperBot gateway` task (Windows).
+- Nothing breaks for an existing install:
+  - `OPENGROKBOT_*` variables are still read when the new name is unset, and start-up lists the old names it saw.
+  - An existing `opengrokbot.db` stays in use.
+  - The old sign-in cookie and the `X-OpenGrokBot-Key` header are still accepted, and workflows saved as
+    `opengrokbot.workflow` still load.
+  - Docker computers named `opengrokbot-<id>` are replaced on first use; sign-ins live in the workspace, so they
+    carry over. An image built as `opengrokbot/bot:dev` is tagged with the new name instead of rebuilt.
+  - Running `install-task.ps1` again removes the old Windows task, so two gateways never fight over the port.
 
 ### Security
 
@@ -125,8 +144,8 @@ still change behaviour.
 ### Changed
 
 - The default model is now `grok-4.7` (was `grok-4`, which no longer appears in xAI's model list). If you never
-  set `OPENGROKBOT_MODEL`, the gateway starts asking xAI for `grok-4.7`; it reasons by default and costs more per
-  token than the older Grok models. Set `OPENGROKBOT_MODEL` to keep a different model.
+  set `OPENSUPERBOT_MODEL`, the gateway starts asking xAI for `grok-4.7`; it reasons by default and costs more per
+  token than the older Grok models. Set `OPENSUPERBOT_MODEL` to keep a different model.
 - `pnpm install` no longer compiles better-sqlite3. Its package carries prebuilt binaries for macOS, Linux and
   Windows and loads them in preference anyway, so the compile was wasted everywhere and, on Windows, failed without
   Visual Studio's C++ tools. Installing on Windows now needs no compiler.
@@ -405,10 +424,10 @@ A self-hosted Grok Bot alternative assembled from OpenClaw: three preconfigured 
 Ticker) with strict boundaries, agent-to-agent handoffs, any model provider, a one-command setup that never
 overwrites an existing OpenClaw config, a Docker/VPS path and an honest comparison with Grok Bot.
 
-[Unreleased]: https://github.com/wolfqing/OpenGrokBot/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/wolfqing/OpenGrokBot/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/wolfqing/OpenGrokBot/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/wolfqing/OpenGrokBot/releases/tag/v0.1.0
+[Unreleased]: https://github.com/wolfqing/OpenSuperBot/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/wolfqing/OpenSuperBot/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/wolfqing/OpenSuperBot/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/wolfqing/OpenSuperBot/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/wolfqing/OpenSuperBot/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/wolfqing/OpenSuperBot/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/wolfqing/OpenSuperBot/releases/tag/v0.1.0

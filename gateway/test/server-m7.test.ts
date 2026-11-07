@@ -51,7 +51,7 @@ describe('/api/settings', () => {
   function setup(opts: { env?: Record<string, string>; token?: string; replies?: (url: string) => Response; running?: 'local' | 'docker' } = {}) {
     const db = openDb(':memory:')
     const dataDir = mkdtempSync(join(tmpdir(), 'ogb-settings-'))
-    const startedWith = loadConfig({ OPENGROKBOT_DATA: dataDir })
+    const startedWith = loadConfig({ OPENSUPERBOT_DATA: dataDir })
     const seen: { url: string; auth?: string; model?: string }[] = []
     const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
       seen.push({
@@ -116,7 +116,7 @@ describe('/api/settings', () => {
   })
 
   it('refuses what env vars pin, bad values and a bad key, and then saves nothing', async () => {
-    const { call, dataDir } = setup({ env: { OPENGROKBOT_MODEL: 'qwen3', OPENGROKBOT_API_KEY: 'sk-env-key-0000' } })
+    const { call, dataDir } = setup({ env: { OPENSUPERBOT_MODEL: 'qwen3', OPENSUPERBOT_API_KEY: 'sk-env-key-0000' } })
     const locked = await call('PUT', '/api/settings', { model: 'deepseek-chat', apiKey: KEY, language: 'zh-CN' })
     expect(locked.status).toBe(400)
     expect(await locked.json()).toEqual({
@@ -177,7 +177,7 @@ describe('/api/settings', () => {
     expect((await call('GET', '/api/settings')).status).toBe(200)
     const db = openDb(':memory:')
     const dataDir = mkdtempSync(join(tmpdir(), 'ogb-settings-'))
-    const gateway = createApp({ db, llm: { chat: async () => textTurn }, dataDir, token: 'tok-123', settings: { env: {}, startedWith: loadConfig({ OPENGROKBOT_DATA: dataDir }) } })
+    const gateway = createApp({ db, llm: { chat: async () => textTurn }, dataDir, token: 'tok-123', settings: { env: {}, startedWith: loadConfig({ OPENSUPERBOT_DATA: dataDir }) } })
     expect((await gateway.app.request('/api/settings')).status).toBe(401)
   })
 })
@@ -193,7 +193,7 @@ describe('/api/settings/providers', () => {
         ? new Response(JSON.stringify({ data: [] }))
         : new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'OK' } }] }))
     }) as typeof fetch
-    const gateway = createApp({ db, llm: { chat: async () => textTurn }, dataDir, settings: { env: {}, startedWith: loadConfig({ OPENGROKBOT_DATA: dataDir }), fetchImpl } })
+    const gateway = createApp({ db, llm: { chat: async () => textTurn }, dataDir, settings: { env: {}, startedWith: loadConfig({ OPENSUPERBOT_DATA: dataDir }), fetchImpl } })
     const list = await (await gateway.app.request('/api/settings/providers')).json() as { id: string }[]
     expect(list.map((p) => p.id)).toContain('deepseek')
     await gateway.app.request('/api/settings/test', {
@@ -221,7 +221,7 @@ describe('/api/setup', () => {
       return new Promise<string>((r) => { finish = () => { status = { state: 'found', executablePath: '/x/chrome', source: 'downloaded' }; listeners.forEach((l) => l(status)); r('/x/chrome') } })
     })
     const browser: BrowserProvisioner = { status: () => status, ensure, onChange: (l) => { listeners.push(l); return () => {} } }
-    const startedWith = { ...loadConfig({ OPENGROKBOT_DATA: dataDir }), timeZone: opts.timeZone ?? 'Europe/Berlin' }
+    const startedWith = { ...loadConfig({ OPENSUPERBOT_DATA: dataDir }), timeZone: opts.timeZone ?? 'Europe/Berlin' }
     const gateway = createApp({
       db, llm: { chat: async () => textTurn }, dataDir,
       computers: {

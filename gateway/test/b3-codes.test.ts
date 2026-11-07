@@ -72,7 +72,7 @@ describe('notices the gateway says for a teammate', () => {
       checkBudget: () => ({ text: 'ignored', name: 'Scout', used: 200_500, budget: 200_000 }),
     }, 'go', s.events)
     expect(s.last()).toMatchObject({
-      content: "⚠️ Scout hit today's token budget (200,500 of 200,000 tokens). It picks up again tomorrow — or raise OPENGROKBOT_DAILY_TOKENS.",
+      content: "⚠️ Scout hit today's token budget (200,500 of 200,000 tokens). It picks up again tomorrow — or raise OPENSUPERBOT_DAILY_TOKENS.",
       payload: { notice: 'budget', params: { name: 'Scout', used: 200_500, budget: 200_000 } },
     })
     const old = setup([])
@@ -170,7 +170,7 @@ describe('the interface language reaches the teammate', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'ogb-b3-lang-'))
     const prompts: string[] = []
     const llm: LLM = { chat: async (messages) => { prompts.push(String(messages[0]!.content)); return textTurn('好的') } }
-    const gateway = createApp({ db, llm, dataDir, settings: { env: {}, startedWith: loadConfig({ OPENGROKBOT_DATA: dataDir }) } })
+    const gateway = createApp({ db, llm, dataDir, settings: { env: {}, startedWith: loadConfig({ OPENSUPERBOT_DATA: dataDir }) } })
     const say = () => gateway.app.request(`/api/threads/${threadId}/messages`, json('POST', { text: 'hi' }))
     function json(method: string, body: unknown): RequestInit {
       return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }

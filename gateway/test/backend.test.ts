@@ -26,7 +26,7 @@ describe('chooseBackend', () => {
       dockerReachable: async () => { probed = true; return false },
     })
     expect(backend.kind).toBe('docker')
-    expect(reason).toMatch(/OPENGROKBOT_COMPUTERS=docker/)
+    expect(reason).toMatch(/OPENSUPERBOT_COMPUTERS=docker/)
     expect(probed).toBe(false)
   })
 
@@ -41,7 +41,7 @@ describe('chooseBackend', () => {
   it('says whether an explicit choice came from the env var or the settings page', async () => {
     const opts = { docker: () => fakeBackend('docker'), local: () => fakeBackend('local'), dockerReachable: async () => true }
     expect(await chooseBackend('local', { ...opts, from: 'saved' })).toMatchObject({ why: 'chosen', reason: 'computers=local in settings' })
-    expect(await chooseBackend('docker', { ...opts, from: 'env' })).toMatchObject({ why: 'chosen', reason: 'OPENGROKBOT_COMPUTERS=docker' })
+    expect(await chooseBackend('docker', { ...opts, from: 'env' })).toMatchObject({ why: 'chosen', reason: 'OPENSUPERBOT_COMPUTERS=docker' })
   })
 
   it('auto: Docker is up but the bot image is not built, so local computers, and says how to build it', async () => {
@@ -49,7 +49,7 @@ describe('chooseBackend', () => {
     const fallback = await chooseBackend('auto', { ...opts, dockerImageReady: async () => false })
     expect(fallback.backend.kind).toBe('local')
     expect(fallback.why).toBe('docker_image_missing')
-    expect(fallback.reason).toMatch(/opengrokbot\/bot:dev is not built.*docker build -t opengrokbot\/bot:dev docker\/bot/)
+    expect(fallback.reason).toMatch(/opensuperbot\/bot:dev is not built.*docker build -t opensuperbot\/bot:dev docker\/bot/)
     expect(await chooseBackend('auto', { ...opts, dockerImageReady: async () => true })).toMatchObject({ why: 'docker_running' })
     expect((await chooseBackend('auto', { ...opts, dockerReachable: async () => false })).why).toBe('docker_not_running')
   })
@@ -98,8 +98,8 @@ describe('createDockerBackend', () => {
     const stopped: string[] = []
     const docker = {
       listContainers: async () => [
-        { Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.workspace': '/data/workspaces/researcher' } },
-        { Labels: { 'ai.opengrokbot.bot': 'stranger', 'ai.opengrokbot.workspace': '/elsewhere/workspaces/stranger' } },
+        { Labels: { 'ai.opensuperbot.bot': 'researcher', 'ai.opensuperbot.workspace': '/data/workspaces/researcher' } },
+        { Labels: { 'ai.opensuperbot.bot': 'stranger', 'ai.opensuperbot.workspace': '/elsewhere/workspaces/stranger' } },
       ],
       getContainer: (name: string) => ({ stop: async () => { stopped.push(name) } }),
     } as unknown as Docker
@@ -107,7 +107,31 @@ describe('createDockerBackend', () => {
     expect(backend.kind).toBe('docker')
     expect(await backend.running()).toEqual(['researcher'])
     await backend.stop('researcher')
-    expect(stopped).toEqual(['opengrokbot-researcher'])
+    expect(stopped).toEqual(['opensuperbot-researcher'])
+  })
+
+  it('replaces the computers made before the rename once, and tries again if Docker was not up yet', async () => {
+    let down = true
+    const legacyLists: string[] = []
+    let containers = [{ Id: 'old-1', Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.workspace': '/data/workspaces/researcher' } }]
+    const docker = {
+      listContainers: async (o: { filters: { label: string[] } }) => {
+        if (o.filters.label[0] === 'ai.opengrokbot.bot') legacyLists.push('legacy')
+        if (down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+        return containers.filter((c) => o.filters.label[0]! in c.Labels)
+      },
+      getContainer: (id: string) => ({ remove: async () => { containers = containers.filter((c) => c.Id !== id) } }),
+      getNetwork: () => ({ remove: async () => {} }),
+    } as unknown as Docker
+    const lines: string[] = []
+    const backend = createDockerBackend(docker, { dataDir: '/data', log: (l) => lines.push(l) })
+    await expect(backend.running()).rejects.toThrow(/ECONNREFUSED/) // Docker 没开：这次清不了，下次再来
+    down = false
+    expect(await backend.running()).toEqual([])
+    expect(await backend.running()).toEqual([])
+    expect(legacyLists).toHaveLength(2) // 失败的一次 + 成功的一次，之后不再查
+    expect(containers).toEqual([])
+    expect(lines).toEqual(['replaced the computers made before the rename (OpenGrokBot): researcher'])
   })
 })
 
@@ -124,7 +148,7 @@ describe('createLocalBackend.running', () => {
       isConnected: () => open,
     }
     const backend = createLocalBackend({
-      dataDir: mkdtempSync(join(tmpdir(), 'ogb-backend-')),
+      dataDir: mkdtempSync(join(tmpdir(), 'osb-backend-')),
       resolveBrowser: async () => '/bin/chrome',
       launch: async () => browser,
     })

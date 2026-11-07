@@ -1,8 +1,8 @@
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  BOT_NETWORK, SPEC_VERSION, botImageReady, containerConfigKey, containerName, createContainerSpec, ensureContainer, readEndpoints,
-  runningBotIds,
+  BOT_IMAGE, BOT_NETWORK, SPEC_VERSION, botImageReady, containerConfigKey, containerName, createContainerSpec, ensureContainer,
+  readEndpoints, retireLegacyContainers, runningBotIds,
   stopBotContainer, waitForCdp, waitForShim,
 } from '../src/containers.js'
 
@@ -18,7 +18,7 @@ const inspect = {
 
 describe('containerName', () => {
   it('namespaces by bot id', () => {
-    expect(containerName('researcher')).toBe('opengrokbot-researcher')
+    expect(containerName('researcher')).toBe('opensuperbot-researcher')
   })
 })
 
@@ -47,17 +47,17 @@ const secrets = { shimToken: 'tok-123', vncPassword: 'pw12345x' }
 describe('createContainerSpec', () => {
   it('binds the workspace and publishes all three ports to loopback only', () => {
     const spec = createContainerSpec('researcher', '/data/workspaces/researcher', secrets)
-    expect(spec.name).toBe('opengrokbot-researcher')
-    expect(spec.Image).toBe('opengrokbot/bot:dev')
+    expect(spec.name).toBe('opensuperbot-researcher')
+    expect(spec.Image).toBe('opensuperbot/bot:dev')
     expect(spec.HostConfig!.Binds).toEqual([`${resolve('/data/workspaces/researcher')}:/workspace`]) // Windows 上是 D:\data\…，Docker Desktop 认得
     for (const port of ['7717/tcp', '9222/tcp', '6080/tcp']) {
       expect(spec.HostConfig!.PortBindings![port]).toEqual([{ HostIp: '127.0.0.1', HostPort: '' }])
       expect(spec.ExposedPorts![port]).toEqual({})
     }
     expect(spec.Labels).toMatchObject({
-      'ai.opengrokbot.bot': 'researcher',
-      'ai.opengrokbot.spec': SPEC_VERSION,
-      'ai.opengrokbot.workspace': resolve('/data/workspaces/researcher'),
+      'ai.opensuperbot.bot': 'researcher',
+      'ai.opensuperbot.spec': SPEC_VERSION,
+      'ai.opensuperbot.workspace': resolve('/data/workspaces/researcher'),
     })
   })
 
@@ -81,7 +81,7 @@ describe('createContainerSpec', () => {
   it('fingerprints the settings that shape the container', () => {
     expect(containerConfigKey({ memoryMb: 2048, cpus: 2 })).toBe(containerConfigKey({}))
     expect(containerConfigKey({ timeZone: 'Asia/Shanghai' })).not.toBe(containerConfigKey({}))
-    expect(createContainerSpec('researcher', '/w', secrets, { cpus: 1 }).Labels!['ai.opengrokbot.config'])
+    expect(createContainerSpec('researcher', '/w', secrets, { cpus: 1 }).Labels!['ai.opensuperbot.config'])
       .toBe(containerConfigKey({ cpus: 1 }))
   })
 
@@ -96,10 +96,14 @@ type Info = {
   Mounts?: { Source: string; Destination: string }[]
 }
 
-/** 假 docker：记录调用，按需返回容器/网络/镜像。 */
-function fakeDocker(opts: { containers?: Info[]; networks?: string[]; imageId?: string; createError?: Error } = {}) {
+/** 假 docker：记录调用，按需返回容器/网络/镜像。镜像按名字查，没有的名字就是 404，和真 Docker 一样 */
+function fakeDocker(opts: {
+  containers?: Info[]; networks?: string[]; imageId?: string; images?: Record<string, string>; createError?: Error
+} = {}) {
   const log: string[] = []
   const networks = [...(opts.networks ?? [])]
+  const images: Record<string, string> = { ...(opts.images ?? { [BOT_IMAGE]: opts.imageId ?? 'sha256:current' }) }
+  const noSuchImage = (name: string) => Object.assign(new Error(`(HTTP code 404) no such image - No such image: ${name}`), { statusCode: 404 })
   let lastSpec: { Env?: string[] } = {}
   const ports = inspect.NetworkSettings
   const docker = {
@@ -115,13 +119,24 @@ function fakeDocker(opts: { containers?: Info[]; networks?: string[]; imageId?: 
       remove: async () => { log.push(`remove:${id}`) },
       inspect: async () => ({ NetworkSettings: ports, Config: { Env: lastSpec.Env ?? ['SHIM_TOKEN=old', 'VNC_PASSWORD=oldpass1'] } }),
     }),
-    createContainer: async (spec: { name: string; Env?: string[] }) => {
+    createContainer: async (spec: { name: string; Image: string; Env?: string[] }) => {
       if (opts.createError) throw opts.createError
+      if (!images[spec.Image]) throw noSuchImage(spec.Image)
       log.push(`create:${spec.name}`)
       lastSpec = spec
       return docker.getContainer('new')
     },
-    getImage: () => ({ inspect: async () => ({ Id: opts.imageId ?? 'sha256:current' }) }),
+    getImage: (name: string) => ({
+      inspect: async () => {
+        if (!images[name]) throw noSuchImage(name)
+        return { Id: images[name] }
+      },
+      tag: async ({ repo, tag }: { repo: string; tag: string }) => {
+        log.push(`tag:${name}->${repo}:${tag}`)
+        images[`${repo}:${tag}`] = images[name]!
+      },
+    }),
+    getNetwork: (name: string) => ({ remove: async () => { log.push(`network-remove:${name}`) } }),
   }
   return { docker: docker as never, log }
 }
@@ -129,10 +144,10 @@ function fakeDocker(opts: { containers?: Info[]; networks?: string[]; imageId?: 
 const ok = (async () => new Response('{}')) as typeof fetch
 // Docker Desktop（macOS）的列表接口把挂载路径报成虚拟机里的 /host_mnt/…，所以归属看标签，不看这个路径
 const running = (extra: Partial<Info> = {}): Info => ({
-  Id: 'c1', Names: ['/opengrokbot-researcher'], State: 'running', ImageID: 'sha256:current',
+  Id: 'c1', Names: ['/opensuperbot-researcher'], State: 'running', ImageID: 'sha256:current',
   Labels: {
-    'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': '/w',
-    'ai.opengrokbot.config': containerConfigKey({}),
+    'ai.opensuperbot.bot': 'researcher', 'ai.opensuperbot.spec': SPEC_VERSION, 'ai.opensuperbot.workspace': '/w',
+    'ai.opensuperbot.config': containerConfigKey({}),
   },
   Mounts: [{ Source: '/host_mnt/w', Destination: '/workspace' }], ...extra,
 })
@@ -150,7 +165,7 @@ describe('ensureContainer', () => {
   it('creates a fresh computer with its own random secrets', async () => {
     const { docker, log } = fakeDocker({ networks: [BOT_NETWORK] })
     const endpoints = await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
-    expect(log).toEqual(['create:opengrokbot-researcher', 'start:new'])
+    expect(log).toEqual(['create:opensuperbot-researcher', 'start:new'])
     expect(endpoints.shimToken!.length).toBeGreaterThanOrEqual(24)
     expect(endpoints.vncPassword).toMatch(/^[A-Za-z0-9]{8}$/)
   })
@@ -163,40 +178,50 @@ describe('ensureContainer', () => {
 
   it('rebuilds a computer created by an older gateway (no cage, no secrets)', async () => {
     const { docker, log } = fakeDocker({
-      networks: [BOT_NETWORK], containers: [running({ Labels: { 'ai.opengrokbot.bot': 'researcher' } })],
+      networks: [BOT_NETWORK], containers: [running({ Labels: { 'ai.opensuperbot.bot': 'researcher' } })],
     })
     await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
-    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+    expect(log).toEqual(['remove:c1', 'create:opensuperbot-researcher', 'start:new'])
   })
 
   it('rebuilds a computer when the bot image has been rebuilt', async () => {
     const { docker, log } = fakeDocker({ networks: [BOT_NETWORK], containers: [running({ ImageID: 'sha256:old' })] })
     await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
-    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+    expect(log).toEqual(['remove:c1', 'create:opensuperbot-researcher', 'start:new'])
   })
 
   it('rebuilds a computer that another gateway (another data dir) created', async () => {
     const { docker, log } = fakeDocker({
       networks: [BOT_NETWORK],
       containers: [running({
-        Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.spec': SPEC_VERSION, 'ai.opengrokbot.workspace': '/other/workspaces/researcher' },
+        Labels: { 'ai.opensuperbot.bot': 'researcher', 'ai.opensuperbot.spec': SPEC_VERSION, 'ai.opensuperbot.workspace': '/other/workspaces/researcher' },
       })],
     })
     await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
-    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+    expect(log).toEqual(['remove:c1', 'create:opensuperbot-researcher', 'start:new'])
   })
 
   it('rebuilds a computer when its memory, CPU or timezone settings changed', async () => {
     const { docker, log } = fakeDocker({ networks: [BOT_NETWORK], containers: [running()] })
     await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok, memoryMb: 1024 })
-    expect(log).toEqual(['remove:c1', 'create:opengrokbot-researcher', 'start:new'])
+    expect(log).toEqual(['remove:c1', 'create:opensuperbot-researcher', 'start:new'])
   })
 
   it('turns a missing image into the command that fixes it', async () => {
-    const error = Object.assign(new Error('(HTTP code 404) no such container - No such image: opengrokbot/bot:dev'), { statusCode: 404 })
-    const { docker } = fakeDocker({ networks: [BOT_NETWORK], createError: error })
+    const { docker } = fakeDocker({ networks: [BOT_NETWORK], images: {} })
     await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok }))
-      .rejects.toThrow(/docker build -t opengrokbot\/bot:dev docker\/bot/)
+      .rejects.toThrow(/docker build -t opensuperbot\/bot:dev docker\/bot/)
+  })
+
+  it('takes over the image built before the rename instead of asking for a rebuild', async () => {
+    const { docker, log } = fakeDocker({ networks: [BOT_NETWORK], images: { 'opengrokbot/bot:dev': 'sha256:legacy' } })
+    await ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })
+    expect(log).toEqual(['tag:opengrokbot/bot:dev->opensuperbot/bot:dev', 'create:opensuperbot-researcher', 'start:new'])
+  })
+
+  it('still explains other create failures as they are', async () => {
+    const { docker } = fakeDocker({ networks: [BOT_NETWORK], createError: new Error('port is already allocated') })
+    await expect(ensureContainer(docker, 'researcher', '/w', { fetchImpl: ok })).rejects.toThrow('port is already allocated')
   })
 })
 
@@ -220,15 +245,42 @@ describe('botImageReady', () => {
 describe('runningBotIds', () => {
   it('only counts computers that belong to this gateway\'s data dir', async () => {
     const mine = running({
-      Labels: { 'ai.opengrokbot.bot': 'researcher', 'ai.opengrokbot.workspace': '/data/workspaces/researcher' },
+      Labels: { 'ai.opensuperbot.bot': 'researcher', 'ai.opensuperbot.workspace': '/data/workspaces/researcher' },
       Mounts: [{ Source: '/host_mnt/data/workspaces/researcher', Destination: '/workspace' }],
     })
     const theirs = running({
-      Id: 'c2', Names: ['/opengrokbot-chief'],
-      Labels: { 'ai.opengrokbot.bot': 'chief', 'ai.opengrokbot.workspace': '/elsewhere/workspaces/chief' },
+      Id: 'c2', Names: ['/opensuperbot-chief'],
+      Labels: { 'ai.opensuperbot.bot': 'chief', 'ai.opensuperbot.workspace': '/elsewhere/workspaces/chief' },
     })
     const { docker } = fakeDocker({ containers: [mine, theirs] })
     expect(await runningBotIds(docker, '/data')).toEqual(['researcher'])
+  })
+})
+
+describe('retireLegacyContainers', () => {
+  const legacy = (botId: string, owner: string | undefined, extra: Partial<Info> = {}): Info => ({
+    Id: `old-${botId}`, Names: [`/opengrokbot-${botId}`], State: 'running', ImageID: 'sha256:legacy',
+    Labels: { 'ai.opengrokbot.bot': botId, ...(owner ? { 'ai.opengrokbot.workspace': owner } : {}) }, ...extra,
+  })
+
+  it('removes the computers made before the rename that belong to this data dir, then the old network', async () => {
+    const { docker, log } = fakeDocker({
+      containers: [
+        legacy('researcher', '/data/workspaces/researcher'),
+        legacy('chief', '/data/workspaces/chief', { State: 'exited' }),
+        running(), // 已经是新名字的，不归这里管
+      ],
+    })
+    expect(await retireLegacyContainers(docker, '/data')).toEqual(['researcher', 'chief'])
+    expect(log).toEqual(['remove:old-researcher', 'remove:old-chief', 'network-remove:opengrokbot-bots'])
+  })
+
+  it('leaves alone old computers of another data dir and ones whose owner it cannot tell', async () => {
+    const { docker, log } = fakeDocker({
+      containers: [legacy('researcher', '/elsewhere/workspaces/researcher'), legacy('chief', undefined)],
+    })
+    expect(await retireLegacyContainers(docker, '/data')).toEqual([])
+    expect(log).toEqual([]) // 一个没删，旧网络也不碰
   })
 })
 
@@ -236,7 +288,7 @@ describe('stopBotContainer', () => {
   it('stops the named computer', async () => {
     const { docker, log } = fakeDocker()
     await stopBotContainer(docker, 'researcher')
-    expect(log).toEqual(['stop:opengrokbot-researcher'])
+    expect(log).toEqual(['stop:opensuperbot-researcher'])
   })
 })
 
