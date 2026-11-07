@@ -16,7 +16,7 @@ const llm: LLM = { chat: async () => ({ content: 'ok', toolCalls: [], raw: { rol
 
 describe('workflow recording API', () => {
   it('keeps a stopped trace in review until the operator edits and saves it to SQLite', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-api-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-api-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     let stopCalls = 0
@@ -29,7 +29,7 @@ describe('workflow recording API', () => {
         async stop() {
           stopCalls += 1
           return parseWorkflowTrace({
-            format: 'opengrokbot.workflow', version: 1, title, steps: [
+            format: 'opensuperbot.workflow', version: 1, title, steps: [
               { type: 'fill', target: { candidates: [{ label: 'API token' }] }, value: { kind: 'literal', text: 'should-never-persist' } },
               { type: 'click', target: { candidates: [{ role: { role: 'button', name: 'Save' } }] } },
             ],
@@ -119,7 +119,7 @@ describe('workflow recording API', () => {
   })
 
   it('refuses a recording while busy and holds turns, cron, watch, and webhook runs until it stops', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-gate-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-gate-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     const chat = vi.fn(async () => ({ content: 'ok', toolCalls: [], raw: { role: 'assistant' as const, content: 'ok' } }))
@@ -127,7 +127,7 @@ describe('workflow recording API', () => {
     const computer = createFakeComputer({
       startWorkflowRecording: async (title): Promise<WorkflowRecording> => ({
         async reattach() {},
-        async stop() { return parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, steps: [] }) },
+        async stop() { return parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 1, title, steps: [] }) },
       }),
     })
     const pool = createPool({ dataDir, makeComputer: async () => computer })
@@ -179,7 +179,7 @@ describe('workflow recording API', () => {
   })
 
   it('releases the teammate and queued turns when stopping a recording fails', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-stop-failure-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-stop-failure-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     const chat = vi.fn(async () => ({ content: 'resumed', toolCalls: [], raw: { role: 'assistant' as const, content: 'resumed' } }))
@@ -216,11 +216,11 @@ describe('workflow recording API', () => {
   })
 
   it('cancels a recording and releases the teammate lane', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-cancel-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-cancel-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     const stop = vi.fn(async () => parseWorkflowTrace({
-      format: 'opengrokbot.workflow', version: 1, title: 'Discarded recording', steps: [],
+      format: 'opensuperbot.workflow', version: 1, title: 'Discarded recording', steps: [],
     }))
     const computer = createFakeComputer({
       startWorkflowRecording: async (): Promise<WorkflowRecording> => ({
@@ -248,11 +248,11 @@ describe('workflow recording API', () => {
   })
 
   it('stops an overlong recording and leaves a marked incomplete draft', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-time-limit-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-time-limit-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     const stop = vi.fn(async () => parseWorkflowTrace({
-      format: 'opengrokbot.workflow', version: 1, title: 'Time-limited recording', steps: [],
+      format: 'opensuperbot.workflow', version: 1, title: 'Time-limited recording', steps: [],
     }))
     const computer = createFakeComputer({
       startWorkflowRecording: async (): Promise<WorkflowRecording> => ({
@@ -282,7 +282,7 @@ describe('workflow recording API', () => {
   })
 
   it('refuses to start recording while a turn is running', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-busy-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-busy-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     let finishTurn: (() => void) | undefined
@@ -299,7 +299,7 @@ describe('workflow recording API', () => {
     const computer = createFakeComputer({
       startWorkflowRecording: async (title): Promise<WorkflowRecording> => {
         recorderStarts += 1
-        return { async reattach() {}, async stop() { return parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, steps: [] }) } }
+        return { async reattach() {}, async stop() { return parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 1, title, steps: [] }) } }
       },
     })
     const pool = createPool({ dataDir, makeComputer: async () => computer })
@@ -326,7 +326,7 @@ describe('workflow recording API', () => {
   })
 
   it('reserves a teammate before async browser startup so concurrent starts cannot leak a recorder', async () => {
-    const dataDir = await mkdtemp(join(tmpdir(), 'ogb-workflow-race-'))
+    const dataDir = await mkdtemp(join(tmpdir(), 'osb-workflow-race-'))
     const db = openDb(':memory:')
     upsertBot(db, bot)
     let release: ((recorder: WorkflowRecording) => void) | undefined
@@ -349,7 +349,7 @@ describe('workflow recording API', () => {
       })
       expect(second.status).toBe(409)
       expect(starts).toBe(1)
-      release?.({ reattach: async () => {}, stop: async () => parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title: 'First', steps: [] }) })
+      release?.({ reattach: async () => {}, stop: async () => parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 1, title: 'First', steps: [] }) })
       expect((await first).status).toBe(202)
       const stop = await app.request('/api/bots/researcher/workflows/recording/stop', { method: 'POST' })
       expect(stop.status).toBe(200)

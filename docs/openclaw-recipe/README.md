@@ -1,6 +1,6 @@
 # The OpenClaw recipe (v0.1, kept for reference)
 
-OpenGrokBot v0.1 was a **distribution**: a config, three personas, and a setup script on top of
+OpenSuperBot v0.1 was a **distribution**: a config, three personas, and a setup script on top of
 [OpenClaw](https://github.com/openclaw/openclaw). v0.2 replaced that with its own core — a gateway, a web
 client, and one container per bot — because the two things this product is actually about (the management
 surface and a private computer per teammate) are not things OpenClaw models: it runs a single assistant on a
@@ -25,8 +25,8 @@ config with three ready-to-work teammates plus agent-to-agent messaging enabled.
 OpenClaw config — it generated a merge file instead.
 
 ```bash
-git clone https://github.com/wolfqing/OpenGrokBot.git
-cd OpenGrokBot
+git clone https://github.com/wolfqing/OpenSuperBot.git
+cd OpenSuperBot
 docs/openclaw-recipe/setup.sh
 
 openclaw onboard --install-daemon   # first-time setup

@@ -33,12 +33,15 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
             if ($errors) { $errors; exit 1 }
           }
+          # 改名前装的任务：重装时要被清掉，否则两个网关抢同一个端口
+          Register-ScheduledTask -TaskName 'OpenGrokBot gateway' -Action (New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit 0') -Force | Out-Null
           powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/install-task.ps1
-          $task = Get-ScheduledTask -TaskName 'OpenGrokBot gateway'
+          if (Get-ScheduledTask -TaskName 'OpenGrokBot gateway' -ErrorAction SilentlyContinue) { 'old task left behind'; exit 1 }
+          $task = Get-ScheduledTask -TaskName 'OpenSuperBot gateway'
           if ($task.Actions[0].Arguments -notmatch 'start-gateway\.ps1') { "unexpected action: $($task.Actions[0].Arguments)"; exit 1 }
           if ($task.Principal.LogonType -ne 'Interactive') { "unexpected logon type: $($task.Principal.LogonType)"; exit 1 }
           powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/install-task.ps1 -Uninstall
-          if (Get-ScheduledTask -TaskName 'OpenGrokBot gateway' -ErrorAction SilentlyContinue) { 'task still registered'; exit 1 }
+          if (Get-ScheduledTask -TaskName 'OpenSuperBot gateway' -ErrorAction SilentlyContinue) { 'task still registered'; exit 1 }
 
   local-computer:
     # 本机模式（不用 Docker）对着真浏览器、真沙箱走一遍：文件、浏览器、截屏流、登录窗口、命令行开关与沙箱边界。
@@ -69,10 +72,10 @@ jobs:
           fi
       - name: Smoke (Linux, on a virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm --filter @opengrokbot/gateway run smoke:local
+        run: xvfb-run -a pnpm --filter @opensuperbot/gateway run smoke:local
       - name: Smoke
         if: runner.os != 'Linux'
-        run: pnpm --filter @opengrokbot/gateway run smoke:local
+        run: pnpm --filter @opensuperbot/gateway run smoke:local
 
   audit:
     name: Dependency audit
@@ -91,8 +94,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: docker build -t opengrokbot/bot:dev docker/bot
+      - run: docker build -t opensuperbot/bot:dev docker/bot
       - name: Fonts, timezone data and supervisor are in the image
         run: |
-          docker run --rm --entrypoint sh opengrokbot/bot:dev -c \
+          docker run --rm --entrypoint sh opensuperbot/bot:dev -c \
             'fc-list | grep -qi wqy && fc-list | grep -qi "noto color emoji" && test -d /usr/share/zoneinfo && bash -n /opt/entrypoint.sh && node --check /opt/shim.mjs'

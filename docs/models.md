@@ -5,11 +5,14 @@ and a default model — then click the model label at the top of a teammate's th
 takes effect from that teammate's next turn.
 
 The connection you set up first (with env vars or the settings API) is the **default**. Every teammate that has
-not picked a connection uses it, and env vars still pin its fields (`OPENGROKBOT_API_BASE`, `_MODEL`, `_VISION`,
-`_API_KEY`). A key pinned by `OPENGROKBOT_API_KEY` also pins the service and address, since that key belongs to
+not picked a connection uses it, and env vars still pin its fields (`OPENSUPERBOT_API_BASE`, `_MODEL`, `_VISION`,
+`_API_KEY`). A key pinned by `OPENSUPERBOT_API_KEY` also pins the service and address, since that key belongs to
 one service. When a connection moves to another service or address, its stored key is dropped unless a new one
-comes with it, and the models teammates picked on it go back to the connection's default. Extra connections live in the database; each key lives in `<data>/llm-keys/<id>` (mode `0600`) and
-is only ever shown masked. Deleting a connection moves its teammates back to the default.
+comes with it, and the models teammates picked on it go back to the connection's default.
+
+Extra connections live in the database. Each key lives in `<data>/llm-keys/<id>`, readable only by your account
+(mode `0600`; on Windows, an ACL for your account alone), and is only ever shown masked. Deleting a connection
+moves its teammates back to the default.
 
 ## Services
 

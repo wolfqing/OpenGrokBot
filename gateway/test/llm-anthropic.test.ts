@@ -25,7 +25,7 @@ const message = (content: unknown[], extra: Record<string, unknown> = {}) => ({
 })
 
 const target = (extra: Partial<ReturnType<typeof loadConfig>> = {}) => ({
-  ...loadConfig({ OPENGROKBOT_LLM_RETRIES: '0' }),
+  ...loadConfig({ OPENSUPERBOT_LLM_RETRIES: '0' }),
   api: 'anthropic' as const, baseURL: 'https://api.anthropic.com', apiKey: 'sk-ant-api03-test', model: 'claude-opus-5-5', ...extra,
 })
 

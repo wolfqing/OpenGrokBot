@@ -1,14 +1,14 @@
 {
-  "name": "opengrokbot",
+  "name": "opensuperbot",
   "private": true,
   "packageManager": "pnpm@10.33.2",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @opengrokbot/gateway --filter @opengrokbot/web dev",
-    "build": "pnpm --filter @opengrokbot/web build && pnpm --filter @opengrokbot/gateway build",
-    "start": "pnpm --filter @opengrokbot/gateway start",
+    "dev": "pnpm --parallel --filter @opensuperbot/gateway --filter @opensuperbot/web dev",
+    "build": "pnpm --filter @opensuperbot/web build && pnpm --filter @opensuperbot/gateway build",
+    "start": "pnpm --filter @opensuperbot/gateway start",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --workspace-concurrency=1 test"
   },

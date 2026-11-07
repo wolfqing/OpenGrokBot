@@ -5,7 +5,7 @@ import { browsersDir, findBrowser, installBrowser } from './browsers.js'
 import type { BotComputer, ComputerKind } from './computer.js'
 import { createDockerComputer } from './computer-docker.js'
 import { createLocalComputer, type LocalLaunch } from './computer-local.js'
-import { BOT_IMAGE, ensureContainer, runningBotIds, stopBotContainer, type ContainerOptions } from './containers.js'
+import { BOT_IMAGE, ensureContainer, retireLegacyContainers, runningBotIds, stopBotContainer, type ContainerOptions } from './containers.js'
 import { runSandboxed, type Sandbox } from './sandbox.js'
 import { botDataDir, workspaceDir } from './screenshots.js'
 
@@ -23,7 +23,7 @@ export type ComputerBackend = {
   stop(botId: string): Promise<void>
 }
 
-/** OPENGROKBOT_COMPUTERS 或设置页：auto = Docker 在跑、镜像也建了就用 Docker，否则本机模式 */
+/** OPENSUPERBOT_COMPUTERS 或设置页：auto = Docker 在跑、镜像也建了就用 Docker，否则本机模式 */
 export type ComputerChoice = 'auto' | 'docker' | 'local'
 
 export function parseComputerChoice(value: string | undefined): ComputerChoice {
@@ -33,25 +33,35 @@ export function parseComputerChoice(value: string | undefined): ComputerChoice {
 
 export function createDockerBackend(
   docker: Docker,
-  opts: { dataDir: string; containerOptions?: ContainerOptions },
+  opts: { dataDir: string; containerOptions?: ContainerOptions; log?: (line: string) => void },
 ): ComputerBackend {
+  // 改名前建的电脑先清掉，再按新名字建：只做一次。Docker 没开就下次再试，眼前的错交给 ensureContainer 去讲
+  let retiring: Promise<void> | null = null
+  const retireLegacy = () => (retiring ??= retireLegacyContainers(docker, opts.dataDir).then(
+    (ids) => { if (ids.length) opts.log?.(`replaced the computers made before the rename (OpenGrokBot): ${ids.join(', ')}`) },
+    () => { retiring = null },
+  ))
   return {
     kind: 'docker',
     async make(botId) {
+      await retireLegacy()
       const dir = workspaceDir(opts.dataDir, botId)
       await mkdir(dir, { recursive: true })
       return createDockerComputer(await ensureContainer(docker, botId, dir, opts.containerOptions))
     },
-    running: () => runningBotIds(docker, opts.dataDir),
+    running: async () => {
+      await retireLegacy()
+      return runningBotIds(docker, opts.dataDir)
+    },
     stop: (botId) => stopBotContainer(docker, botId),
   }
 }
 
 export type LocalBackendOptions = {
   dataDir: string
-  /** OPENGROKBOT_BROWSER：操作者指定的浏览器可执行文件 */
+  /** OPENSUPERBOT_BROWSER：操作者指定的浏览器可执行文件 */
   browser?: string
-  /** OPENGROKBOT_BROWSER_MIRROR：下载浏览器时用的镜像主机 */
+  /** OPENSUPERBOT_BROWSER_MIRROR：下载浏览器时用的镜像主机 */
   browserMirror?: string
   log?: (line: string) => void
   /** 测试里换掉真正的浏览器启动 */
@@ -72,7 +82,7 @@ export function createLocalBackend(opts: LocalBackendOptions): ComputerBackend {
   let executable: Promise<string> | null = null
 
   const resolveBrowser = opts.resolveBrowser ?? (async () => {
-    const found = findBrowser({ dataDir: opts.dataDir, env: { OPENGROKBOT_BROWSER: opts.browser } })
+    const found = findBrowser({ dataDir: opts.dataDir, env: { OPENSUPERBOT_BROWSER: opts.browser } })
     if (found) {
       log(`local teammates use the ${found.source} browser at ${found.executablePath}`)
       return found.executablePath
@@ -162,7 +172,7 @@ export async function chooseBackend(choice: ComputerChoice, opts: {
   /** 显式选择从哪来，只影响日志措辞 */
   from?: 'env' | 'saved'
 }): Promise<BackendChoice> {
-  const chosen = opts.from === 'saved' ? `computers=${choice} in settings` : `OPENGROKBOT_COMPUTERS=${choice}`
+  const chosen = opts.from === 'saved' ? `computers=${choice} in settings` : `OPENSUPERBOT_COMPUTERS=${choice}`
   if (choice === 'docker') return { backend: opts.docker(), why: 'chosen', reason: chosen }
   if (choice === 'local') {
     const local = opts.local()

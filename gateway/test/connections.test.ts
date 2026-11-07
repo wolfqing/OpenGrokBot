@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import {
-  MAIN, botConfig, botLlm, createConnection, deleteConnection, readConnectionKey, setBotLlm, updateConnection,
+  MAIN, botConfig, botLlm, createConnection, deleteConnection, readConnectionKey, saveConnectionKey, setBotLlm, updateConnection,
 } from '../src/connections.js'
 import { ensureDmThread, openDb, upsertBot } from '../src/db.js'
 import type { AssistantTurn, LLM } from '../src/llm.js'
@@ -20,8 +20,8 @@ function setup(env: Record<string, string> = {}) {
   upsertBot(db, scout)
   upsertBot(db, ticker)
   const dataDir = mkdtempSync(join(tmpdir(), 'ogb-conn-'))
-  const startup = loadConfig({ ...env, OPENGROKBOT_DATA: dataDir })
-  return { db, dataDir, startup, env: { ...env, OPENGROKBOT_DATA: dataDir } }
+  const startup = loadConfig({ ...env, OPENSUPERBOT_DATA: dataDir })
+  return { db, dataDir, startup, env: { ...env, OPENSUPERBOT_DATA: dataDir } }
 }
 
 describe('model connections', () => {
@@ -38,6 +38,19 @@ describe('model connections', () => {
       expect(statSync(file).mode & 0o777).toBe(0o600)
       expect(statSync(join(dataDir, 'llm-keys')).mode & 0o777).toBe(0o700)
     }
+  })
+
+  it('limit each key to your account before it takes its place (the ACL, on Windows), and say so if that fails', () => {
+    const { dataDir } = setup()
+    const final = join(dataDir, 'llm-keys', 'c-0000beef')
+    const restrict = vi.fn((path: string) => { expect(existsSync(final)).toBe(false); expect(path).toMatch(/c-0000beef\.\d+\.tmp$/) })
+    saveConnectionKey(dataDir, 'c-0000beef', 'sk-acl-1234', { restrict })
+    expect(restrict).toHaveBeenCalledTimes(1)
+    expect(readConnectionKey(dataDir, 'c-0000beef')).toBe('sk-acl-1234')
+    const warn = vi.fn()
+    saveConnectionKey(dataDir, 'c-0000beef', 'sk-acl-5678', { restrict: () => { throw new Error('whoami did not report a SID') }, warn })
+    expect(readConnectionKey(dataDir, 'c-0000beef')).toBe('sk-acl-5678')
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/could not limit .*c-0000beef to your account/))
   })
 
   it('refuse a Claude subscription sign-in token: only API keys are allowed for third-party apps', () => {
@@ -97,7 +110,7 @@ describe('each teammate on its own model', () => {
     setBotLlm(open.db, scout.id, { connectionId: MAIN, model: 'deepseek-pro' })
     expect(botConfig(open.startup, open.env, open.db, scout.id).model).toBe('deepseek-pro')
 
-    const pinned = setup({ OPENGROKBOT_MODEL: 'qwen3' })
+    const pinned = setup({ OPENSUPERBOT_MODEL: 'qwen3' })
     setBotLlm(pinned.db, scout.id, { connectionId: MAIN, model: 'deepseek-pro' })
     expect(botConfig(pinned.startup, pinned.env, pinned.db, scout.id).model).toBe('qwen3')
   })
@@ -163,7 +176,7 @@ describe('/api/connections', () => {
   })
 
   it('keeps the default connection under the settings rules: env-pinned fields stay locked', async () => {
-    const { call } = app({ OPENGROKBOT_MODEL: 'qwen3' })
+    const { call } = app({ OPENSUPERBOT_MODEL: 'qwen3' })
     const listed = await (await call('GET', '/api/connections')).json() as { connections: { locked: string[] }[] }
     expect(listed.connections[0]!.locked).toEqual(['model'])
     const res = await call('PATCH', `/api/connections/${MAIN}`, { model: 'other' })
@@ -207,7 +220,7 @@ describe('keys stay with the service they were given for', () => {
   }
 
   it('an env-pinned key pins the service and address too, in both APIs', async () => {
-    const { call } = gateway({ OPENGROKBOT_API_KEY: 'xai-key-1234567890' })
+    const { call } = gateway({ OPENSUPERBOT_API_KEY: 'xai-key-1234567890' })
     const listed = await (await call('GET', '/api/connections')).json() as { connections: { locked: string[] }[] }
     expect(listed.connections[0]!.locked).toEqual(['provider', 'baseURL', 'apiKey'])
     const viaConnections = await call('PATCH', `/api/connections/${MAIN}`, { provider: 'deepseek' })

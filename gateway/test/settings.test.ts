@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { join, resolve } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadConfig } from '../src/config.js'
 import { openDb } from '../src/db.js'
 import {
@@ -76,8 +76,8 @@ describe('settings', () => {
 
   it('lets env vars win, and says so', () => {
     const env = {
-      OPENGROKBOT_API_BASE: 'http://localhost:11434/v1', OPENGROKBOT_MODEL: 'qwen3', OPENGROKBOT_VISION: '0',
-      OPENGROKBOT_COMPUTERS: 'docker', OPENGROKBOT_BROWSER_MIRROR: ' ',
+      OPENSUPERBOT_API_BASE: 'http://localhost:11434/v1', OPENSUPERBOT_MODEL: 'qwen3', OPENSUPERBOT_VISION: '0',
+      OPENSUPERBOT_COMPUTERS: 'docker', OPENSUPERBOT_BROWSER_MIRROR: ' ',
     }
     const { values, sources } = resolveSettings(env, { baseURL: 'https://api.deepseek.com/v1', model: 'deepseek-chat', vision: true, computers: 'local' })
     expect(values).toMatchObject({ baseURL: 'http://localhost:11434/v1', model: 'qwen3', vision: false, computers: 'docker' })
@@ -87,9 +87,9 @@ describe('settings', () => {
   })
 
   it('lays the resolved settings over the startup config', () => {
-    const config = loadConfig({ OPENGROKBOT_DATA: '/tmp/ogb-x' })
+    const config = loadConfig({ OPENSUPERBOT_DATA: '/tmp/ogb-x' })
     const merged = applySettings(config, resolveSettings({}, { model: 'deepseek-chat', computers: 'local' }).values, 'sk-file')
-    expect(merged).toMatchObject({ model: 'deepseek-chat', computers: 'local', apiKey: 'sk-file', dataDir: '/tmp/ogb-x', port: 4747 })
+    expect(merged).toMatchObject({ model: 'deepseek-chat', computers: 'local', apiKey: 'sk-file', dataDir: resolve('/tmp/ogb-x'), port: 4747 })
     expect(config.model).toBe('grok-4.7') // 原来的不动
   })
 })
@@ -103,8 +103,23 @@ describe('the API key file', () => {
     expect(readApiKey(dir)).toBe('')
     expect(saveApiKey(dir, '  sk-abc123  ')).toEqual({ ok: true })
     expect(readFileSync(join(dir, 'llm-key'), 'utf8')).toBe('sk-abc123\n')
-    expect(statSync(join(dir, 'llm-key')).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(join(dir, 'llm-key')).mode & 0o777).toBe(0o600)
     expect(readApiKey(dir)).toBe('sk-abc123')
+  })
+
+  it('limits the key to your account before it takes its place (the ACL, on Windows)', () => {
+    const restrict = vi.fn((path: string) => { expect(existsSync(join(dir, 'llm-key'))).toBe(false); expect(existsSync(path)).toBe(true) })
+    saveApiKey(dir, 'sk-acl', { restrict })
+    expect(restrict).toHaveBeenCalledTimes(1)
+    expect(restrict.mock.calls[0]![0]).toMatch(/llm-key\.\d+\.tmp$/)
+    expect(readApiKey(dir)).toBe('sk-acl')
+  })
+
+  it('still saves the key when it cannot be limited, and says so', () => {
+    const warn = vi.fn()
+    saveApiKey(dir, 'sk-warn', { restrict: () => { throw new Error('whoami did not report a SID') }, warn })
+    expect(readApiKey(dir)).toBe('sk-warn')
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/could not limit .*llm-key to your account: whoami did not report a SID/))
   })
 
   it('tightens a key file someone loosened, and creates the data dir if needed', () => {
@@ -112,7 +127,7 @@ describe('the API key file', () => {
     saveApiKey(nested, 'sk-1')
     chmodSync(join(nested, 'llm-key'), 0o644)
     saveApiKey(nested, 'sk-2')
-    expect(statSync(join(nested, 'llm-key')).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(join(nested, 'llm-key')).mode & 0o777).toBe(0o600)
     expect(readApiKey(nested)).toBe('sk-2')
   })
 
@@ -132,7 +147,7 @@ describe('the API key file', () => {
 
   it('prefers the env var over the file, and says where the key came from', () => {
     saveApiKey(dir, 'sk-file')
-    expect(resolveApiKey({ OPENGROKBOT_API_KEY: 'sk-env' }, dir)).toEqual({ key: 'sk-env', source: 'env' })
+    expect(resolveApiKey({ OPENSUPERBOT_API_KEY: 'sk-env' }, dir)).toEqual({ key: 'sk-env', source: 'env' })
     expect(resolveApiKey({}, dir)).toEqual({ key: 'sk-file', source: 'file' })
     saveApiKey(dir, '')
     expect(resolveApiKey({}, dir)).toEqual({ key: '', source: 'none' })
@@ -146,12 +161,12 @@ describe('currentConfig', () => {
 
   it('sees a saved setting and a new key file right away, and env vars still win', () => {
     const db = openDb(':memory:')
-    const startup = loadConfig({ OPENGROKBOT_DATA: dir })
+    const startup = loadConfig({ OPENSUPERBOT_DATA: dir })
     expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'grok-4.7', apiKey: '', vision: false })
     saveSettings(db, { model: 'deepseek-chat', vision: true })
     saveApiKey(dir, 'sk-file')
     expect(currentConfig(startup, {}, db)).toMatchObject({ model: 'deepseek-chat', apiKey: 'sk-file', vision: true, dataDir: dir })
-    expect(currentConfig(startup, { OPENGROKBOT_MODEL: 'qwen3', OPENGROKBOT_API_KEY: 'sk-env' }, db))
+    expect(currentConfig(startup, { OPENSUPERBOT_MODEL: 'qwen3', OPENSUPERBOT_API_KEY: 'sk-env' }, db))
       .toMatchObject({ model: 'qwen3', apiKey: 'sk-env', vision: true })
   })
 })
@@ -159,12 +174,12 @@ describe('currentConfig', () => {
 describe('the chosen provider', () => {
   it('brings its request fields along, and nothing when none is chosen', () => {
     const db = openDb(':memory:')
-    const startup = loadConfig({ OPENGROKBOT_DATA: '/tmp/ogb-none' })
+    const startup = loadConfig({ OPENSUPERBOT_DATA: '/tmp/ogb-none' })
     expect(currentConfig(startup, {}, db).extraBody).toEqual({})
     saveSettings(db, { provider: 'openai', baseURL: 'https://api.openai.com/v1', model: 'gpt-6-luna' })
     expect(currentConfig(startup, {}, db)).toMatchObject({ api: 'responses', extraBody: { reasoning: { effort: 'low' } } })
     // 地址是环境变量给的：按老规矩走 OpenAI 兼容口，不套界面上选过的服务商
-    expect(currentConfig(startup, { OPENGROKBOT_API_BASE: 'https://llm.internal/v1' }, db)).toMatchObject({ api: 'chat', extraBody: {} })
+    expect(currentConfig(startup, { OPENSUPERBOT_API_BASE: 'https://llm.internal/v1' }, db)).toMatchObject({ api: 'chat', extraBody: {} })
   })
 })
 
@@ -189,7 +204,7 @@ describe('needsSetup', () => {
 
   it('stays out of the way of anyone who configured the model with env vars', () => {
     const db = openDb(':memory:')
-    for (const env of [{ OPENGROKBOT_API_KEY: 'sk-x' }, { OPENGROKBOT_MODEL: 'stub' }, { OPENGROKBOT_API_BASE: 'http://localhost:11434/v1' }]) {
+    for (const env of [{ OPENSUPERBOT_API_KEY: 'sk-x' }, { OPENSUPERBOT_MODEL: 'stub' }, { OPENSUPERBOT_API_BASE: 'http://localhost:11434/v1' }]) {
       expect(needsSetup(env, db, dir)).toBe(false)
     }
   })

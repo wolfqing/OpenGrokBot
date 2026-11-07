@@ -248,12 +248,12 @@ function removeCaptureScript(marker: string, capability: string): string {
 
 /** Attach to the teammate's existing page; reattach is used when local show/hide relaunches Chromium. */
 export async function createWorkflowRecorder(page: PageLike, title: string, intent?: string): Promise<WorkflowRecording> {
-  const trace: WorkflowTrace = parseWorkflowTrace({ format: 'opengrokbot.workflow', version: 1, title, ...(intent ? { intent } : {}), steps: [] })
+  const trace: WorkflowTrace = parseWorkflowTrace({ format: 'opensuperbot.workflow', version: 1, title, ...(intent ? { intent } : {}), steps: [] })
   const recordingId = randomUUID().replace(/-/g, '')
   const capability = randomBytes(32).toString('hex')
-  const bindingName = `__opengrokbot_workflow_${recordingId}`
-  const marker = `__opengrokbot_workflow_state_${recordingId}`
-  const worldName = `opengrokbot-workflow-world-${recordingId}`
+  const bindingName = `__opensuperbot_workflow_${recordingId}`
+  const marker = `__opensuperbot_workflow_state_${recordingId}`
+  const worldName = `opensuperbot-workflow-world-${recordingId}`
   let active = true
   let current: Attachment | null = null
   let stopped: WorkflowTrace | null = null

@@ -64,7 +64,7 @@ async function ready(): Promise<FakeSocket> {
 beforeEach(() => {
   FakeSocket.last = null
   vi.stubGlobal('WebSocket', FakeSocket)
-  document.title = 'OpenGrokBot'
+  document.title = 'OpenSuperBot'
 })
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -73,7 +73,8 @@ describe('App language', () => {
     mockGateway({ conversations: [], language: 'zh-CN' })
     render(<App />)
     expect(await screen.findByText('还没有同事。')).toBeInTheDocument()
-    expect(document.documentElement.lang).toBe('zh-CN')
+    // 页面语言是渲染之后的 effect 设的：文字先出来，冷启动时 lang 可能还差一拍
+    await waitFor(() => expect(document.documentElement.lang).toBe('zh-CN'))
   })
 
   it('follows the browser when nothing is saved, even on the locked sign-in page', async () => {
@@ -106,7 +107,7 @@ describe('App', () => {
       ],
     })
     render(<App />)
-    await waitFor(() => expect(document.title).toBe('(3) OpenGrokBot'))
+    await waitFor(() => expect(document.title).toBe('(3) OpenSuperBot'))
   })
 
   it('catches up after the live connection comes back', async () => {

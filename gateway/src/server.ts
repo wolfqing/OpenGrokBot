@@ -672,7 +672,7 @@ export function createApp(deps: AppDeps): GatewayApp {
     let intent: string | undefined
     try {
       const validated = parseWorkflowTrace({
-        format: 'opengrokbot.workflow', version: 1, title,
+        format: 'opensuperbot.workflow', version: 1, title,
         ...(typeof body?.intent === 'string' && body.intent.trim() ? { intent: body.intent.trim() } : {}),
         steps: [],
       })
@@ -931,13 +931,14 @@ export function createApp(deps: AppDeps): GatewayApp {
 
   /**
    * 外部系统叫醒一条 routine。不走网关令牌（GitHub、表单服务拿不到它），靠每条 routine 自己的密钥：
-   * 放在 X-OpenGrokBot-Key 头里，或者 ?key=。密钥错和「没这条」一律 404。
+   * 放在 X-OpenSuperBot-Key 头里（改名前配好的 webhook 还在发 X-OpenGrokBot-Key，照收），或者 ?key=。
+   * 密钥错和「没这条」一律 404。
    */
   app.post('/hooks/routines/:id', async (c) => {
     const id = Number(c.req.param('id'))
     if (Number(c.req.header('content-length') ?? 0) > MAX_HOOK_BYTES) return c.json({ error: 'payload too large' }, 413)
     const signature = c.req.header('x-hub-signature-256')
-    const key = c.req.header('x-opengrokbot-key') ?? c.req.query('key') ?? ''
+    const key = c.req.header('x-opensuperbot-key') ?? c.req.header('x-opengrokbot-key') ?? c.req.query('key') ?? ''
     // 签名要对着原始字节算，所以先读请求体；带密钥的老路子不需要它也能先挡掉生人。
     // 边读边数：分块传输没有 content-length，不能等读完一整个请求再说它太大
     const bytes = signature || key ? await readBodyUpTo(c.req.raw.body, MAX_HOOK_BYTES) : Buffer.alloc(0)

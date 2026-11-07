@@ -1,4 +1,4 @@
-# Grok Bot vs. OpenGrokBot, honestly
+# Grok Bot vs. OpenSuperBot, honestly
 
 The Grok Bot column was checked on 2026-10-21 against xAI's own pages: the [Grok Bot changelog](https://x.ai/changelog/bot)
 up to v0.71.2 (2026-10-14), [Introducing Grok Bot](https://x.ai/news/introducing-grok-bot),
@@ -70,7 +70,7 @@ today they cannot act, but they can still load any page.
 
 ## Cost, concretely
 
-| Item | Grok Bot | OpenGrokBot |
+| Item | Grok Bot | OpenSuperBot |
 |---|---|---|
 | Subscription | Comes with SuperGrok and Cursor plans from Pro up, with its own usage meter; past the included usage you upgrade or set an on-demand limit | $0 |
 | Compute | included | hardware you own, or a ~$5/mo VPS (2GB RAM min if the teammates use Docker) |

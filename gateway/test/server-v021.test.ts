@@ -62,7 +62,7 @@ function setup(llm: LLM, extra: Partial<Parameters<typeof createApp>[0]> = {}) {
   const db = openDb(':memory:')
   for (const b of [scout, ticker, chief]) { upsertBot(db, b); ensureDmThread(db, b.id) }
   ensureGroupThread(db, GROUP, 'Offsite crew', ['researcher', 'market-watch', 'chief'])
-  const dataDir = mkdtempSync(join(tmpdir(), 'ogb-v021-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'osb-v021-'))
   const created = createApp({ db, llm, dataDir, chiefId: 'chief', ...extra })
   const events: { type: string; botId?: string; state?: string; message?: { id: number; kind: string; payload: unknown } }[] = []
   created.hub.add({ send: (d: string) => events.push(JSON.parse(d)) })
@@ -273,7 +273,7 @@ describe('routine controls', () => {
 
 describe('persona, memory of routines and budget', () => {
   it('loads AGENTS.md next to SOUL.md and strips the frontmatter', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ogb-persona-'))
+    const dir = mkdtempSync(join(tmpdir(), 'osb-persona-'))
     mkdirSync(join(dir, 'researcher'))
     writeFileSync(join(dir, 'researcher', 'SOUL.md'), '---\nrole: research\nemoji: 🔎\n---\n# Scout\n\nYou are Scout.\n')
     writeFileSync(join(dir, 'researcher', 'AGENTS.md'), '## Hard boundaries\n- Never pay for anything.\n')
@@ -345,7 +345,7 @@ describe('approval chip far back in history', () => {
 describe('warming the computer up', () => {
   it('starts the bot computer while the model thinks, for direct messages but not group chatter', async () => {
     const started: string[] = []
-    const dataDir = mkdtempSync(join(tmpdir(), 'ogb-warm-'))
+    const dataDir = mkdtempSync(join(tmpdir(), 'osb-warm-'))
     const pool = createPool({ dataDir, makeComputer: async (id) => { started.push(id); return createFakeComputer() } })
     const { llm } = recordingLLM()
     const { app, db } = setup(llm, { pool })

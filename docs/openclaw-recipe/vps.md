@@ -13,8 +13,8 @@ Any provider, 2GB RAM minimum (image builds can OOM below that), Ubuntu 22.04+. 
 
 ```bash
 curl -fsSL https://get.docker.com | sh
-git clone https://github.com/wolfqing/OpenGrokBot.git
-cd OpenGrokBot/docs/openclaw-recipe
+git clone https://github.com/wolfqing/OpenSuperBot.git
+cd OpenSuperBot/docs/openclaw-recipe
 ```
 
 ## 3. Start the gateway

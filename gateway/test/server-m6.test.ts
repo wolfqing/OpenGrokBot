@@ -34,7 +34,7 @@ function setup(llm: LLM) {
   const db = openDb(':memory:')
   upsertBot(db, bot)
   const threadId = ensureDmThread(db, bot.id)
-  const dataDir = mkdtempSync(join(tmpdir(), 'ogb-m6-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'osb-m6-'))
   const { computer, state } = localComputer()
   const pool = createPool({ dataDir, makeComputer: async () => computer })
   const gateway = createApp({ db, llm, dataDir, pool, computers: { kind: 'local' } })

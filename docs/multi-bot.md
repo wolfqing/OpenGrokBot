@@ -1,7 +1,7 @@
 # Many teammates, one crew
 
 Grok Bot's headline demo is bots that report to a room and hand work to each other. Here is how that works in
-OpenGrokBot, and where you set the boundaries.
+OpenSuperBot, and where you set the boundaries.
 
 ## A teammate is a folder
 
@@ -48,11 +48,11 @@ A teammate can pass a scoped task with `message_bot`. It lands in the other team
 
 Who may reach whom is an allowlist:
 
-- The chief of staff (`OPENGROKBOT_CHIEF`, default `chief`) can message anyone, and anyone can message it.
+- The chief of staff (`OPENSUPERBOT_CHIEF`, default `chief`) can message anyone, and anyone can message it.
 - Everything else is off until you name a direction:
 
   ```bash
-  OPENGROKBOT_A2A_ALLOW='researcher>market-watch,market-watch>researcher'
+  OPENSUPERBOT_A2A_ALLOW='researcher>market-watch,market-watch>researcher'
   ```
 
 - A relay can go two hops — a dispatch and a reply — and no further, so two bots cannot echo at each other.
@@ -68,7 +68,7 @@ so two jobs never fight over one browser. The same routine never runs twice at o
 
 ## Budgets
 
-`OPENGROKBOT_DAILY_TOKENS` caps each teammate's model use per day; its computer panel shows today's count. A
+`OPENSUPERBOT_DAILY_TOKENS` caps each teammate's model use per day; its computer panel shows today's count. A
 routine that fires every minute cannot run up your bill past that line — and you can pause or delete it from the
 same panel, or tell the bot to `stop_routine`.
 

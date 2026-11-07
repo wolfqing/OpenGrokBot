@@ -1,5 +1,6 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { restrictToOwner } from './auth.js'
 import type { ComputerChoice } from './backend.js'
 import { loadConfig, type Config } from './config.js'
 import type { Db } from './db.js'
@@ -39,13 +40,13 @@ export const SETTING_DEFAULTS: Settings = {
 
 /** 能锁住某项设置的环境变量；没列的项只能在界面上改 */
 const ENV: Partial<Record<SettingKey, string>> = {
-  baseURL: 'OPENGROKBOT_API_BASE',
-  model: 'OPENGROKBOT_MODEL',
-  vision: 'OPENGROKBOT_VISION',
-  computers: 'OPENGROKBOT_COMPUTERS',
-  browserMirror: 'OPENGROKBOT_BROWSER_MIRROR',
+  baseURL: 'OPENSUPERBOT_API_BASE',
+  model: 'OPENSUPERBOT_MODEL',
+  vision: 'OPENSUPERBOT_VISION',
+  computers: 'OPENSUPERBOT_COMPUTERS',
+  browserMirror: 'OPENSUPERBOT_BROWSER_MIRROR',
 }
-const API_KEY_ENV = 'OPENGROKBOT_API_KEY'
+const API_KEY_ENV = 'OPENSUPERBOT_API_KEY'
 
 const httpUrl = (v: unknown): v is string => {
   if (typeof v !== 'string' || v.length > 2048) return false
@@ -213,8 +214,15 @@ export function readApiKey(dataDir: string): string {
   return existsSync(path) ? readFileSync(path, 'utf8').trim() : ''
 }
 
-/** 存 key：空 = 删掉。先写临时文件再改名，断电不会留下半个 key；权限总是 0600。 */
-export function saveApiKey(dataDir: string, key: string): { ok: true } | { ok: false; code: 'invalid' } {
+/**
+ * 存 key：空 = 删掉。先写临时文件、收紧到只有本人能读，再改名：断电不会留下半个 key，正式位置上的 key 也从不是宽松的权限。
+ * 收紧和网关令牌一样：POSIX 上 0600（umask 不该把它放宽），Windows 上改 ACL（chmod 在那儿不管权限）
+ */
+export function saveApiKey(
+  dataDir: string,
+  key: string,
+  opts: { restrict?: (path: string) => void; warn?: (line: string) => void } = {},
+): { ok: true } | { ok: false; code: 'invalid' } {
   const k = key.trim()
   const path = keyPath(dataDir)
   if (!k) {
@@ -225,7 +233,12 @@ export function saveApiKey(dataDir: string, key: string): { ok: true } | { ok: f
   mkdirSync(dataDir, { recursive: true })
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, `${k}\n`, { mode: 0o600 })
-  chmodSync(tmp, 0o600) // umask 不该把它放宽
+  try {
+    ;(opts.restrict ?? restrictToOwner)(tmp)
+  } catch (err) {
+    // 收不紧也照存（和令牌文件一样），但要让人知道：这把 key 花的是你的钱
+    ;(opts.warn ?? console.warn)(`[gateway] could not limit ${path} to your account: ${err instanceof Error ? err.message : String(err)}`)
+  }
   renameSync(tmp, path)
   return { ok: true }
 }
@@ -237,7 +250,7 @@ export function resolveApiKey(env: Record<string, string | undefined>, dataDir: 
 }
 
 /** 配了这些环境变量的人是用环境变量管模型的（源码版老用户），向导不出来打扰 */
-const MODEL_ENV = ['OPENGROKBOT_API_KEY', 'OPENGROKBOT_API_BASE', 'OPENGROKBOT_MODEL']
+const MODEL_ENV = ['OPENSUPERBOT_API_KEY', 'OPENSUPERBOT_API_BASE', 'OPENSUPERBOT_MODEL']
 
 /** 要不要出首次启动向导：没 key、不是不要 key 的服务商、也没选演示模式 */
 export function needsSetup(env: Record<string, string | undefined>, db: Db, dataDir: string): boolean {

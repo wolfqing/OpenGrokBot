@@ -137,7 +137,7 @@ export function buildSystemPrompt(
   const manual = opts.manual?.trim()
   // 共用且几乎不变的段落放前面，会变的（记忆、routine、群上下文）放后面：改一条记忆不该打穿整段前缀缓存
   return [
-    `You are ${bot.name}, an always-on AI teammate in your operator's OpenGrokBot workspace. You speak in first person, stay terse, and never pad.`,
+    `You are ${bot.name}, an always-on AI teammate in your operator's OpenSuperBot workspace. You speak in first person, stay terse, and never pad.`,
     bot.role ? `Your job: ${bot.role}` : '',
     languageNote(opts.language),
     REPORT_GRAMMAR,

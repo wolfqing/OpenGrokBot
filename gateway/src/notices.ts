@@ -25,7 +25,7 @@ export function noticeText(n: Notice): string {
     case 'error': return `⚠️ ${n.params.name} hit an error: ${n.params.detail}`
     case 'budget':
       return `⚠️ ${n.params.name} hit today's token budget (${count(n.params.used)} of ${count(n.params.budget)} tokens). `
-        + 'It picks up again tomorrow — or raise OPENGROKBOT_DAILY_TOKENS.'
+        + 'It picks up again tomorrow — or raise OPENSUPERBOT_DAILY_TOKENS.'
     case 'paused': {
       const notice = `⏸ Paused at ${limitText(n.params.limit, n.params.count)}. Say "continue" to pick it up.`
       return n.lead ? `${n.lead}\n\n${notice}` : notice

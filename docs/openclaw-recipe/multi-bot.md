@@ -74,7 +74,7 @@ Agent-to-agent power is something you grant, not something a bot discovers. Two 
 - **Peer-to-peer is off** until you name the direction:
 
   ```bash
-  OPENGROKBOT_A2A_ALLOW='researcher>market-watch,market-watch>researcher'
+  OPENSUPERBOT_A2A_ALLOW='researcher>market-watch,market-watch>researcher'
   ```
 
   Each entry is one direction. `a>b` does not imply `b>a`.
@@ -92,7 +92,7 @@ it did.
 
 ## Merging into an existing config
 
-Already run OpenClaw? `setup.sh` refuses to touch your config and writes `generated/openclaw.grokbot.json5` instead. Merge the three blocks (`models.providers.xai` if using Grok, `agents.entries`, `tools.agentToAgent`) into your `~/.openclaw/openclaw.json`. Two rules from upstream docs worth repeating:
+Already run OpenClaw? `setup.sh` refuses to touch your config and writes `generated/openclaw.opensuperbot.json5` instead. Merge the three blocks (`models.providers.xai` if using Grok, `agents.entries`, `tools.agentToAgent`) into your `~/.openclaw/openclaw.json`. Two rules from upstream docs worth repeating:
 
 - Never point two agents at the same `agentDir` — state collisions.
 - Auth profiles don't auto-share between agents; static API keys are fine to copy.

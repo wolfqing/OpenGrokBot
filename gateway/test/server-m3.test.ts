@@ -20,7 +20,7 @@ function setup(llm: LLM = okLLM) {
   const db = openDb(':memory:')
   upsertBot(db, bot)
   ensureDmThread(db, bot.id)
-  const dataDir = mkdtempSync(join(tmpdir(), 'ogb-m3-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'osb-m3-'))
   return { db, dataDir, ...createApp({ db, llm, dataDir }) }
 }
 

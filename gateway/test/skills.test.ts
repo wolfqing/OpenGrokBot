@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { listSkills, readSkill, skillsDir } from '../src/skills.js'
 
 function withSkills(files: Record<string, string>): string {
-  const dir = skillsDir(mkdtempSync(join(tmpdir(), 'ogb-skills-')))
+  const dir = skillsDir(mkdtempSync(join(tmpdir(), 'osb-skills-')))
   mkdirSync(dir, { recursive: true })
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text)
   return dir
@@ -26,7 +26,7 @@ describe('shared skills', () => {
   })
 
   it('has no skills when the folder does not exist', async () => {
-    expect(await listSkills(join(tmpdir(), 'ogb-no-such-folder', 'skills'))).toEqual([])
+    expect(await listSkills(join(tmpdir(), 'osb-no-such-folder', 'skills'))).toEqual([])
   })
 
   it('reads a skill without its frontmatter, and nothing outside the list', async () => {

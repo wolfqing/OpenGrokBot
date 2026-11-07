@@ -12,10 +12,10 @@ const have = (...paths: string[]) => (p: string) => paths.includes(p)
 
 describe('findBrowser', () => {
   it('takes the operator-specified browser first, and refuses one that is not there', () => {
-    expect(findBrowser({ dataDir: '/data', env: { OPENGROKBOT_BROWSER: '/opt/brave' }, exists: have('/opt/brave', CHROME) }))
+    expect(findBrowser({ dataDir: '/data', env: { OPENSUPERBOT_BROWSER: '/opt/brave' }, exists: have('/opt/brave', CHROME) }))
       .toEqual({ executablePath: '/opt/brave', source: 'env' })
-    expect(() => findBrowser({ dataDir: '/data', env: { OPENGROKBOT_BROWSER: '/nope' }, exists: have(CHROME) }))
-      .toThrow(/OPENGROKBOT_BROWSER points to \/nope/)
+    expect(() => findBrowser({ dataDir: '/data', env: { OPENSUPERBOT_BROWSER: '/nope' }, exists: have(CHROME) }))
+      .toThrow(/OPENSUPERBOT_BROWSER points to \/nope/)
   })
 
   it('prefers real Chrome, then Edge, on the platform it runs on', () => {
@@ -99,7 +99,7 @@ describe('installBrowser', () => {
   it('explains a failed download and what to do instead', async () => {
     const { spawnImpl } = fakeSpawn(1, 'Error: connect ETIMEDOUT cdn.playwright.dev\n')
     await expect(installBrowser('/data/browsers', { spawnImpl, cliPath: '/pw/cli.js', exists: () => false, readdir: () => [] }))
-      .rejects.toThrow(/exit 1.*ETIMEDOUT[\s\S]*OPENGROKBOT_BROWSER/)
+      .rejects.toThrow(/exit 1.*ETIMEDOUT[\s\S]*OPENSUPERBOT_BROWSER/)
   })
 })
 
@@ -150,7 +150,7 @@ describe('createBrowserProvisioner', () => {
     const a = p.ensure()
     const b = p.ensure()
     await vi.waitFor(() => expect(install).toHaveBeenCalledTimes(1))
-    expect(install.mock.calls[0]![0]).toBe('/data/browsers')
+    expect(install.mock.calls[0]![0]).toBe(join('/data', 'browsers'))
     expect(install.mock.calls[0]![1]?.mirror).toBe('https://cdn.npmmirror.com/binaries/playwright')
     expect(p.status()).toEqual({ state: 'downloading', item: 'chromium', percent: 40, totalMiB: 185.8 })
     finish()
@@ -174,7 +174,7 @@ describe('createBrowserProvisioner', () => {
   it('reports a browser setting that points nowhere as a failure, without downloading', async () => {
     const install = vi.fn()
     const p = createBrowserProvisioner({ dataDir: '/data', browser: '/opt/nope', mirror: () => '', install })
-    expect(p.status()).toMatchObject({ state: 'failed', error: expect.stringMatching(/OPENGROKBOT_BROWSER points to \/opt\/nope/) })
+    expect(p.status()).toMatchObject({ state: 'failed', error: expect.stringMatching(/OPENSUPERBOT_BROWSER points to \/opt\/nope/) })
     await expect(p.ensure()).rejects.toThrow(/\/opt\/nope/)
     expect(install).not.toHaveBeenCalled()
   })

@@ -245,7 +245,7 @@ function findUrl(messages: ChatMsg[]): string | null {
 }
 
 /**
- * OPENGROKBOT_MODEL=stub：离线 dev/e2e 用的脚本化假模型。
+ * OPENSUPERBOT_MODEL=stub：离线 dev/e2e 用的脚本化假模型。
  * 按用户说的话挑一条链路走：网址 → 开网页并截图；「每天」→ 建 routine；
  * 「以后/from now on」→ 存规矩；「send/reply」→ 扣住等审批；其余发标准汇报 chip。
  */

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { restrictToOwner } from './auth.js'
 import type { Config, LlmApi } from './config.js'
 import type { Db } from './db.js'
 import { PROVIDERS, providerById, type Provider } from './providers.js'
@@ -76,8 +77,16 @@ export function readConnectionKey(dataDir: string, id: string): string {
   return existsSync(path) ? readFileSync(path, 'utf8').trim() : ''
 }
 
-/** 空 = 删掉。先写临时文件再改名；目录 0700、文件 0600 */
-export function saveConnectionKey(dataDir: string, id: string, key: string): void {
+/**
+ * 空 = 删掉。先写临时文件、收紧到只有本人能读，再改名；目录 0700。
+ * 收紧和网关令牌、默认连接的 key 一样：POSIX 上 0600，Windows 上改 ACL（chmod 在那儿不管权限）
+ */
+export function saveConnectionKey(
+  dataDir: string,
+  id: string,
+  key: string,
+  opts: { restrict?: (path: string) => void; warn?: (line: string) => void } = {},
+): void {
   if (!ID.test(id)) throw new Error(`bad connection id ${id}`)
   const path = keyFile(dataDir, id)
   const k = key.trim()
@@ -89,7 +98,11 @@ export function saveConnectionKey(dataDir: string, id: string, key: string): voi
   chmodSync(keysDir(dataDir), 0o700)
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, `${k}\n`, { mode: 0o600 })
-  chmodSync(tmp, 0o600)
+  try {
+    ;(opts.restrict ?? restrictToOwner)(tmp)
+  } catch (err) {
+    ;(opts.warn ?? console.warn)(`[gateway] could not limit ${path} to your account: ${err instanceof Error ? err.message : String(err)}`)
+  }
   renameSync(tmp, path)
 }
 

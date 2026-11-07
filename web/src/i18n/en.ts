@@ -5,7 +5,7 @@
  * 同事说的话、网关回的原因（B3 之前）、模型生成的内容不在这里。
  */
 export const en = {
-  'app.title': 'OpenGrokBot',
+  'app.title': 'OpenSuperBot',
   'app.noTeammates': 'No teammates yet.',
   'app.hireTitle': 'Hire a teammate',
   'app.confirmDeleteRoutine': 'Delete this routine? It will not fire again.',
@@ -198,7 +198,7 @@ export const en = {
   'panel.ofBudget': ' of {budget} budget',
   'notice.stopped': '⏹ Stopped. Tell me when to pick it back up.',
   'notice.error': '⚠️ {name} hit an error: {detail}',
-  'notice.budget': "⚠️ {name} hit today's token budget ({used} of {budget} tokens). It picks up again tomorrow — or raise OPENGROKBOT_DAILY_TOKENS.",
+  'notice.budget': "⚠️ {name} hit today's token budget ({used} of {budget} tokens). It picks up again tomorrow — or raise OPENSUPERBOT_DAILY_TOKENS.",
   'notice.paused.steps': '⏸ Paused at the {count}-step limit for one turn. Say "continue" to pick it up.',
   'notice.paused.minutes': '⏸ Paused at the {count}-minute limit for one turn. Say "continue" to pick it up.',
   'notice.paused.seconds': '⏸ Paused at the {count}-second limit for one turn. Say "continue" to pick it up.',
@@ -286,8 +286,8 @@ export const en = {
   'error.no_window': 'This computer has no window to show.',
   'error.docker_down': 'Docker is not running. Start Docker Desktop (or the docker service), then open this again.',
   'error.image_missing': 'The bot computer image {image} is not built yet. Run: {command}',
-  'error.browser_missing': 'OPENGROKBOT_BROWSER points to {path}, which does not exist.',
-  'error.browser_download_failed': 'The browser download failed: {detail} Install Google Chrome instead, or point OPENGROKBOT_BROWSER at a Chromium-based browser.',
+  'error.browser_missing': 'OPENSUPERBOT_BROWSER points to {path}, which does not exist.',
+  'error.browser_download_failed': 'The browser download failed: {detail} Install Google Chrome instead, or point OPENSUPERBOT_BROWSER at a Chromium-based browser.',
   'error.no_screen': 'This computer has no screen to stream.',
 
   'sandbox.install_bwrap': 'Install bubblewrap (apt install bubblewrap, or dnf install bubblewrap), then try again.',

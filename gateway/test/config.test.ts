@@ -1,6 +1,6 @@
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadConfig } from '../src/config.js'
+import { adoptLegacyEnv, defaultDbPath, loadConfig } from '../src/config.js'
 
 describe('loadConfig', () => {
   it('applies xAI defaults', () => {
@@ -16,13 +16,13 @@ describe('loadConfig', () => {
 
   it('honors env overrides', () => {
     const c = loadConfig({
-      OPENGROKBOT_API_BASE: 'http://localhost:11434/v1',
-      OPENGROKBOT_API_KEY: 'sk-test',
-      OPENGROKBOT_MODEL: 'qwen3',
-      OPENGROKBOT_PORT: '5050',
-      OPENGROKBOT_DATA: '/tmp/data',
-      OPENGROKBOT_DB: '/tmp/x.db',
-      OPENGROKBOT_TEAMMATES: '/tmp/teammates',
+      OPENSUPERBOT_API_BASE: 'http://localhost:11434/v1',
+      OPENSUPERBOT_API_KEY: 'sk-test',
+      OPENSUPERBOT_MODEL: 'qwen3',
+      OPENSUPERBOT_PORT: '5050',
+      OPENSUPERBOT_DATA: '/tmp/data',
+      OPENSUPERBOT_DB: '/tmp/x.db',
+      OPENSUPERBOT_TEAMMATES: '/tmp/teammates',
     })
     expect(c).toMatchObject({
       baseURL: 'http://localhost:11434/v1', apiKey: 'sk-test', model: 'qwen3',
@@ -48,24 +48,24 @@ describe('loadConfig', () => {
   })
 
   it('reads the per-turn limits, and never lets the step cap be zero', () => {
-    expect(loadConfig({ OPENGROKBOT_MAX_STEPS: '60', OPENGROKBOT_TURN_MINUTES: '0' }))
+    expect(loadConfig({ OPENSUPERBOT_MAX_STEPS: '60', OPENSUPERBOT_TURN_MINUTES: '0' }))
       .toMatchObject({ maxSteps: 60, turnMinutes: 0 })
-    expect(loadConfig({ OPENGROKBOT_MAX_STEPS: '0' }).maxSteps).toBe(40)
+    expect(loadConfig({ OPENSUPERBOT_MAX_STEPS: '0' }).maxSteps).toBe(40)
   })
 
   it('reads the new knobs from the environment', () => {
     const c = loadConfig({
-      OPENGROKBOT_HOST: '0.0.0.0',
-      OPENGROKBOT_TOKEN: 'fixed',
-      OPENGROKBOT_ALLOWED_ORIGINS: 'https://bots.example.com, http://mini.local:4747',
-      OPENGROKBOT_LLM_TIMEOUT_MS: '30000',
-      OPENGROKBOT_LLM_RETRIES: '0',
-      OPENGROKBOT_DAILY_TOKENS: '200000',
-      OPENGROKBOT_VISION: '1',
-      OPENGROKBOT_IDLE_STOP_MINUTES: '0',
-      OPENGROKBOT_BOT_MEMORY_MB: '1024',
-      OPENGROKBOT_BOT_CPUS: '1.5',
-      OPENGROKBOT_WEB_URL: 'http://localhost:5173',
+      OPENSUPERBOT_HOST: '0.0.0.0',
+      OPENSUPERBOT_TOKEN: 'fixed',
+      OPENSUPERBOT_ALLOWED_ORIGINS: 'https://bots.example.com, http://mini.local:4747',
+      OPENSUPERBOT_LLM_TIMEOUT_MS: '30000',
+      OPENSUPERBOT_LLM_RETRIES: '0',
+      OPENSUPERBOT_DAILY_TOKENS: '200000',
+      OPENSUPERBOT_VISION: '1',
+      OPENSUPERBOT_IDLE_STOP_MINUTES: '0',
+      OPENSUPERBOT_BOT_MEMORY_MB: '1024',
+      OPENSUPERBOT_BOT_CPUS: '1.5',
+      OPENSUPERBOT_WEB_URL: 'http://localhost:5173',
       TZ: 'Europe/Berlin',
     })
     expect(c).toMatchObject({
@@ -78,13 +78,31 @@ describe('loadConfig', () => {
   })
 
   it('turns a relative data dir into an absolute one (docker would read it as a volume name)', () => {
-    const c = loadConfig({ OPENGROKBOT_DATA: 'data-stub' })
+    const c = loadConfig({ OPENSUPERBOT_DATA: 'data-stub' })
     expect(isAbsolute(c.dataDir)).toBe(true)
     expect(basename(c.dataDir)).toBe('data-stub')
     expect(isAbsolute(c.dbPath)).toBe(true)
   })
 
   it('defaults the db inside the data dir', () => {
-    expect(loadConfig({ OPENGROKBOT_DATA: '/tmp/data' }).dbPath).toBe(join(resolve('/tmp/data'), 'opengrokbot.db'))
+    expect(loadConfig({ OPENSUPERBOT_DATA: '/tmp/data' }).dbPath).toBe(join(resolve('/tmp/data'), 'opensuperbot.db'))
+  })
+})
+
+describe('settings from before the rename (OpenGrokBot)', () => {
+  it('still honours OPENGROKBOT_* when the new name is unset, and the new name wins when both are set', () => {
+    const env: Record<string, string | undefined> = {
+      OPENGROKBOT_API_KEY: 'sk-old', OPENGROKBOT_MODEL: 'grok-old', OPENSUPERBOT_MODEL: 'qwen3', HOME: '/home/op',
+    }
+    expect(adoptLegacyEnv(env)).toEqual({ adopted: ['OPENGROKBOT_API_KEY'], shadowed: ['OPENGROKBOT_MODEL'] })
+    expect(loadConfig(env)).toMatchObject({ apiKey: 'sk-old', model: 'qwen3' })
+    expect(adoptLegacyEnv({ OPENSUPERBOT_PORT: '5050' })).toEqual({ adopted: [], shadowed: [] })
+  })
+
+  it('keeps using opengrokbot.db when an old data dir has only that file', () => {
+    const has = (...names: string[]) => (path: string) => names.some((n) => path === join('/data', n))
+    expect(defaultDbPath('/data', has('opengrokbot.db'))).toBe(join('/data', 'opengrokbot.db'))
+    expect(defaultDbPath('/data', has('opengrokbot.db', 'opensuperbot.db'))).toBe(join('/data', 'opensuperbot.db'))
+    expect(defaultDbPath('/data', has())).toBe(join('/data', 'opensuperbot.db'))
   })
 })

@@ -1,7 +1,7 @@
 # AppArmor profile that lets bubblewrap create the user namespace it sandboxes commands in.
 #
 # Ubuntu 23.10 and later stop unprivileged programs from creating user namespaces unless an AppArmor
-# profile allows it (kernel.apparmor_restrict_unprivileged_userns = 1), so bwrap fails and OpenGrokBot's
+# profile allows it (kernel.apparmor_restrict_unprivileged_userns = 1), so bwrap fails and OpenSuperBot's
 # switch for commands on a local computer refuses to turn on. This profile allows exactly that for
 # /usr/bin/bwrap and nothing else; the rest of the system keeps the restriction.
 #

@@ -2,7 +2,7 @@ import type { MessageKey } from './en'
 
 /** 中文。用词以 GLOSSARY.md 为准；类型保证不漏键、不多键，测试保证插值占位和英文一致。 */
 export const zhCN: Record<MessageKey, string> = {
-  'app.title': 'OpenGrokBot',
+  'app.title': 'OpenSuperBot',
   'app.noTeammates': '还没有同事。',
   'app.hireTitle': '雇一位同事',
   'app.confirmDeleteRoutine': '删掉这个例行任务？之后不会再触发。',
@@ -195,7 +195,7 @@ export const zhCN: Record<MessageKey, string> = {
   'panel.ofBudget': '，预算 {budget}',
   'notice.stopped': '⏹ 停下了。要接着做就告诉我。',
   'notice.error': '⚠️ {name} 出错了：{detail}',
-  'notice.budget': '⚠️ {name} 用完了今天的 token 预算（{used} / {budget}）。明天会接着干，也可以调高 OPENGROKBOT_DAILY_TOKENS。',
+  'notice.budget': '⚠️ {name} 用完了今天的 token 预算（{used} / {budget}）。明天会接着干，也可以调高 OPENSUPERBOT_DAILY_TOKENS。',
   'notice.paused.steps': '⏸ 到了一个回合 {count} 步的上限，先停在这里。说「继续」就接着做。',
   'notice.paused.minutes': '⏸ 到了一个回合 {count} 分钟的上限，先停在这里。说「继续」就接着做。',
   'notice.paused.seconds': '⏸ 到了一个回合 {count} 秒的上限，先停在这里。说「继续」就接着做。',
@@ -283,8 +283,8 @@ export const zhCN: Record<MessageKey, string> = {
   'error.no_window': '这台电脑没有可以弹出的窗口。',
   'error.docker_down': 'Docker 没在运行。打开 Docker Desktop（或启动 docker 服务）后再打开这里。',
   'error.image_missing': '同事电脑的镜像 {image} 还没建。运行：{command}',
-  'error.browser_missing': 'OPENGROKBOT_BROWSER 指向的 {path} 不存在。',
-  'error.browser_download_failed': '浏览器下载失败：{detail} 可以改装 Google Chrome，或者把 OPENGROKBOT_BROWSER 指向一个 Chromium 内核的浏览器。',
+  'error.browser_missing': 'OPENSUPERBOT_BROWSER 指向的 {path} 不存在。',
+  'error.browser_download_failed': '浏览器下载失败：{detail} 可以改装 Google Chrome，或者把 OPENSUPERBOT_BROWSER 指向一个 Chromium 内核的浏览器。',
   'error.no_screen': '这台电脑没有可以传过来的屏幕。',
 
   'sandbox.install_bwrap': '装上 bubblewrap（apt install bubblewrap 或 dnf install bubblewrap）后再试。',

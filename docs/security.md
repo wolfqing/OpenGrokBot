@@ -9,8 +9,8 @@ injection — that follows an agent wherever it runs. This page is precise about
 | Boundary | How it holds |
 |---|---|
 | Only you can drive the gateway | Every API call, the live stream, screenshots and screens need the gateway token — a random secret in `gateway/data/auth-token` (mode `0600`). A browser signs in once through the link printed at startup and keeps an `HttpOnly`, `SameSite=Strict` cookie; scripts send `Authorization: Bearer <token>`. |
-| Other websites cannot act as you | Anything that changes state, and the WebSocket, must come from the gateway's own origin (or the UI's, `OPENGROKBOT_WEB_URL`), and requests with a body must be JSON — which no other page can send without a preflight the gateway never answers. A page you happen to visit cannot approve a hold, post into a thread or read the stream. |
-| Your network cannot reach it | The gateway listens on `127.0.0.1` unless you set `OPENGROKBOT_HOST`. |
+| Other websites cannot act as you | Anything that changes state, and the WebSocket, must come from the gateway's own origin (or the UI's, `OPENSUPERBOT_WEB_URL`), and requests with a body must be JSON — which no other page can send without a preflight the gateway never answers. A page you happen to visit cannot approve a hold, post into a thread or read the stream. |
+| Your network cannot reach it | The gateway listens on `127.0.0.1` unless you set `OPENSUPERBOT_HOST`. |
 | A bot cannot approve its own holds | The token never enters a bot's workspace. A bot's shell or browser can reach the host, but cannot authenticate. |
 | Only you can grant a standing approval | A rule is created only when you approve a hold with *Always allow…* from your signed-in browser. Its scope is fixed by the gateway: one teammate, one kind, one exact destination, with an expiry you pick. The destination must have the shape of one place — one email address, one channel or handle, one account, page or thread; wildcards, lists, "everyone" and whole services are refused, and so is anything over 200 characters. Destinations are compared whole: case is ignored except in a URL's path. Purchases, bookings and "other" can never become rules. Bots have no tool to create, widen or extend one; you revoke them from the computer panel. |
 | Rules only cover work you started | A rule lets a hold through only in a turn you started — your message, your decision, your answer, your question to the group — and only while no webhook payload is in the teammate's view. Turns started by a routine, a webhook or a teammate's handoff always ask, and the chip says why. The model is never told which destinations a rule covers. What this does not cover: a page the teammate reads during a turn you started is still in front of it, and so is your own earlier message that named a destination — a convincing page could still steer a hold to a destination you once allowed. Keep standing rules for destinations where a wrong send is cheap. |
@@ -23,13 +23,13 @@ injection — that follows an agent wherever it runs. This page is precise about
 | A local computer's commands are off, then caged | Commands are off until you turn them on for that teammate in its panel. On, they run under Seatbelt (macOS) or bubblewrap (Linux): they can write only the teammate's folder and a private tmp; your whole home directory — keys, documents, other projects, your own browser profile, the gateway's data dir — is unreadable, except the runtime managers (`~/.nvm`, `~/.volta`, `~/.pyenv`, `~/.cargo/bin`, …) that are put back read-only; a data dir outside your home is hidden too; `HOME` points at the folder and the environment is a short whitelist. The switch refuses to turn on until a self-check shows the sandbox blocks a write outside the folder, a read of the gateway token and a listing of your home directory. A command that outlives its timeout, or that you stop, is killed with its whole process group. |
 | A bot cannot put code in front of you | The screen page and its noVNC code are served by the gateway from its own copy; only the raw VNC stream comes from the bot's computer. Nothing a bot changes inside its container reaches your browser as a page. |
 | Standing rules only change through the chip | `MEMORY.md` lives outside the bot's workspace. The only ways to change it are `save_memory`, `forget_memory` and the remove button in the computer panel, and each of them posts a diff chip; a `MEMORY.md` a bot writes into its own workspace is ignored. Screenshots — the evidence — are stored outside it too. |
-| Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENGROKBOT_A2A_ALLOW`, and relays stop after two hops. |
+| Handoffs are allowlisted | By default only the chief of staff can reach everyone. Peer directions need `OPENSUPERBOT_A2A_ALLOW`, and relays stop after two hops. |
 | A watch routine cannot act | Its turns are offered only read-only tools, and any other tool the model names is refused by the gateway: no shell, no writing files, no clicking, typing or key presses in the browser, no handoffs, no changes to rules or routines. What it holds never matches a standing rule. It can still load pages, so it can still be steered by what it reads; it just has nothing to act with. |
 | A batch is approved item by item | The gateway stores the exact items a bot held and the ones you left ticked; the bot is told that subset and nothing else. A batch can never become a standing rule. |
 | Shared skills are yours | Skills live in `<data>/skills`, outside every bot's computer; bots read them through `read_skill`, which only accepts a name from the list. |
 | There is a record | Every tool call, approval decision and webhook call lands in the action log in SQLite, with what started the turn. Text typed into a page is not logged. Entries older than 90 days are dropped. |
-| Spend has a ceiling if you want one | `OPENGROKBOT_DAILY_TOKENS` stops a bot for the rest of the day once it has used that many tokens. |
-| You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes, and a turn pauses after 40 model steps or 20 minutes (`OPENGROKBOT_MAX_STEPS`, `OPENGROKBOT_TURN_MINUTES`). Routines can be paused or deleted from the computer panel. |
+| Spend has a ceiling if you want one | `OPENSUPERBOT_DAILY_TOKENS` stops a bot for the rest of the day once it has used that many tokens. |
+| You can always stop it | The stop button (or `POST /api/threads/:id/stop`) aborts the running turn — including a shell command in flight, which is killed in the container. No single command runs longer than ten minutes, and a turn pauses after 40 model steps or 20 minutes (`OPENSUPERBOT_MAX_STEPS`, `OPENSUPERBOT_TURN_MINUTES`). Routines can be paused or deleted from the computer panel. |
 
 ## A convention, not a wall
 
@@ -63,7 +63,7 @@ because of something the bot read shows up there.
    (`gateway/data/workspaces/<bot>/.browser`), and they are as powerful as the account behind them.
 3. **Keep the gateway on loopback.** For remote access, tunnel — see [always-on.md](always-on.md). If you
    must bind `0.0.0.0`, the token still guards it, but put TLS in front.
-4. **Cap spend twice**: a limit on the API key at your provider, and `OPENGROKBOT_DAILY_TOKENS` here.
+4. **Cap spend twice**: a limit on the API key at your provider, and `OPENSUPERBOT_DAILY_TOKENS` here.
 5. **Rotate the token if it leaked**: delete `gateway/data/auth-token` and restart. Every browser signs in again.
 6. **Treat a webhook address like a password.** Anyone holding it can wake that routine with any body. If one
    leaked, delete the routine and ask for a new one.
@@ -72,8 +72,8 @@ because of something the bot read shows up there.
 
 | Secret | Where |
 |---|---|
-| Model API key | The `OPENGROKBOT_API_KEY` environment variable. The gateway never writes it to disk. |
-| Gateway token | `gateway/data/auth-token`, readable by your account only (`0600`; on Windows the gateway resets the file's access list, removes inherited access and grants only you, and warns if it cannot), or `OPENGROKBOT_TOKEN` if you pin one. Set `OPENGROKBOT_QUIET_TOKEN=1` to keep it out of service logs. |
+| Model API key | The `OPENSUPERBOT_API_KEY` environment variable. The gateway never writes it to disk. |
+| Gateway token | `gateway/data/auth-token`, readable by your account only (`0600`; on Windows the gateway resets the file's access list, removes inherited access and grants only you, and warns if it cannot), or `OPENSUPERBOT_TOKEN` if you pin one. Set `OPENSUPERBOT_QUIET_TOKEN=1` to keep it out of service logs. |
 | Bot logins | Each bot's browser profile: inside its container (Docker), or under `<data>/bots/<id>/browser` (local). The gateway never sees a password. |
 | Shim token, VNC password | Generated per container at creation, kept in that container's environment. |
 | Webhook keys | One per webhook routine, in the gateway's SQLite database. Shown only in the computer panel — inside the address, and on its own as the *Secret* for GitHub — and in the token-guarded routine listing the panel reads. |

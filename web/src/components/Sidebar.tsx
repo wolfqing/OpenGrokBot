@@ -86,7 +86,7 @@ export function Sidebar({ conversations, selectedId, statuses, onSelect, onNewBo
   return (
     <aside className="sidebar">
       <div className="sidebar-title">
-        <span>OpenGrokBot</span>
+        <span>OpenSuperBot</span>
         {onModels ? (
           <button className="sidebar-new sidebar-models" onClick={onModels} aria-label={t('sidebar.models')} title={t('sidebar.models')}>AI</button>
         ) : null}
