@@ -227,3 +227,50 @@ export type BrowserStatus =
   /** item：在下哪一样（chromium、ffmpeg……），每样都从 0% 走起 */
   | { state: 'downloading'; item: string | null; percent: number | null; totalMiB: number | null }
   | { state: 'failed'; error: string }
+
+/** 模型接口的说法：chat = OpenAI 兼容；anthropic = Claude 原生；responses = OpenAI 的 Responses */
+export type LlmApi = 'chat' | 'anthropic' | 'responses'
+
+/** 网关的服务商预设（/api/settings/providers）；说明文字由界面按 id 翻 */
+export type ProviderPreset = {
+  id: string
+  name: string
+  region: 'cn' | 'global' | 'local' | 'custom'
+  api: LlmApi
+  /** 订阅套餐的 key（编程套餐之类）：先讲清楚条款再让人用 */
+  plan?: true
+  baseURL: string
+  needsKey: boolean
+  keyUrl: string
+  defaultModel: string
+  vision: boolean
+  docsUrl: string
+}
+
+/** 一个模型连接：一家服务商 + 一个 key + 默认模型。builtIn 的是默认连接（向导配的那个） */
+export type ModelConnection = {
+  id: string
+  name: string
+  provider: string
+  api: LlmApi
+  baseURL: string
+  model: string
+  vision: boolean
+  builtIn: boolean
+  key: { set: boolean; masked: string; source: 'env' | 'file' | 'none' }
+  /** 被环境变量定死、界面上改不了的字段 */
+  locked: string[]
+}
+
+/** 同事选的模型连接；model 为空 = 用连接自己的默认模型 */
+export type BotLlm = { connectionId: string; model: string | null }
+
+export type ConnectionsState = { connections: ModelConnection[]; bots: Record<string, BotLlm> }
+
+/** 网关拒收的字段：key 是字段名，code 由界面翻 */
+export type FieldError = { key: string; code: string }
+
+export type CheckCode = 'bad_key' | 'quota' | 'rate_limited' | 'model_not_found' | 'unreachable' | 'timeout' | 'provider_error'
+export type CheckResult =
+  | { ok: true; models: string[]; modelListed: boolean | null }
+  | { ok: false; code: CheckCode; status?: number; detail?: string; step?: 'models' | 'chat'; models?: string[] }

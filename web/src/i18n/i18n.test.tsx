@@ -18,7 +18,11 @@ describe('the Chinese dictionary', () => {
   })
 
   it('is actually translated: no entry is left as the English text (brand names aside)', () => {
-    const sameOnPurpose = new Set<MessageKey>(['app.title', 'panel.trigger.webhook'])
+    const sameOnPurpose = new Set<MessageKey>([
+      'app.title', 'panel.trigger.webhook',
+      // 品牌名、接口名和纯格式串，两种语言一样
+      'models.form.apiKey', 'models.form.api.responses', 'picker.chip',
+    ])
     const untranslated = (Object.keys(en) as MessageKey[]).filter((k) => !sameOnPurpose.has(k) && zhCN[k] === en[k])
     expect(untranslated).toEqual([])
   })

@@ -21,6 +21,12 @@
 | token (model use) | token | 计费单位不翻：「12,345 个 token」 |
 | group / room | 群聊 / 群 | |
 | thread | 对话 | 不说「线程」「会话」 |
+| AI models | AI 模型 | 设置里管服务商和 key 的那一块 |
+| (model) connection | 连接 | 一家服务商 + 一个 key + 默认模型；没选过的同事用「默认连接」 |
+| service / provider | 服务商 | DeepSeek、Claude 这些；不说「供应商」「提供方」 |
+| API key | API key | 不翻 |
+| subscription plan key | 订阅套餐的 key | 编程套餐之类；和按量付费的 API key 分开说 |
+| vision | 看截图 | 「让它看截图」；不说「视觉」「多模态」 |
 
 ## 事情和动作
 

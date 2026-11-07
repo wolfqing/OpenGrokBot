@@ -99,7 +99,7 @@ export function parseSetting<K extends SettingKey>(key: K, value: unknown): Sett
   return PARSE[key](value)
 }
 
-export type SettingError = { key: string; code: 'unknown_setting' | 'invalid' | 'locked' }
+export type SettingError = { key: string; code: 'unknown_setting' | 'invalid' | 'locked' | 'subscription_token' }
 
 /** 只校验不写：null = 恢复默认 */
 export function checkSettings(patch: Record<string, unknown>): { errors: SettingError[]; writes: [SettingKey, unknown][] } {
@@ -170,8 +170,14 @@ export function applySettings(config: Config, s: Settings, apiKey: string): Conf
 
 /** 此刻生效的配置：启动配置 + 库里的设置 + key 文件，环境变量照样优先。每次都现读，改了马上看得到。 */
 export function currentConfig(startup: Config, env: Record<string, string | undefined>, db: Db): Config {
-  const { values } = resolveSettings(env, readSavedSettings(db))
-  return { ...applySettings(startup, values, resolveApiKey(env, startup.dataDir).key), extraBody: providerById(values.provider)?.request ?? {} }
+  const { values, sources } = resolveSettings(env, readSavedSettings(db))
+  // 地址是环境变量给的：那是源码版老用户自己配的 OpenAI 兼容口，不拿界面上选过的服务商去猜它的接口
+  const provider = sources.baseURL === 'env' ? undefined : providerById(values.provider)
+  return {
+    ...applySettings(startup, values, resolveApiKey(env, startup.dataDir).key),
+    extraBody: provider?.request ?? {},
+    api: provider?.api ?? 'chat',
+  }
 }
 
 const keyPath = (dataDir: string) => join(dataDir, 'llm-key')
@@ -179,6 +185,14 @@ const keyPath = (dataDir: string) => join(dataDir, 'llm-key')
 /** 要原样放进 Authorization 头：空白和控制字符会把头拆开 */
 export function validApiKey(key: string): boolean {
   return key.length > 0 && key.length <= 4096 && !/[\s\u0000-\u001f\u007f]/.test(key)
+}
+
+/**
+ * Claude 订阅（Pro/Max）的登录令牌：Anthropic 不许第三方应用拿它调模型，查到了会封号。
+ * 粘进来就拒收，并告诉人去控制台生成一个 API key（套餐附带的 API 额度也走那个 key）。
+ */
+export function isSubscriptionToken(key: string): boolean {
+  return /^sk-ant-oat/i.test(key.trim())
 }
 
 /** 给界面看的样子：只露开头三个和末尾四个字符；太短的一个都不露 */

@@ -2,10 +2,11 @@ import type { Hono } from 'hono'
 import type { ComputerKind } from './computer.js'
 import type { Config } from './config.js'
 import type { Db } from './db.js'
+import { MAIN, resetBotModels } from './connections.js'
 import { checkConnection, listModels } from './llm-check.js'
 import { PROVIDERS, providerById } from './providers.js'
 import {
-  checkSettings, currentConfig, lockedKeys, maskKey, parseSetting, readSavedSettings, resolveApiKey, resolveSettings,
+  checkSettings, currentConfig, isSubscriptionToken, lockedKeys, maskKey, parseSetting, readSavedSettings, resolveApiKey, resolveSettings,
   saveApiKey, saveSettings, validApiKey, type SettingError, type SettingKey,
 } from './settings.js'
 
@@ -50,19 +51,27 @@ export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db; /** 启�
     if (!isObject(body)) return c.json({ error: 'invalid_settings', errors: [{ key: '', code: 'invalid' }] }, 400)
     const { apiKey, ...patch } = body
     const locked = lockedKeys(env)
+    // key 被环境变量定死时，服务商和地址也不能换：那把 key 是给那一家的，换了地方它也会跟过去
+    const keyPinned = locked.has('apiKey')
     const errors: SettingError[] = Object.keys(patch)
-      .filter((k) => locked.has(k as SettingKey))
+      .filter((k) => locked.has(k as SettingKey) || (keyPinned && (k === 'provider' || k === 'baseURL')))
       .map((key) => ({ key, code: 'locked' as const }))
     if (apiKey !== undefined) {
       if (locked.has('apiKey')) errors.push({ key: 'apiKey', code: 'locked' })
       else if (apiKey !== null && (typeof apiKey !== 'string' || (apiKey.trim() !== '' && !validApiKey(apiKey.trim())))) {
         errors.push({ key: 'apiKey', code: 'invalid' })
       }
+      else if (typeof apiKey === 'string' && isSubscriptionToken(apiKey)) errors.push({ key: 'apiKey', code: 'subscription_token' })
     }
     errors.push(...checkSettings(patch).errors.filter((e) => !locked.has(e.key as SettingKey)))
     if (errors.length) return c.json({ error: 'invalid_settings', errors }, 400)
+    const before = now()
     saveSettings(db, patch)
+    const after = now()
     if (apiKey !== undefined) saveApiKey(dataDir, typeof apiKey === 'string' ? apiKey : '')
+    else if (after.baseURL !== before.baseURL) saveApiKey(dataDir, '') // 换了地址没给新 key：旧 key 不跟过去
+    // 默认连接换了地方：同事在它上面单独选的模型多半不存在了
+    if (after.baseURL !== before.baseURL || after.api !== before.api) resetBotModels(db, MAIN)
     return c.json(view())
   })
 
@@ -82,23 +91,28 @@ export function mountSettings(app: Hono, deps: SettingsDeps & { db: Db; /** 启�
     const model = pick('model')
     // 服务商字段跟 key 一样：换了地址又没说是哪家，就不带
     let extraBody = baseURL === current.baseURL ? current.extraBody : {}
+    let api = baseURL === current.baseURL ? current.api : 'chat' as const
     if (body.provider !== undefined) {
       const p = parseSetting('provider', body.provider)
       if (p === undefined) errors.push({ key: 'provider', code: 'invalid' })
-      else extraBody = providerById(p)?.request ?? {}
+      else {
+        extraBody = providerById(p)?.request ?? {}
+        api = providerById(p)?.api ?? 'chat'
+      }
     }
     let apiKey = baseURL === current.baseURL ? current.apiKey : ''
     if (body.apiKey !== undefined) {
       const k = typeof body.apiKey === 'string' ? body.apiKey.trim() : null
       if (k === null || (k !== '' && !validApiKey(k))) errors.push({ key: 'apiKey', code: 'invalid' })
+      else if (isSubscriptionToken(k)) errors.push({ key: 'apiKey', code: 'subscription_token' })
       else apiKey = k
     }
     if (errors.length) return c.json({ error: 'invalid_settings', errors }, 400)
-    return c.json(await checkConnection({ baseURL, apiKey, model, extraBody }, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }))
+    return c.json(await checkConnection({ baseURL, apiKey, model, extraBody, api }, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }))
   })
 
   app.get('/api/settings/models', async (c) => {
-    const { baseURL, apiKey } = now()
-    return c.json(await listModels({ baseURL, apiKey }, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }))
+    const { baseURL, apiKey, api } = now()
+    return c.json(await listModels({ baseURL, apiKey, api }, { ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }))
   })
 }

@@ -15,8 +15,9 @@ xAI 的 Grok Bot 卖的是「随时在线的同事」：每个 bot 配一台云�
 每个 bot 都跑在 xAI 的云上，**你的登录态也一起在里面**。
 
 这个仓库是同样的形状，自托管版：你机器上一个 gateway 进程、每个 bot 一台自己的电脑（一个 Docker 容器；没有
-Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹）、一个信息密度很高、更像工作台的网页客户端，后面接
-任何 OpenAI 兼容的模型。
+Docker 时，就是你 Mac 或 Linux 机器上它自己的浏览器和文件夹）、一个信息密度很高、更像工作台的网页客户端，每位同事
+后面接你选的模型：Claude、OpenAI、Gemini、Grok、DeepSeek、Kimi、通义、智谱、MiniMax、本地 Ollama，或任何
+OpenAI 兼容的模型。
 
 ![同事的线程：它汇报干了什么、把要出门的动作扣住、把看到的画面贴回来](assets/screenshot-thread.png)
 
@@ -128,6 +129,9 @@ OPENSUPERBOT_API_KEY=sk-… OPENSUPERBOT_MODEL=grok-4.7 pnpm dev
 ```
 
 （PowerShell：`$env:OPENSUPERBOT_API_KEY = 'sk-…'; $env:OPENSUPERBOT_MODEL = 'grok-4.7'; pnpm dev`。）
+
+想让不同同事用不同的模型：点侧栏的 **AI**，每家有 key 的服务加一个连接，再到同事对话的顶部给它选一个。
+支持哪些服务、该用哪种 key、哪些订阅不许别的应用用，见 [AI 模型](docs/models.md)。
 
 gateway 启动时自己选电脑的种类并写进日志：Docker 守护进程应答、镜像也建好了就用 Docker，否则用本机模式
 （`OPENSUPERBOT_COMPUTERS=docker|local` 可以强制）。用 Docker 要先建镜像：`docker build -t opensuperbot/bot:dev docker/bot`。

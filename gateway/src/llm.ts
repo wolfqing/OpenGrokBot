@@ -1,12 +1,19 @@
-import type { Config } from './config.js'
+import type { Config, LlmApi } from './config.js'
+import { createAnthropicLLM } from './llm-anthropic.js'
+import { createResponsesLLM } from './llm-responses.js'
 
 export type ChatMsg = {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | null
   tool_call_id?: string
   tool_calls?: unknown[]
-  /** 附在 user 消息上的图片（data URL）；发给模型时转成 image_url 片段 */
+  /** 附在 user 消息上的图片（data URL）；发给模型时转成各家的图片片段 */
   images?: string[]
+  /**
+   * 原生接口回的原样内容（Claude 的 content 块、Responses 的 output 项）。同一回合里原样发回去：
+   * 思考块、推理项和它们的签名要一字不改才认；换了一家接口就按 content / tool_calls 重新拼。
+   */
+  native?: { api: Exclude<LlmApi, 'chat'>; items: unknown[] }
 }
 
 export type ToolDef = { type: 'function'; function: { name: string; description?: string; parameters: unknown } }
@@ -23,7 +30,10 @@ export interface LLM {
   chat(messages: ChatMsg[], tools: ToolDef[], opts?: ChatOptions): Promise<AssistantTurn>
 }
 
-type Sleep = (ms: number) => Promise<void>
+/** 造一个模型客户端要的全部：一个连接（地址、key、模型、接口）加上超时和重试 */
+export type LlmTarget = Pick<Config, 'baseURL' | 'apiKey' | 'model' | 'extraBody' | 'llmTimeoutMs' | 'llmRetries'> & { api?: LlmApi }
+
+export type Sleep = (ms: number) => Promise<void>
 const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** 这些状态码是「服务端忙/网络抖」：等一等再试有意义；4xx 里的其余错误重试也不会变。 */
@@ -41,8 +51,73 @@ function retryAfterMs(res: Response): number | null {
   return Number.isFinite(at) ? Math.min(Math.max(at - Date.now(), 0), 30_000) : null
 }
 
+/**
+ * POST 一个 JSON，带超时、退避重试和停止按钮。OpenAI 兼容和 Responses 两种接口共用；
+ * Claude 走官方 SDK，它自己管这些。报错的说法三家一致（界面和日志按这个认）。
+ */
+export async function postJson<T>(
+  url: string,
+  body: string,
+  target: Pick<LlmTarget, 'apiKey' | 'llmTimeoutMs' | 'llmRetries'>,
+  opts: ChatOptions,
+  fetchImpl: typeof fetch,
+  sleep: Sleep,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const canRetry = attempt < target.llmRetries
+    // 没有超时的话，一个挂住的请求会让 bot 在「思考中」里卡五分钟（undici 的默认值）
+    const timeout = AbortSignal.timeout(target.llmTimeoutMs)
+    const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
+    try {
+      const res = await fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(target.apiKey ? { Authorization: `Bearer ${target.apiKey}` } : {}),
+        },
+        body,
+        signal,
+      })
+      if (!res.ok) {
+        const detail = (await res.text().catch(() => '')).slice(0, 300)
+        if (RETRYABLE.has(res.status) && canRetry) {
+          await sleep(retryAfterMs(res) ?? backoffMs(attempt))
+          continue
+        }
+        throw new ProviderError(`LLM API ${res.status}: ${detail}`)
+      }
+      return (await res.json()) as T
+    } catch (err) {
+      if (err instanceof ProviderError) throw err
+      if (opts.signal?.aborted) throw err // 操作者按了停止：立刻收手，不重试
+      if (canRetry) {
+        await sleep(backoffMs(attempt))
+        continue
+      }
+      if (timeout.aborted) throw new Error(`LLM API timed out after ${target.llmTimeoutMs / 1000}s`)
+      throw new Error(`LLM API unreachable: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+}
+
+export const EARLIER_SCREENSHOT = '[an earlier screenshot, no longer shown]'
+
+/**
+ * 只给模型看最新一张截图，更早的换成一句占位，免得每一步都重复付图片的 token。
+ * 发请求时现换、不改 messages 本身：Claude 要求历史一字不改（改了它就不认前面的思考块），所以 Claude 那边不调这个。
+ */
+export function latestImageOnly(messages: ChatMsg[]): ChatMsg[] {
+  let last = -1
+  messages.forEach((m, i) => { if (m.images?.length) last = i })
+  return messages.map((m, i) => {
+    if (i === last || !m.images?.length) return m
+    const { images: _images, ...rest } = m
+    return { ...rest, content: EARLIER_SCREENSHOT }
+  })
+}
+
 function toWire(m: ChatMsg): Record<string, unknown> {
-  const { images, ...rest } = m
+  const { images, native: _native, ...rest } = m
   if (!images?.length) return rest
   return {
     ...rest,
@@ -53,15 +128,22 @@ function toWire(m: ChatMsg): Record<string, unknown> {
   }
 }
 
-export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep: Sleep = realSleep): LLM {
-  if (config.model === 'stub') return createStubLLM()
-  const url = `${config.baseURL.replace(/\/$/, '')}/chat/completions`
+export function createLLM(target: LlmTarget, fetchImpl: typeof fetch = fetch, sleep: Sleep = realSleep): LLM {
+  if (target.model === 'stub') return createStubLLM()
+  if (target.api === 'anthropic') return createAnthropicLLM(target, fetchImpl)
+  if (target.api === 'responses') return createResponsesLLM(target, fetchImpl, sleep)
+  return createChatLLM(target, fetchImpl, sleep)
+}
+
+/** OpenAI 兼容的 Chat Completions：国内几家、OpenRouter、Ollama、Gemini 的兼容口都是这个 */
+function createChatLLM(target: LlmTarget, fetchImpl: typeof fetch, sleep: Sleep): LLM {
+  const url = `${target.baseURL.replace(/\/$/, '')}/chat/completions`
   return {
     async chat(messages, tools, opts = {}) {
       const body = JSON.stringify({
-        ...config.extraBody,
-        model: config.model,
-        messages: messages.map(toWire),
+        ...target.extraBody,
+        model: target.model,
+        messages: latestImageOnly(messages).map(toWire),
         ...(tools.length ? { tools } : {}),
         ...(tools.length && opts.toolChoice ? { tool_choice: opts.toolChoice } : {}),
       })
@@ -70,43 +152,7 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep
         choices?: { message?: { role: 'assistant'; content?: string | null; tool_calls?: WireToolCall[] } }[]
         usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
       }
-      let data: WireResponse
-      for (let attempt = 0; ; attempt++) {
-        const canRetry = attempt < config.llmRetries
-        // 没有超时的话，一个挂住的请求会让 bot 在「思考中」里卡五分钟（undici 的默认值）
-        const timeout = AbortSignal.timeout(config.llmTimeoutMs)
-        const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
-        try {
-          const res = await fetchImpl(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-            },
-            body,
-            signal,
-          })
-          if (!res.ok) {
-            const detail = (await res.text().catch(() => '')).slice(0, 300)
-            if (RETRYABLE.has(res.status) && canRetry) {
-              await sleep(retryAfterMs(res) ?? backoffMs(attempt))
-              continue
-            }
-            throw new ProviderError(`LLM API ${res.status}: ${detail}`)
-          }
-          data = (await res.json()) as WireResponse
-          break
-        } catch (err) {
-          if (err instanceof ProviderError) throw err
-          if (opts.signal?.aborted) throw err // 操作者按了停止：立刻收手，不重试
-          if (canRetry) {
-            await sleep(backoffMs(attempt))
-            continue
-          }
-          if (timeout.aborted) throw new Error(`LLM API timed out after ${config.llmTimeoutMs / 1000}s`)
-          throw new Error(`LLM API unreachable: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
+      const data = await postJson<WireResponse>(url, body, target, opts, fetchImpl, sleep)
       const msg = data.choices?.[0]?.message
       if (!msg) throw new Error('LLM API: empty choices')
       return {
@@ -116,6 +162,7 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep
           name: t.function?.name ?? '',
           args: safeParseJson(t.function?.arguments),
         })),
+        // 原样留着：Gemini 的 thought_signature 之类挂在 tool_calls 上的字段，下一步要原样带回去
         raw: msg as ChatMsg,
         ...(data.usage ? {
           usage: {
@@ -130,13 +177,13 @@ export function createLLM(config: Config, fetchImpl: typeof fetch = fetch, sleep
 }
 
 /** 换了这几项才要换一个模型客户端；端口、看图之类的不相干 */
-const clientKey = (c: Config) => JSON.stringify([c.model, c.baseURL, c.apiKey, c.llmTimeoutMs, c.llmRetries, c.extraBody])
+const clientKey = (c: LlmTarget) => JSON.stringify([c.api ?? 'chat', c.model, c.baseURL, c.apiKey, c.llmTimeoutMs, c.llmRetries, c.extraBody])
 
 /**
  * 设置改了不用重启：每次调用先读当前配置，模型、地址、key 有变就换一个客户端，下一次调用就用上。
  * 已经发出去的那次调用拿着自己的客户端，不受影响。
  */
-export function createLiveLLM(current: () => Config, make: (c: Config) => LLM = (c) => createLLM(c)): LLM {
+export function createLiveLLM<C extends LlmTarget>(current: () => C, make: (c: C) => LLM = (c) => createLLM(c)): LLM {
   let cached: { key: string; llm: LLM } | undefined
   return {
     async chat(messages, tools, opts) {
@@ -148,7 +195,7 @@ export function createLiveLLM(current: () => Config, make: (c: Config) => LLM = 
   }
 }
 
-function safeParseJson(s: unknown): unknown {
+export function safeParseJson(s: unknown): unknown {
   if (typeof s !== 'string') return null
   try { return JSON.parse(s) } catch { return null }
 }

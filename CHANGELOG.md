@@ -12,6 +12,41 @@ place: see [Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot).
 
 ### Added
 
+- Each teammate can run on its own AI. **AI models** (the `AI` button next to `+` in the sidebar) lists your
+  connections — a service, its API key and a default model — and adds, tests, edits or deletes them; the top of
+  a teammate's thread shows which connection and model it uses, and a click switches it from its next turn.
+  The connection set up first (the settings and env vars from before) stays the default for every teammate
+  that has not picked one. Schema v7 adds a `connections` table and two columns on `bots`; each extra
+  connection's key lives in `<data>/llm-keys/<id>`, never in the database. Only your account can read it (mode
+  `0600` in a `0700` folder; on Windows, an ACL for your account alone), and the API only ever returns it
+  masked. Deleting a connection moves its teammates back to the default.
+- Claude through its own Messages API (the official `@anthropic-ai/sdk`), not the OpenAI-compatible shim:
+  tool calls, screenshots, and Claude's thinking blocks handed back untouched within a turn. Requests use
+  automatic prompt caching, and on Anthropic's own API the server-side refusal fallback for the models that
+  have it; a decline that remains becomes a readable error instead of an empty reply. A custom connection can
+  also speak this API, for services that offer an Anthropic-compatible endpoint.
+- The OpenAI Responses API as a third way to talk to a model, with the reasoning items handed back within a
+  turn (`store: false`, encrypted reasoning).
+- More presets, checked against each provider's docs on 2026-11-07: Claude (`claude-opus-5-5`, effort `medium`),
+  Gemini through AI Studio's OpenAI-compatible endpoint (`gemini-3.5-flash-lite`), MiniMax for the global and
+  China sites (`MiniMax-M3.1-Flash`, reasoning effort `low` instead of its default `max`), and MiniMax M Plan, the
+  one subscription plan whose terms let any compatible tool connect: the form shows its terms and wants a tick
+  before it saves one. The GLM, Kimi and Alibaba coding plans are left out on purpose; their terms forbid use from
+  your own apps, bots or automation. OpenAI and xAI now talk over the Responses API: every GPT-6 model can call
+  tools there (on Chat Completions most cannot), OpenAI's preset asks for reasoning effort `low`, and xAI marks
+  Chat Completions deprecated. [AI models](docs/models.md) lists the services and which subscriptions other apps
+  may use.
+- A Claude Pro/Max sign-in token (`sk-ant-oat…`) is refused wherever a key is saved or tested, with a note to
+  create an API key in the Claude Console instead: Anthropic does not allow other apps to use subscription
+  sign-ins.
+- `GET/POST /api/connections`, `PATCH/DELETE /api/connections/:id`, `POST /api/connections/test`,
+  `GET /api/connections/:id/models` and `PUT /api/bots/:id/llm`. The default connection keeps the settings
+  rules: fields pinned by env vars stay `locked`. Changing a connection's address without a new key drops the
+  stored key, a test against a new address never sends the old key, and moving a connection to another service
+  resets the models teammates picked on it. A Claude connection without a key refuses to run instead of letting
+  the SDK pick up Anthropic credentials or `ANTHROPIC_CUSTOM_HEADERS` from the machine; a reply cut off at the
+  output limit is reported instead of acted on.
+
 - The gateway keeps settings of its own (schema v6 adds a `settings` table): provider, API base, model, vision,
   language, computers, browser mirror and update checks. An env var still wins over a saved value. The model API
   key can live in `<data>/llm-key` instead of `OPENSUPERBOT_API_KEY`. Like the gateway token next to it, only your
@@ -145,6 +180,13 @@ place: see [Coming from OpenGrokBot](docs/always-on.md#coming-from-opengrokbot).
 
 ### Changed
 
+- A teammate no longer edits earlier messages when it takes a new screenshot. The older screenshots are swapped
+  for a placeholder when the request is sent, the same as before, except on Claude: Claude rejects later
+  thinking blocks once anything before them changes, so it keeps up to ten (prompt caching makes the repeats
+  cheap) and folds the oldest five away at a time, asking Anthropic's API to drop the thinking blocks that no
+  longer match.
+- `PUT /api/settings` refuses to change the provider or API base while `OPENSUPERBOT_API_KEY` pins the key (that
+  key belongs to one service), and drops a saved key when the API base changes without a new one.
 - The default model is now `grok-4.7` (was `grok-4`, which no longer appears in xAI's model list). If you never
   set `OPENSUPERBOT_MODEL`, the gateway starts asking xAI for `grok-4.7`; it reasons by default and costs more per
   token than the older Grok models. Set `OPENSUPERBOT_MODEL` to keep a different model.

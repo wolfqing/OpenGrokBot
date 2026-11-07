@@ -1,4 +1,7 @@
-import type { Bot, ComputerInfo, Conversation, GatewayEvent, Message, RoutineAction, RuleDuration } from './types'
+import type {
+  Bot, BotLlm, CheckResult, ComputerInfo, ConnectionsState, Conversation, FieldError, GatewayEvent, Message, ProviderPreset, RoutineAction,
+  RuleDuration,
+} from './types'
 
 /** 网关说「先登录」：界面换成锁屏说明，而不是一片空白。 */
 export class SignedOut extends Error {
@@ -78,6 +81,62 @@ export async function sendMessage(threadId: string, text: string): Promise<void>
 export async function stopThread(threadId: string): Promise<void> {
   await send('POST', `/api/threads/${encodeURIComponent(threadId)}/stop`)
 }
+
+/** 模型连接的表单被网关拒了：每个字段错在哪 */
+export class FieldErrors extends Error {
+  readonly errors: FieldError[]
+  readonly status: number
+  constructor(errors: FieldError[], status: number) {
+    super(errors.map((e) => `${e.key}: ${e.code}`).join(', ') || `HTTP ${status}`)
+    this.name = 'FieldErrors'
+    this.errors = errors
+    this.status = status
+  }
+}
+
+async function sendForm<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const data = (await res.json().catch(() => ({}))) as T & { errors?: FieldError[] }
+  if (!res.ok) throw new FieldErrors(Array.isArray(data.errors) ? data.errors : [], res.status)
+  return data
+}
+
+export type ConnectionFields = {
+  name?: string
+  provider?: string
+  api?: string
+  baseURL?: string
+  model?: string
+  vision?: boolean
+  /** 不传 = 不改；空串 = 删掉 */
+  apiKey?: string
+}
+
+/** 模型连接和每位同事的选择；老网关没有这个路由就是 null（界面不显示这一块） */
+export async function fetchConnections(): Promise<ConnectionsState | null> {
+  const res = await request('/api/connections')
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`GET /api/connections ${res.status}`)
+  return res.json() as Promise<ConnectionsState>
+}
+export const fetchProviders = () => getJson<ProviderPreset[]>('/api/settings/providers')
+export const createConnection = (fields: ConnectionFields) =>
+  sendForm<ConnectionsState & { created: string }>('POST', '/api/connections', fields)
+export const updateConnection = (id: string, fields: ConnectionFields) =>
+  sendForm<ConnectionsState>('PATCH', `/api/connections/${encodeURIComponent(id)}`, fields)
+export const deleteConnection = (id: string) =>
+  sendForm<ConnectionsState & { moved: string[] }>('DELETE', `/api/connections/${encodeURIComponent(id)}`)
+/** 测一个连接；connectionId 给了就从存着的那个出发，其余字段是还没存的改动 */
+export const testConnection = (fields: ConnectionFields & { connectionId?: string }) =>
+  sendForm<CheckResult>('POST', '/api/connections/test', fields)
+export const fetchConnectionModels = (id: string) =>
+  getJson<{ ok: true; models: string[] } | { ok: false; code: string }>(`/api/connections/${encodeURIComponent(id)}/models`)
+export const setBotLlm = (botId: string, choice: { connectionId: string; model: string | null }) =>
+  sendForm<BotLlm>('PUT', `/api/bots/${encodeURIComponent(botId)}/llm`, choice)
 
 export async function createBot(name: string, role: string): Promise<Bot> {
   const res = await send('POST', '/api/bots', { name, role })

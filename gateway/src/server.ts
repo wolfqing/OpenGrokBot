@@ -34,6 +34,7 @@ import { screenPagePath, screencastPath } from './screen.js'
 import { saveScreenshot, screenshotFilePath } from './screenshots.js'
 import { listSkills, readSkill, skillsDir } from './skills.js'
 import type { Scheduler } from './scheduler.js'
+import { mountConnections } from './connections-api.js'
 import { mountSettings, type SettingsDeps } from './settings-api.js'
 import { mountSetup, type SetupDeps } from './setup-api.js'
 import { createTurnQueue } from './turns.js'
@@ -54,6 +55,8 @@ export type ComputersInfo = {
 export type AppDeps = {
   db: Db
   llm: LLM
+  /** 每位同事各用各的模型：传了就按同事拿模型客户端和「看不看图」，没传就都用 llm / vision */
+  llmFor?: (botId: string) => { llm: LLM; vision: boolean }
   pool?: Pool
   computers?: ComputersInfo
   dataDir?: string
@@ -231,6 +234,7 @@ export function createApp(deps: AppDeps): GatewayApp {
   }
   app.get('/api/session', (c) => c.json({ ok: true }))
   if (deps.settings) mountSettings(app, { ...deps.settings, db, ...(deps.computers ? { runningKind: deps.computers.kind } : {}) })
+  if (deps.settings) mountConnections(app, { ...deps.settings, db })
   if (deps.settings && deps.setup) {
     mountSetup(app, { ...deps.settings, ...deps.setup, db, hub, ...(deps.computers ? { computers: deps.computers } : {}) })
   }
@@ -350,11 +354,13 @@ export function createApp(deps: AppDeps): GatewayApp {
         .map((r) => ({ id: r.id, name: r.name, human: describeRoutine(r), enabled: r.enabled === 1, watch: r.mode === 'watch' }))
       const skills = dataDir ? await listSkills(skillsDir(dataDir)) : []
       const trigger = opts.trigger ?? 'you'
+      // 这位同事此刻用的模型：回合开始时定下，回合中途改了设置从下一回合起生效
+      const own = deps.llmFor?.(bot.id)
       const outcome = await runTurn({
-        db, llm, bot, soul, manual, memory, routines, threadId, signal, now,
+        db, llm: own?.llm ?? llm, bot, soul, manual, memory, routines, threadId, signal, now,
         origin: opts.origin,
         hop: opts.hop ?? 0,
-        vision: (typeof deps.vision === 'function' ? deps.vision() : deps.vision) === true,
+        vision: own ? own.vision : (typeof deps.vision === 'function' ? deps.vision() : deps.vision) === true,
         ...(deps.timeZone ? { timeZone: deps.timeZone } : {}),
         ...(deps.maxSteps ? { maxSteps: deps.maxSteps } : {}),
         ...(deps.turnMinutes !== undefined ? { turnTimeoutMs: deps.turnMinutes * 60_000 } : {}),

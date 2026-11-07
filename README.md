@@ -16,7 +16,8 @@ Cursor plans and **meters its own usage on top**, and every bot runs on xAI's cl
 
 This is the same shape, self-hosted. One gateway process on your machine, a computer of its own for every bot (a
 Docker container, or without Docker a browser and a folder on your Mac or Linux box), a dense web client that reads
-like a workbench, and any OpenAI-compatible model behind it.
+like a workbench, and a model of your choice behind each teammate — Claude, OpenAI, Gemini, Grok, DeepSeek, Kimi,
+Qwen, GLM, MiniMax, a local Ollama, or anything OpenAI-compatible.
 
 ![A teammate's thread: it reports what it did, holds what would go out, and shows you what it saw](assets/screenshot-thread.png)
 
@@ -143,6 +144,10 @@ OPENSUPERBOT_API_KEY=sk-… OPENSUPERBOT_MODEL=grok-4.7 pnpm dev
 ```
 
 (PowerShell: `$env:OPENSUPERBOT_API_KEY = 'sk-…'; $env:OPENSUPERBOT_MODEL = 'grok-4.7'; pnpm dev`.)
+
+To put teammates on different models, open **AI** in the sidebar, add a connection per service you have a key for,
+and pick one from the top of a teammate's thread. See [AI models](docs/models.md) for the services, which keys
+work, and which subscriptions other apps may and may not use.
 
 The gateway picks the kind of computer at startup and says so in its log: Docker when the daemon answers and
 the bot image is built, local otherwise (`OPENSUPERBOT_COMPUTERS=docker|local` forces one). For Docker, build the

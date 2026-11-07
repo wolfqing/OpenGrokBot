@@ -17,7 +17,8 @@ export type T = ((key: MessageKey, params?: Params) => string) & {
 
 export function translate(lang: Lang, key: MessageKey, params?: Params): string {
   const text = DICTS[lang][key] ?? en[key]
-  if (!params) return text
+  // 拼出来的键（网关给的代码）可能不在词典里：原样回 undefined，由调用方退回原话，别在这里炸
+  if (!params || text === undefined) return text
   return text.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole))
 }
 
